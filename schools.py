@@ -235,10 +235,21 @@ def delete_school(sid):
 @login_required
 def roster(sid):
     s = _load_school_or_403(sid)
+    sport = request.args.get("sport", "all")
+    grad_view = request.args.get("show") == "grad"
+
+    where = ["school_id=?", "active=0" if grad_view else "active=1"]
+    params = [sid]
+    if sport == "xc":
+        where.append("does_xc=1")
+    elif sport == "track":
+        where.append("does_track=1")
     conn = db.connect()
     ath = conn.execute(
-        "SELECT * FROM athletes WHERE school_id=? ORDER BY bib IS NULL, bib, name", (sid,)
-    ).fetchall()
+        f"SELECT * FROM athletes WHERE {' AND '.join(where)} "
+        f"ORDER BY bib IS NULL, bib, name", tuple(params)).fetchall()
+    grad_count = conn.execute("SELECT COUNT(*) FROM athletes WHERE school_id=? AND active=0",
+                              (sid,)).fetchone()[0]
     conn.close()
 
     mode = demo.mode_for(g.principal)
@@ -246,6 +257,20 @@ def roster(sid):
     trs = []
     for a in ath:
         nm = demo.display(a["name"], mode)
+        if grad_view:
+            act = "" if ro else (
+                f'<form class="inline" method="post" action="/athletes/{a["id"]}/restore">'
+                f'<button class="ghost" type="submit">Restore</button></form>')
+            trs.append(
+                f'<tr style="opacity:.7"><td>{"" if a["bib"] is None or mode=="anon" else a["bib"]}</td>'
+                f'<td><b><a href="/athletes/{a["id"]}/progress">{escape(nm)}</a></b> 📈</td>'
+                f'<td>{"" if a["grade"] is None else a["grade"]}</td>'
+                f'<td>{a["gender"] or ""}</td>'
+                f'<td style="text-align:right">{act}</td></tr>')
+            continue
+        dis = "disabled" if ro else ""
+        xc = "checked" if a["does_xc"] else ""
+        tr = "checked" if a["does_track"] else ""
         delc = "" if ro else (
             f'<form class="inline" method="post" action="/athletes/{a["id"]}/delete" '
             f'onsubmit="return confirm(\'Remove {escape(nm)}?\')">'
@@ -255,11 +280,35 @@ def roster(sid):
             f'<td><b><a href="/athletes/{a["id"]}/progress">{escape(nm)}</a></b> 📈</td>'
             f'<td>{"" if a["grade"] is None else a["grade"]}</td>'
             f'<td>{a["gender"] or ""}</td>'
-            f'<td style="text-align:right">{delc}</td></tr>'
-        )
-    table = (f'<div class="card"><table><tr><th>Bib</th><th>Name</th><th>Gr</th>'
-             f'<th>Sex</th><th></th></tr>{"".join(trs)}</table></div>'
-             if ath else '<div class="card muted">No athletes yet — add or import below.</div>')
+            f'<td style="text-align:center"><input type="checkbox" style="width:auto" {xc} {dis} '
+            f'onchange="tog({a["id"]},\'xc\',this)"></td>'
+            f'<td style="text-align:center"><input type="checkbox" style="width:auto" {tr} {dis} '
+            f'onchange="tog({a["id"]},\'track\',this)"></td>'
+            f'<td style="text-align:right">{delc}</td></tr>')
+
+    if grad_view:
+        head = ('<tr><th>Bib</th><th>Name</th><th>Gr</th><th>Sex</th><th></th></tr>'
+                if ath else "")
+        empty = "No graduated athletes."
+    else:
+        head = ('<tr><th>Bib</th><th>Name</th><th>Gr</th><th>Sex</th>'
+                '<th style="text-align:center">XC</th><th style="text-align:center">Track</th><th></th></tr>'
+                if ath else "")
+        empty = "No athletes here yet — add or import below."
+    table = (f'<div class="card"><table>{head}{"".join(trs)}</table></div>'
+             if ath else f'<div class="card muted">{empty}</div>')
+
+    # Sport filter + graduated toggle
+    def _f(label, val):
+        on = "background:var(--panel2);color:var(--fg)" if sport == val and not grad_view else ""
+        return (f'<a class="btn ghost" style="{on}" '
+                f'href="/schools/{sid}?sport={val}">{label}</a>')
+    grad_link = (f'<a class="btn ghost" href="/schools/{sid}?show=grad" '
+                 f'style="{"background:var(--panel2);color:var(--fg)" if grad_view else ""}">'
+                 f'🎓 Graduated ({grad_count})</a>' if grad_count or grad_view else "")
+    filt = (f'<div class="row" style="margin:.2rem 0 1rem;gap:.4rem">'
+            f'{_f("All", "all")}{_f("🏃 XC", "xc")}{_f("🎽 Track", "track")}'
+            f'<span style="flex:1"></span>{grad_link}</div>')
 
     bib_hint = (f'{s["bib_start"]}–{s["bib_end"]}' if s["bib_start"]
                 else "no block set (bibs left blank)")
@@ -277,9 +326,17 @@ def roster(sid):
   <a class="btn ghost" href="/schools/{sid}/stickers.pdf?template=5160">Avery 5160 stickers</a>
   <a class="btn ghost" href="/schools/{sid}/stickers.pdf?template=5163">Avery 5163 stickers</a>
 </div>
-
+{filt}
 {table}
 """
+    if not ro and not grad_view:
+        body += f"""
+<script>
+async function tog(aid, sport, el){{
+  try{{ await jpost('/athletes/'+aid+'/sports', {{sport, on: el.checked}}); }}
+  catch(e){{ alert(e.message); el.checked = !el.checked; }}
+}}
+</script>"""
     if not ro:
         body += f"""
 
@@ -292,8 +349,25 @@ def roster(sid):
     <div style="max-width:110px"><label>Sex</label>
       <select name="gender"><option value="">—</option><option>M</option><option>F</option></select></div>
   </div>
+  <div style="display:flex;gap:1.2rem;margin-top:.7rem">
+    <label style="display:flex;gap:.4rem;align-items:center"><input type="checkbox" name="does_xc"
+      value="1" checked style="width:auto"> 🏃 XC</label>
+    <label style="display:flex;gap:.4rem;align-items:center"><input type="checkbox" name="does_track"
+      value="1" checked style="width:auto"> 🎽 Track</label>
+  </div>
   <button type="submit" style="margin-top:1rem">Add</button>
   <span class="muted">Leave bib blank to auto-assign the next free bib in the block.</span>
+</form></div>
+
+<div class="card"><h2>🎓 Start a new season</h2>
+<p class="muted">Moves every athlete up one grade. Athletes finishing the top grade
+graduate — kept for their stats and history, just hidden from the active roster.
+Past results are never changed.</p>
+<form method="post" action="/schools/{sid}/advance-season"
+  onsubmit="return confirm('Advance every athlete one grade? Top-grade athletes will graduate. This can\\'t be auto-undone.')">
+  <label>Top grade (these graduate)</label>
+  <input name="top_grade" type="number" value="9" style="max-width:130px">
+  <button type="submit" style="margin-top:.6rem">Advance season ▲</button>
 </form></div>
 
 <div class="card"><h2>Import roster</h2>
@@ -383,12 +457,79 @@ def add_athlete(sid):
     if gender not in ("M", "F", None):
         gender = None
     bib_raw = (request.form.get("bib") or "").strip()
+    dx = 1 if request.form.get("does_xc") else 0
+    dt = 1 if request.form.get("does_track") else 0
     conn = db.connect()
     bib = int(bib_raw) if bib_raw.isdigit() else _next_bib(conn, s)
     conn.execute(
-        "INSERT INTO athletes (school_id, bib, name, grade, gender) VALUES (?,?,?,?,?)",
-        (sid, bib, name, grade, gender),
+        "INSERT INTO athletes (school_id, bib, name, grade, gender, does_xc, does_track) "
+        "VALUES (?,?,?,?,?,?,?)",
+        (sid, bib, name, grade, gender, dx, dt),
     )
+    conn.commit()
+    conn.close()
+    return redirect(f"/schools/{sid}")
+
+
+@bp.post("/athletes/<int:aid>/sports")
+@login_required
+def athlete_sports(aid):
+    """Toggle one sport membership (XC / Track) for an athlete from the roster."""
+    conn = db.connect()
+    a = conn.execute("SELECT * FROM athletes WHERE id=?", (aid,)).fetchone()
+    s = conn.execute("SELECT * FROM schools WHERE id=?", (a["school_id"],)).fetchone() if a else None
+    conn.close()
+    if not a:
+        abort(404)
+    if not _can_access_school(s) or g.principal.is_demo:
+        abort(403)
+    data = request.get_json(silent=True) or {}
+    col = {"xc": "does_xc", "track": "does_track"}.get(data.get("sport"))
+    if not col:
+        return jsonify(error="bad sport"), 400
+    conn = db.connect()
+    conn.execute(f"UPDATE athletes SET {col}=? WHERE id=?", (1 if data.get("on") else 0, aid))
+    conn.commit()
+    conn.close()
+    return jsonify(ok=True)
+
+
+@bp.post("/athletes/<int:aid>/restore")
+@login_required
+def restore_athlete(aid):
+    """Un-graduate an athlete (back onto the active roster)."""
+    conn = db.connect()
+    a = conn.execute("SELECT * FROM athletes WHERE id=?", (aid,)).fetchone()
+    s = conn.execute("SELECT * FROM schools WHERE id=?", (a["school_id"],)).fetchone() if a else None
+    conn.close()
+    if not a:
+        abort(404)
+    if not _can_access_school(s) or g.principal.is_demo:
+        abort(403)
+    conn = db.connect()
+    conn.execute("UPDATE athletes SET active=1 WHERE id=?", (aid,))
+    conn.commit()
+    conn.close()
+    return redirect(f"/schools/{a['school_id']}?show=grad")
+
+
+@bp.post("/schools/<int:sid>/advance-season")
+@login_required
+def advance_season(sid):
+    """New-season rollover: everyone up one grade; top-grade athletes graduate
+    (active=0, kept for stats). Historical results are untouched."""
+    s = _load_school_or_403(sid)
+    if g.principal.is_demo:
+        abort(403)
+    tg = (request.form.get("top_grade") or "9").strip()
+    top = int(tg) if tg.isdigit() else 9
+    conn = db.connect()
+    # Graduate athletes at/above the top grade first (so the bump can't push them past it).
+    conn.execute("UPDATE athletes SET active=0 WHERE school_id=? AND active=1 "
+                 "AND grade IS NOT NULL AND grade>=?", (sid, top))
+    # Everyone else moves up one grade.
+    conn.execute("UPDATE athletes SET grade=grade+1 WHERE school_id=? AND active=1 "
+                 "AND grade IS NOT NULL AND grade<?", (sid, top))
     conn.commit()
     conn.close()
     return redirect(f"/schools/{sid}")
@@ -461,7 +602,8 @@ def import_commit(sid):
         gender = gender if gender in ("M", "F") else None
         bib = _next_bib(conn, s)
         conn.execute(
-            "INSERT INTO athletes (school_id, bib, name, grade, gender) VALUES (?,?,?,?,?)",
+            "INSERT INTO athletes (school_id, bib, name, grade, gender, does_xc, does_track) "
+            "VALUES (?,?,?,?,?,1,1)",
             (sid, bib, name, grade, gender),
         )
         added += 1
@@ -474,7 +616,7 @@ def import_commit(sid):
 def _roster_rows(sid):
     conn = db.connect()
     rows = conn.execute(
-        "SELECT bib, name, grade, gender FROM athletes WHERE school_id=? "
+        "SELECT bib, name, grade, gender FROM athletes WHERE school_id=? AND active=1 "
         "ORDER BY bib IS NULL, bib, name", (sid,)
     ).fetchall()
     conn.close()

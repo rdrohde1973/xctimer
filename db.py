@@ -78,6 +78,9 @@ CREATE TABLE IF NOT EXISTS athletes (
     grade INTEGER,
     gender TEXT,
     epc TEXT,
+    does_xc INTEGER DEFAULT 1,
+    does_track INTEGER DEFAULT 1,
+    active INTEGER DEFAULT 1,
     created_at TEXT DEFAULT (datetime('now'))
 );
 
@@ -252,6 +255,16 @@ def migrate(conn):
     # Demo accounts: read-only + anonymized names (handoff §8 demo mode).
     if "is_demo" not in _column_names(conn, "users"):
         conn.execute("ALTER TABLE users ADD COLUMN is_demo INTEGER DEFAULT 0")
+
+    # Roster: per-athlete sport membership (XC / Track) + active flag. One shared
+    # athlete list; grade bumps preserve historical results (stored per-result).
+    acols = _column_names(conn, "athletes")
+    if "does_xc" not in acols:
+        conn.execute("ALTER TABLE athletes ADD COLUMN does_xc INTEGER DEFAULT 1")
+    if "does_track" not in acols:
+        conn.execute("ALTER TABLE athletes ADD COLUMN does_track INTEGER DEFAULT 1")
+    if "active" not in acols:      # graduated athletes go inactive, never deleted
+        conn.execute("ALTER TABLE athletes ADD COLUMN active INTEGER DEFAULT 1")
 
     # Meet setup fields ported from the reference apps.
     mcols = _column_names(conn, "meets")

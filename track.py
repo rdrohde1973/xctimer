@@ -496,7 +496,8 @@ def assign_page(mid):
     school = next(s for s in pickable if s["id"] == sid)
 
     athletes = conn.execute(
-        "SELECT * FROM athletes WHERE school_id=? ORDER BY grade, gender, name", (sid,)).fetchall()
+        "SELECT * FROM athletes WHERE school_id=? AND does_track=1 AND active=1 "
+        "ORDER BY grade, gender, name", (sid,)).fetchall()
     mes = conn.execute(
         "SELECT me.*, e.name AS ename, e.kind FROM meet_events me JOIN events e ON e.id=me.event_id "
         "WHERE me.meet_id=? ORDER BY e.sort, me.gender, me.grade", (mid,)).fetchall()
@@ -597,7 +598,8 @@ def save_assign(mid):
         abort(403)
     limit = event_limit(m)
     conn = db.connect()
-    athletes = conn.execute("SELECT id FROM athletes WHERE school_id=?", (sid,)).fetchall()
+    athletes = conn.execute("SELECT id FROM athletes WHERE school_id=? AND does_track=1 AND active=1",
+                            (sid,)).fetchall()
     valid_me = {r[0]: r[1] for r in conn.execute(
         "SELECT me.id, e.kind FROM meet_events me JOIN events e ON e.id=me.event_id "
         "WHERE me.meet_id=?", (mid,)).fetchall()}
@@ -641,7 +643,8 @@ def carryover(mid):
         abort(403)
     limit = event_limit(m)
     conn = db.connect()
-    athletes = conn.execute("SELECT * FROM athletes WHERE school_id=?", (sid,)).fetchall()
+    athletes = conn.execute("SELECT * FROM athletes WHERE school_id=? AND does_track=1 AND active=1",
+                            (sid,)).fetchall()
     # this meet's events keyed by (event_id, gender, grade)
     this_mes = {}
     for me in conn.execute(
