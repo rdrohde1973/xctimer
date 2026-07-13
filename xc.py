@@ -48,6 +48,17 @@ def fmt_time(sec):
     return f"{m}:{s:04.1f}"
 
 
+def fmt_hms(sec):
+    """Console/finisher clock: H:MM:SS.mmm (matches the old app's timer)."""
+    if sec is None:
+        return ""
+    sec = max(0.0, sec)
+    h = int(sec // 3600)
+    m = int((sec % 3600) // 60)
+    s = sec - 3600 * h - 60 * m
+    return f"{h}:{m:02d}:{s:06.3f}"
+
+
 def _race_or_403(rid, check):
     conn = db.connect()
     r = conn.execute("SELECT * FROM races WHERE id=?", (rid,)).fetchone()
@@ -170,56 +181,114 @@ def delete_race(rid):
 
 
 # ------------------------------- timing console -------------------------------
+CONSOLE_CSS = """
+.tc-clock{font-size:3.2rem;font-weight:800;font-variant-numeric:tabular-nums;
+  text-align:center;letter-spacing:-.02em;line-height:1}
+.tc-clock.stopped{color:var(--err)}
+.tc-btns{display:flex;gap:.5rem;justify-content:center;flex-wrap:wrap;margin:.9rem 0 .2rem}
+.tc-btns #btn-start{background:var(--ok);color:#04101f}
+.tc-btns #btn-start:disabled{opacity:.45;cursor:default}
+.tc-btns #btn-stop{background:transparent;color:var(--err);border:1px solid var(--line)}
+.tc-btns #btn-stop:disabled{opacity:.45;cursor:default}
+.tc-status{text-align:center;font-weight:600;padding:.5rem;border-radius:8px;margin-top:.5rem}
+.tc-status.wait{color:var(--warn)}
+.tc-status.run{color:var(--ok)}
+.tc-status.end{color:var(--err);background:rgba(240,98,91,.12)}
+.tc-bibrow{display:flex;gap:.6rem;align-items:center;flex-wrap:wrap}
+.tc-bibrow input{max-width:170px;font-size:1.1rem}
+.tc-bibrow #slot{margin-left:.2rem}
+#rows td{vertical-align:middle}
+#rows .grip{cursor:grab;color:var(--dim);text-align:center;font-size:1.1rem;width:1.4rem}
+#rows tr.drag-over td{border-top:2px solid var(--acc)}
+"""
+
+
 @bp.get("/races/<int:rid>/console")
 @login_required
 def console(rid):
     r, m = _race_or_403(rid, can_record_meet)
     body = f"""
+<style>{CONSOLE_CSS}</style>
 <p class="muted"><a href="/meets/{m['id']}">← {escape(m['name'])}</a></p>
-<h1>{escape(r['name'])}</h1>
-<div class="card" style="text-align:center">
-  <div id="clock" style="font-size:3rem;font-weight:800;font-variant-numeric:tabular-nums">0:00.0</div>
-  <div style="margin:.8rem 0">
-    <button id="startbtn" onclick="startRace()">Start</button>
-    <button id="stopbtn" class="ghost" onclick="stopRace()">Stop</button>
+<h1>{escape(r['name'])} <span class="muted" style="font-weight:400">· {escape(m['name'])}</span></h1>
+<div class="card">
+  <div id="clock" class="tc-clock">0:00:00.000</div>
+  <div class="tc-btns">
+    <button id="btn-start" onclick="startRace()">🚦 Start</button>
+    <button id="btn-stop" onclick="stopRace()">⏹ Stop</button>
+    <button class="ghost" onclick="resetRace()">🔄 Reset</button>
+    <a class="btn ghost" href="/meets/{m['id']}/results">📊 Results</a>
   </div>
-  <button id="tapbtn" onclick="tap()" disabled
-    style="font-size:1.6rem;padding:1.2rem 2rem;width:100%;max-width:420px">TAP finisher</button>
+  <div id="status" class="tc-status wait">Not started.</div>
+</div>
+<div class="card">
+  <div class="tc-bibrow">
+    <strong>Bib #</strong>
+    <input id="bib" placeholder="scan/type" autocomplete="off" autocapitalize="off"
+      onkeydown="if(event.key==='Enter')recordBib()">
+    <button onclick="recordBib()">✔ <span id="verb">Assign</span></button>
+    <span id="slot" class="muted"></span>
+  </div>
+  <div id="help" class="muted" style="margin-top:.5rem"></div>
 </div>
 <div class="card"><h2>Finishers (<span id="count">0</span>)</h2>
-  <table><thead><tr><th>#</th><th>Time</th><th>Bib</th><th>Runner</th><th></th></tr></thead>
+  <table><thead><tr><th></th><th>#</th><th>Bib</th><th>Name</th><th>School</th><th>Time</th><th></th></tr></thead>
   <tbody id="rows"></tbody></table>
 </div>
 <script>
-const RID={rid};
-let OFFSET=0, START=null, STOPMS=null, STOPPED=false, FIN=[];
+const RID={rid}, MID={m['id']};
+let OFFSET=0, START=null, STOPMS=null, STOPPED=false, STARTED=false, MODE='tap', FIN=[], OPEN=0;
+let dragId=null, dragging=false;
 function nowms(){{ return Date.now()+OFFSET; }}
-function fmt(sec){{ const m=Math.floor(sec/60); const s=(sec-60*m);
-  return m+':'+s.toFixed(1).padStart(4,'0'); }}
+function fmt(sec){{ if(sec==null)return''; sec=Math.max(0,sec);
+  const h=Math.floor(sec/3600), m=Math.floor((sec%3600)/60), s=sec-3600*h-60*m;
+  return h+':'+String(m).padStart(2,'0')+':'+s.toFixed(3).padStart(6,'0'); }}
 async function load(){{
   const s=await jget('/races/'+RID+'/state');
-  OFFSET=s.server_ms-Date.now(); START=s.start_ms; STOPMS=s.stop_ms; STOPPED=s.stopped; FIN=s.finishers;
-  document.getElementById('tapbtn').disabled = !START || STOPPED;
-  document.getElementById('startbtn').textContent = START? 'Restart' : 'Start';
-  render();
+  OFFSET=s.server_ms-Date.now(); START=s.start_ms; STOPMS=s.stop_ms;
+  STOPPED=s.stopped; STARTED=s.started; MODE=s.capture_mode; FIN=s.finishers; OPEN=s.open;
+  syncUI(); render();
+}}
+function syncUI(){{
+  const scan = MODE==='scan';
+  document.getElementById('btn-start').disabled = STARTED && !STOPPED;
+  document.getElementById('btn-stop').disabled = !STARTED || STOPPED;
+  document.getElementById('verb').textContent = scan?'Record':'Assign';
+  document.getElementById('help').textContent = scan
+    ? 'Scan mode: each bib records with the current race time.'
+    : 'Tap mode: taps come from the phone; scan bibs here to fill open slots in order.';
+  const st=document.getElementById('status');
+  if(!STARTED){{ st.className='tc-status wait'; st.textContent='Not started.'; }}
+  else if(STOPPED){{ st.className='tc-status end';
+    st.textContent = scan?'🏁 Race ended.':'🏁 Race ended — keep scanning bibs to fill open slots.'; }}
+  else {{ st.className='tc-status run'; st.textContent='🟢 Running.'; }}
+  const slot=document.getElementById('slot');
+  if(scan){{ slot.textContent=''; }}
+  else {{ const nx=FIN.find(f=>f.bib==null);
+    slot.textContent = OPEN? (OPEN+' open — next #'+nx.seq+' @ '+fmt(nx.elapsed)) : 'no open slots'; }}
 }}
 function tick(){{
-  if(!START){{ document.getElementById('clock').textContent='0:00.0'; return; }}
-  const end = (STOPPED && STOPMS) ? STOPMS : nowms();
-  let e=(end-START)/1000; if(e<0)e=0;
-  document.getElementById('clock').textContent=fmt(e);
+  const c=document.getElementById('clock');
+  if(!START){{ c.textContent='0:00:00.000'; c.classList.remove('stopped'); return; }}
+  const end=(STOPPED&&STOPMS)?STOPMS:nowms(); let e=(end-START)/1000; if(e<0)e=0;
+  c.textContent=fmt(e); c.classList.toggle('stopped',STOPPED);
 }}
 function render(){{
   document.getElementById('count').textContent=FIN.length;
+  if(!FIN.length){{ document.getElementById('rows').innerHTML=
+    '<tr><td colspan=7 class="muted">No finishers yet.</td></tr>'; return; }}
   let h='';
-  FIN.forEach((f,i)=>{{
-    h+='<tr><td>'+f.seq+'</td><td>'+fmt(f.elapsed)+'</td>'
-     +'<td><input value="'+(f.bib??'')+'" style="width:70px" '
-     +'onchange="setBib('+f.id+',this.value)"></td>'
-     +'<td>'+(f.dq?'<s>':'' )+esc(f.name||'')+(f.name?(' <span class=muted>'+esc(f.school||'')+'</span>'):'')+(f.dq?'</s>':'')+'</td>'
+  FIN.forEach(f=>{{
+    const nm = f.name? esc(f.name) : (f.bib?'':'<span class=muted>—</span>');
+    const name = f.dq? ('<s>'+nm+' (DQ)</s>') : nm;
+    h+='<tr draggable="true" data-id="'+f.id+'" ondragstart="dstart(event,'+f.id+')"'
+     +' ondragover="dover(event,this)" ondragleave="this.classList.remove(\\'drag-over\\')"'
+     +' ondrop="ddrop(event,'+f.id+')" ondragend="dend()">'
+     +'<td class="grip">⠿</td><td>'+f.seq+'</td>'
+     +'<td><input value="'+(f.bib??'')+'" style="width:64px" onchange="setBib('+f.id+',this.value)"></td>'
+     +'<td>'+name+'</td><td>'+esc(f.school||'')+'</td>'
+     +'<td style="font-variant-numeric:tabular-nums">'+fmt(f.elapsed)+'</td>'
      +'<td style="text-align:right;white-space:nowrap">'
-     +'<button class="ghost" onclick="move('+i+',-1)">↑</button> '
-     +'<button class="ghost" onclick="move('+i+',1)">↓</button> '
      +'<button class="ghost" onclick="dq('+f.id+')">'+(f.dq?'un-DQ':'DQ')+'</button> '
      +'<button class="danger" onclick="del('+f.id+')">✕</button></td></tr>';
   }});
@@ -227,14 +296,26 @@ function render(){{
 }}
 async function startRace(){{ await jpost('/races/'+RID+'/start',{{}}); load(); }}
 async function stopRace(){{ await jpost('/races/'+RID+'/stop',{{}}); load(); }}
-async function tap(){{ const f=await jpost('/races/'+RID+'/tap',{{}}); FIN.push(f); render(); }}
-async function setBib(id,v){{ await jpost('/finishers/'+id+'/bib',{{bib:v}}); load(); }}
+async function resetRace(){{ if(!confirm('Reset clears the clock and all finishers. Continue?'))return;
+  await jpost('/races/'+RID+'/reset',{{}}); load(); }}
+async function recordBib(){{ const el=document.getElementById('bib'); const v=el.value.trim(); if(!v)return;
+  try{{ await jpost('/races/'+RID+'/finish',{{bib:v}}); el.value=''; el.focus(); load(); }}
+  catch(e){{ alert(e.message); el.select(); }} }}
+async function setBib(id,v){{ try{{ await jpost('/finishers/'+id+'/bib',{{bib:v}}); }}catch(e){{ alert(e.message); }} load(); }}
 async function dq(id){{ await jpost('/finishers/'+id+'/dq',{{}}); load(); }}
 async function del(id){{ if(!confirm('Delete finisher?'))return; await jpost('/finishers/'+id+'/delete',{{}}); load(); }}
-async function move(i,d){{ const j=i+d; if(j<0||j>=FIN.length)return;
-  const order=FIN.map(f=>f.id); [order[i],order[j]]=[order[j],order[i]];
-  await jpost('/races/'+RID+'/reorder',{{order}}); load(); }}
-setInterval(tick,100); load();
+function dstart(e,id){{ dragging=true; dragId=id; e.dataTransfer.effectAllowed='move'; }}
+function dover(e,tr){{ e.preventDefault(); tr.classList.add('drag-over'); }}
+async function ddrop(e,overId){{ e.preventDefault();
+  document.querySelectorAll('#rows tr').forEach(t=>t.classList.remove('drag-over'));
+  if(dragId==null||dragId===overId){{ dend(); return; }}
+  const order=FIN.map(f=>f.id); const from=order.indexOf(dragId), to=order.indexOf(overId);
+  order.splice(to,0,order.splice(from,1)[0]);
+  dend(); await jpost('/races/'+RID+'/reorder',{{order}}); load(); }}
+function dend(){{ dragging=false; dragId=null; }}
+setInterval(tick,75);
+setInterval(()=>{{ if(!dragging)load(); }},2000);
+load();
 </script>
 """
     return shell(g.principal, body, active="meets")
@@ -251,14 +332,18 @@ def race_state(rid):
     stop = _parse(r["stop_time"])
     fins = [{
         "id": f["id"], "seq": f["seq"], "bib": f["bib"],
-        "elapsed": f["elapsed_seconds"], "dq": bool(f["dq"]),
+        "elapsed": f["elapsed_seconds"], "elapsed_str": fmt_hms(f["elapsed_seconds"]),
+        "dq": bool(f["dq"]),
         "name": f["snap_name"], "school": f["snap_school"],
     } for f in rows]
     return jsonify(
         name=r["name"],
+        capture_mode=r["capture_mode"],
         start_ms=_ms(start) if start else None,
         stop_ms=_ms(stop) if stop else None,
+        started=bool(r["start_time"]),
         stopped=bool(r["stop_time"]),
+        open=sum(1 for f in rows if f["bib"] is None),
         server_ms=_ms(_now()),
         finishers=fins,
     )
@@ -284,6 +369,91 @@ def race_stop(rid):
     conn.commit()
     conn.close()
     return jsonify(ok=True)
+
+
+@bp.post("/races/<int:rid>/reset")
+@login_required
+def race_reset(rid):
+    """Clear the clock and every finisher — a clean slate for the heat."""
+    r, m = _race_or_403(rid, can_record_meet)
+    conn = db.connect()
+    conn.execute("DELETE FROM finishers WHERE race_id=?", (rid,))
+    conn.execute("UPDATE races SET start_time=NULL, stop_time=NULL WHERE id=?", (rid,))
+    conn.commit()
+    conn.close()
+    return jsonify(ok=True)
+
+
+@bp.post("/races/<int:rid>/untap")
+@login_required
+def race_untap(rid):
+    """Undo the last tap. Won't drop a slot that already has a bib (tap mode)."""
+    r, m = _race_or_403(rid, can_record_meet)
+    conn = db.connect()
+    last = conn.execute("SELECT * FROM finishers WHERE race_id=? ORDER BY seq DESC LIMIT 1",
+                        (rid,)).fetchone()
+    if not last:
+        conn.close()
+        return jsonify(ok=True, count=0)
+    if last["bib"] is not None and r["capture_mode"] != "scan":
+        conn.close()
+        return jsonify(error="Last finisher already has a bib — remove it instead"), 400
+    conn.execute("DELETE FROM finishers WHERE id=?", (last["id"],))
+    conn.commit()
+    cnt = conn.execute("SELECT COUNT(*) FROM finishers WHERE race_id=?", (rid,)).fetchone()[0]
+    conn.close()
+    return jsonify(ok=True, count=cnt)
+
+
+@bp.post("/races/<int:rid>/finish")
+@login_required
+def race_finish(rid):
+    """Assign a bib. Tap mode: fill the next open (bib-less) slot in order — works
+    even after Stop. Scan mode: record a new finisher with the current race time."""
+    r, m = _race_or_403(rid, can_record_meet)
+    raw = (request.get_json(silent=True) or {}).get("bib")
+    try:
+        bib = int(str(raw).strip())
+    except (TypeError, ValueError):
+        return jsonify(error="Bib must be a number"), 400
+    if bib <= 0:
+        return jsonify(error="Enter a bib number"), 400
+    conn = db.connect()
+    dup = conn.execute("SELECT snap_name FROM finishers WHERE race_id=? AND bib=?",
+                       (rid, bib)).fetchone()
+    if dup:
+        conn.close()
+        nm = f" ({dup['snap_name']})" if dup["snap_name"] else ""
+        return jsonify(error=f"Bib {bib}{nm} already recorded"), 400
+    a = _athlete_for_bib(conn, m["id"], bib)
+    snap = (a["name"] if a else None, a["grade"] if a else None,
+            a["gender"] if a else None, a["sname"] if a else None)
+    if r["capture_mode"] == "scan":
+        start = _parse(r["start_time"])
+        if not start or r["stop_time"]:
+            conn.close()
+            return jsonify(error="Race not running"), 400
+        elapsed = (_now() - start).total_seconds()
+        seq = (conn.execute("SELECT COALESCE(MAX(seq),0) FROM finishers WHERE race_id=?",
+                            (rid,)).fetchone()[0]) + 1
+        conn.execute(
+            "INSERT INTO finishers (race_id, seq, finish_time, elapsed_seconds, bib, "
+            "snap_name, snap_grade, snap_gender, snap_school) VALUES (?,?,?,?,?,?,?,?,?)",
+            (rid, seq, _iso(_now()), elapsed, bib, *snap))
+        remaining = 0
+    else:
+        slot = conn.execute("SELECT id FROM finishers WHERE race_id=? AND bib IS NULL "
+                            "ORDER BY seq LIMIT 1", (rid,)).fetchone()
+        if not slot:
+            conn.close()
+            return jsonify(error="No open slots — tap a finisher first"), 400
+        conn.execute("UPDATE finishers SET bib=?, snap_name=?, snap_grade=?, snap_gender=?, "
+                     "snap_school=? WHERE id=?", (bib, *snap, slot["id"]))
+        remaining = conn.execute("SELECT COUNT(*) FROM finishers WHERE race_id=? AND bib IS NULL",
+                                 (rid,)).fetchone()[0]
+    conn.commit()
+    conn.close()
+    return jsonify(ok=True, bib=bib, name=snap[0], school=snap[3], remaining=remaining)
 
 
 @bp.post("/races/<int:rid>/tap")

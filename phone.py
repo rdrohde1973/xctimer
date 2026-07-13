@@ -1,24 +1,24 @@
 """Phone timing app (xctimer.com/phone).
 
-Coaches log in and see only the meets they attend and the events they're part of;
-a no-login QR (meets.py /t/<token>) drops a helper straight into one meet's timing.
-Both land here. XC meets time via the race console; track via the per-event grid.
+Coaches log in and see only the meets they can record; a no-login QR
+(meets.py /t/<token>) drops a helper straight into one meet's timing. The XC
+flow mirrors the old app: a full-screen "Pick a heat to run" list, then a
+full-screen tap console (START -> FINISHER / UNDO / STOP). Track meets open the
+two-tab Track Timer. All screens drive the same /races/<rid>/* JSON API, so a
+phone tapping and a desktop scanning bibs share one race.
 """
 import io
 import json
 import os
 
 from markupsafe import escape
-from flask import Blueprint, g, redirect, request, Response
+from flask import Blueprint, g, redirect, request, Response, abort
 
 from . import db
 from .meets import load_meet, can_record_meet
-from .ui import shell
+from .ui import shell, HEAD_EXTRA, CSS, JS, BRAND_HTML
 
 bp = Blueprint("phone", __name__)
-
-BTN = ('display:block;padding:1rem 1.1rem;margin:.5rem 0;font-size:1.1rem;'
-       'text-align:left;border-radius:12px')
 
 # Events timed by tapping finishers at the line (distance + 4x400). Sprints and
 # field events are recorded from sheets/lane entry, not the phone tap timer.
@@ -30,28 +30,252 @@ def _phone_url():
     return f"{base}/phone"
 
 
-def _phone_shell(principal, body):
-    return shell(principal, body, active="phone", bare=True)
+# ------------------------------ full-screen doc ------------------------------
+def _phone_doc(title, body, extra_css=""):
+    """Standalone full-screen page (no app shell chrome) for the phone timer."""
+    return f"""<!doctype html><html lang=en><head><meta charset=utf-8>
+<meta name=viewport content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>{escape(title)} · XCTimer</title>{HEAD_EXTRA}<style>{CSS}{extra_css}</style></head>
+<body class="phone">{body}<script>{JS}</script></body></html>"""
 
 
-def _meet_card(m):
+def _district_brand(p):
+    """District logo for the picker header; XCTimer wordmark when there's none."""
+    did = getattr(p, "district_id", None)
+    if did:
+        conn = db.connect()
+        r = conn.execute("SELECT logo_path FROM districts WHERE id=?", (did,)).fetchone()
+        conn.close()
+        if r and r["logo_path"]:
+            return f'<span class="dchip"><img src="{r["logo_path"]}" alt=""></span>'
+    return f'<div class="wordmark">{BRAND_HTML}</div>'
+
+
+PICK_CSS = """
+body.phone{background:var(--bg);min-height:100vh;margin:0}
+.pickhdr{text-align:center;padding:1.6rem 1rem .4rem}
+.pickhdr .dchip{display:inline-flex;background:#f4f6f8;border-radius:14px;padding:.5rem .9rem}
+.pickhdr .dchip img{max-width:280px;max-height:84px;object-fit:contain;display:block}
+.pickhdr .wordmark{font-size:2rem;font-weight:800}
+.pickhdr h1{font-size:1.4rem;margin:1rem 0 .2rem}
+.pickhdr .who{color:var(--mut);font-size:.92rem}
+.meet{margin:0 .8rem 1rem;border:1px solid var(--line);border-radius:14px;overflow:hidden}
+.meet .mh{background:var(--panel);padding:.7rem 1rem;font-weight:700;
+  display:flex;justify-content:space-between;align-items:baseline;gap:.6rem}
+.meet .mh small{color:var(--mut);font-weight:400}
+.heat{display:flex;justify-content:space-between;align-items:center;gap:.6rem;
+  padding:1rem;border-top:1px solid var(--line);color:var(--fg);font-size:1.1rem}
+.heat:hover{background:var(--panel2);text-decoration:none}
+.heat .hn small{color:var(--mut);font-size:.8rem}
+.heat.empty{color:var(--dim);font-size:.95rem}
+.st{font-size:.72rem;padding:.22rem .6rem;border-radius:999px;text-transform:capitalize;white-space:nowrap}
+.st.ns{background:#2a3a4d;color:#b9c8d8}
+.st.run{background:rgba(63,191,127,.2);color:var(--ok)}
+.st.end{background:#22303f;color:#8ea6c0}
+.st.go{background:rgba(234,106,45,.2);color:var(--acc)}
+.lo{text-align:center;margin:1.6rem 0 2.4rem}
+.lo button{background:transparent;color:var(--mut);border:0;text-decoration:underline;
+  font:inherit;cursor:pointer}
+"""
+
+
+@bp.get("/phone")
+def phone_home():
+    """Pick a heat to run — every meet the coach can record, grouped, with a
+    ready/running/ended pill per heat (no-login QR is scoped to its one meet)."""
+    p = getattr(g, "principal", None)
+    if not p:
+        return redirect("/login?next=/phone")
     conn = db.connect()
-    if m["sport"] == "xc":
-        body = [f'<p class="muted"><a href="/phone">← Meets</a></p>',
-                f'<h1>🏃 {escape(m["name"])}</h1><p class="sub">{escape(m["date"] or "")}</p>',
-                '<h2>Heats — tap to time</h2>']
-        races = conn.execute("SELECT * FROM races WHERE meet_id=? ORDER BY id", (m["id"],)).fetchall()
-        for r in races:
-            status = "ended" if r["stop_time"] else ("running" if r["start_time"] else "not started")
-            body.append(f'<a class="btn" style="{BTN}" href="/races/{r["id"]}/console">'
-                        f'⏱ {escape(r["name"])} <span class="muted">· {r["capture_mode"]} · {status}</span></a>')
-        if not races:
-            body.append('<p class="muted">No heats yet.</p>')
-        html = "".join(body)
+    if getattr(p, "meet_scope", None):
+        rows = conn.execute("SELECT * FROM meets WHERE id=?", (p.meet_scope,)).fetchall()
     else:
-        html = _track_timer(conn, m)
+        rows = conn.execute("SELECT * FROM meets ORDER BY date DESC, id DESC").fetchall()
+    meets = [m for m in rows if can_record_meet(m)]
+    groups = []
+    for m in meets:
+        if m["sport"] == "xc":
+            races = conn.execute("SELECT * FROM races WHERE meet_id=? ORDER BY id",
+                                 (m["id"],)).fetchall()
+            heats = []
+            for r in races:
+                if r["stop_time"]:
+                    cls, lbl = "end", "ended"
+                elif r["start_time"]:
+                    cls, lbl = "run", "running"
+                else:
+                    cls, lbl = "ns", "ready"
+                heats.append(
+                    f'<a class="heat" href="/phone/race/{r["id"]}">'
+                    f'<span class="hn">{escape(r["name"])} <small>· {escape(r["capture_mode"])}</small></span>'
+                    f'<span class="st {cls}">{lbl}</span></a>')
+            inner = "".join(heats) or '<div class="heat empty">No heats yet — add them in meet setup.</div>'
+        else:
+            inner = (f'<a class="heat" href="/phone/meet/{m["id"]}">'
+                     f'<span class="hn">🎽 Track Timer</span><span class="st go">open</span></a>')
+        groups.append(
+            f'<div class="meet"><div class="mh"><span>{escape(m["name"])}</span>'
+            f'<small>{escape(m["date"] or "")}</small></div>{inner}</div>')
     conn.close()
-    return _phone_shell(g.principal, html)
+    who = escape(p.name or p.email or "")
+    role = " · Admin" if getattr(p, "role", "") in ("super_admin", "district_admin") else ""
+    body = (f'<div class="pickhdr">{_district_brand(p)}'
+            f'<h1>Pick a heat to run</h1><div class="who">{who}{role}</div></div>'
+            + ("".join(groups) or '<div class="meet"><div class="heat empty" '
+               'style="border:0">No meets available to you right now.</div></div>')
+            + '<form method="post" action="/logout" class="lo"><button>Log out</button></form>')
+    return _phone_doc("Pick a heat", body, PICK_CSS)
+
+
+# ------------------------------ full-screen tap console ------------------------------
+TIMER_CSS = """
+html,body.phone{height:100%}
+body.phone{margin:0;display:flex;flex-direction:column;overflow:hidden;background:#08111d}
+.tbar{display:flex;justify-content:space-between;align-items:center;background:#000;color:#fff;padding:.7rem 1rem}
+.tcount{line-height:1.05}
+.tcount span{font-size:1.5rem;font-weight:800}
+.tcount small{display:block;font-size:.58rem;letter-spacing:.14em;color:#9aa}
+.tclock{font-size:2rem;font-weight:800;font-variant-numeric:tabular-nums}
+.subbar{display:flex;align-items:center;background:var(--panel);padding:.5rem 1rem;border-bottom:1px solid var(--line)}
+.subbar .back{color:var(--link);font-weight:600;min-width:74px}
+.subbar .rn{flex:1;text-align:center;font-weight:700;padding-right:74px}
+.tmain{flex:1;display:flex;flex-direction:column;padding:.8rem;min-height:0}
+.bigbtn{border:0;border-radius:18px;color:#fff;font-weight:800;letter-spacing:.05em;cursor:pointer;width:100%}
+.bigbtn:active{filter:brightness(1.15)}
+.bigbtn.start{background:#2f7d32;flex:1;font-size:3rem}
+.bigbtn.tap{background:#2f6db5;padding:2.3rem 0;font-size:2.4rem;margin-bottom:.6rem}
+.scanbox{display:flex;flex-direction:column;gap:.6rem;margin-bottom:.6rem}
+.scanbox input{font-size:1.7rem;text-align:center;padding:.7rem}
+.flist{flex:1;overflow-y:auto;background:var(--panel2);border-radius:14px;padding:.2rem .3rem}
+.flist .empty{color:var(--dim);text-align:center;padding:2.2rem 1rem}
+.frow{display:flex;align-items:center;gap:.8rem;padding:.55rem .7rem;border-bottom:1px solid var(--line)}
+.frow:last-child{border-bottom:0}
+.frow .fp{font-weight:800;color:var(--acc);min-width:1.7rem}
+.frow .ft{font-variant-numeric:tabular-nums;color:var(--mut);font-size:.9rem}
+.frow .fw{flex:1;text-align:right;font-weight:600}
+.banner{background:rgba(240,98,91,.15);color:var(--err);text-align:center;padding:.7rem;
+  border-radius:10px;margin-bottom:.6rem;font-weight:600}
+.ctrls{display:flex;gap:.6rem;padding:.7rem;padding-bottom:calc(.7rem + env(safe-area-inset-bottom));background:#08111d}
+.ctl{flex:1;border:0;border-radius:14px;font-size:1.15rem;font-weight:700;padding:1rem;color:#fff;cursor:pointer}
+.ctl.undo{background:#4a4a4a}
+.ctl.stop{background:#c0392b}
+.ctl:disabled{opacity:.4}
+"""
+
+
+@bp.get("/phone/race/<int:rid>")
+def phone_race(rid):
+    p = getattr(g, "principal", None)
+    if not p:
+        return redirect(f"/login?next=/phone/race/{rid}")
+    conn = db.connect()
+    r = conn.execute("SELECT * FROM races WHERE id=?", (rid,)).fetchone()
+    conn.close()
+    if not r:
+        abort(404)
+    m = load_meet(r["meet_id"])
+    if not can_record_meet(m):
+        abort(403)
+    body = f"""
+<div class="tbar">
+  <div class="tcount"><span id="count">0</span><small>FINISHERS</small></div>
+  <div id="clock" class="tclock">0:00:00</div>
+</div>
+<div class="subbar"><a href="/phone" class="back">‹ Heats</a>
+  <span class="rn">{escape(r['name'])}</span></div>
+<div class="tmain">
+  <button id="startb" class="bigbtn start" onclick="startRace()">START</button>
+  <button id="tapb" class="bigbtn tap" onclick="tap()" style="display:none">FINISHER</button>
+  <div id="scanbox" class="scanbox" style="display:none">
+    <input id="sbib" inputmode="numeric" autocomplete="off" placeholder="bib #"
+      onkeydown="if(event.key==='Enter')rec()">
+    <button class="bigbtn tap" onclick="rec()">RECORD</button>
+  </div>
+  <div id="banner" class="banner" style="display:none"></div>
+  <div id="flist" class="flist" style="display:none">
+    <div class="empty">Finishers appear here as you record them.</div>
+  </div>
+</div>
+<div id="ctrls" class="ctrls" style="display:none">
+  <button class="ctl undo" onclick="undo()">↶ UNDO</button>
+  <button class="ctl stop" onclick="stopRace()">■ STOP</button>
+</div>
+<script>
+const RID={rid};
+let OFFSET=0, START=null, STOPMS=null, STOPPED=false, STARTED=false, MODE='tap', FIN=[];
+function nowms(){{ return Date.now()+OFFSET; }}
+function fmt(sec){{ sec=Math.max(0,Math.floor(sec));
+  const h=Math.floor(sec/3600), m=Math.floor((sec%3600)/60), s=sec%60;
+  return h+':'+String(m).padStart(2,'0')+':'+String(s).padStart(2,'0'); }}
+async function load(){{
+  const s=await jget('/races/'+RID+'/state');
+  OFFSET=s.server_ms-Date.now(); START=s.start_ms; STOPMS=s.stop_ms;
+  STOPPED=s.stopped; STARTED=s.started; MODE=s.capture_mode; FIN=s.finishers;
+  sync(); render();
+}}
+function sync(){{
+  const active=STARTED&&!STOPPED, scan=MODE==='scan';
+  document.getElementById('startb').style.display = STARTED?'none':'';
+  document.getElementById('tapb').style.display = (active&&!scan)?'':'none';
+  document.getElementById('scanbox').style.display = (active&&scan)?'':'none';
+  document.getElementById('flist').style.display = STARTED?'':'none';
+  document.getElementById('ctrls').style.display = STARTED?'':'none';
+  const b=document.getElementById('banner');
+  if(STOPPED){{ b.style.display=''; b.textContent = scan
+    ? '🏁 Race ended.' : '🏁 Race ended — scan bibs on the console to fill open slots.'; }}
+  else b.style.display='none';
+  document.querySelector('.ctl.undo').disabled=!active;
+  document.querySelector('.ctl.stop').disabled=!active;
+}}
+function tick(){{
+  const c=document.getElementById('clock');
+  if(!START){{ c.textContent='0:00:00'; return; }}
+  const end=(STOPPED&&STOPMS)?STOPMS:nowms(); let e=(end-START)/1000; if(e<0)e=0;
+  c.textContent=fmt(e);
+}}
+function render(){{
+  document.getElementById('count').textContent=FIN.length;
+  const list=document.getElementById('flist');
+  if(!FIN.length){{ list.innerHTML='<div class="empty">Finishers appear here as you record them.</div>'; return; }}
+  let h='';
+  [...FIN].reverse().forEach(f=>{{
+    const t=(f.elapsed_str||'').replace(/\\.\\d+$/,'');
+    const who = f.name? esc(f.name) : (f.bib? ('Bib '+f.bib) : '—');
+    h+='<div class="frow"><span class="fp">'+f.seq+'</span>'
+      +'<span class="ft">'+t+'</span><span class="fw">'+who+'</span></div>';
+  }});
+  list.innerHTML=h;
+}}
+async function startRace(){{ await jpost('/races/'+RID+'/start',{{}}); load(); }}
+async function stopRace(){{ await jpost('/races/'+RID+'/stop',{{}}); load(); }}
+async function tap(){{ try{{ await jpost('/races/'+RID+'/tap',{{}}); }}catch(e){{}} load(); }}
+async function undo(){{ try{{ await jpost('/races/'+RID+'/untap',{{}}); }}catch(e){{ alert(e.message); }} load(); }}
+async function rec(){{ const el=document.getElementById('sbib'); const v=el.value.trim(); if(!v)return;
+  try{{ await jpost('/races/'+RID+'/finish',{{bib:v}}); el.value=''; el.focus(); }}
+  catch(e){{ alert(e.message); }} load(); }}
+setInterval(tick,120);
+setInterval(load,3000);
+load();
+</script>
+"""
+    return _phone_doc(r["name"], body, TIMER_CSS)
+
+
+# ------------------------------ track timer (two-tab) ------------------------------
+@bp.get("/phone/meet/<int:mid>")
+def phone_meet(mid):
+    p = getattr(g, "principal", None)
+    if not p:
+        return redirect(f"/login?next=/phone/meet/{mid}")
+    m = load_meet(mid)
+    if not can_record_meet(m):
+        abort(403)
+    if m["sport"] == "xc":            # XC heats live on the pick page now
+        return redirect("/phone")
+    conn = db.connect()
+    html = _track_timer(conn, m)
+    conn.close()
+    return shell(p, html, active="phone", bare=True)
 
 
 def _track_timer(conn, m):
@@ -191,37 +415,3 @@ def phone_qr():
     buf = io.BytesIO()
     img.save(buf, format="PNG")
     return Response(buf.getvalue(), mimetype="image/png")
-
-
-@bp.get("/phone")
-def phone_home():
-    p = getattr(g, "principal", None)
-    if not p:
-        return redirect("/login?next=/phone")
-    if p.meet_scope:                       # no-login QR: straight into that meet
-        return _meet_card(load_meet(p.meet_scope))
-    conn = db.connect()
-    rows = conn.execute("SELECT * FROM meets ORDER BY date DESC, id DESC").fetchall()
-    conn.close()
-    meets = [m for m in rows if can_record_meet(m)]
-    body = ['<h1>📱 Phone timing</h1>',
-            '<p class="sub">Pick a meet, then a heat or event to time.</p>']
-    for m in meets:
-        icon = "🏃" if m["sport"] == "xc" else "🎽"
-        body.append(f'<a class="btn" style="{BTN}" href="/phone/meet/{m["id"]}">'
-                    f'{icon} {escape(m["name"])} <span class="muted">· {escape(m["date"] or "")}</span></a>')
-    if not meets:
-        body.append('<div class="card muted">No meets available to you right now.</div>')
-    return _phone_shell(p, "".join(body))
-
-
-@bp.get("/phone/meet/<int:mid>")
-def phone_meet(mid):
-    p = getattr(g, "principal", None)
-    if not p:
-        return redirect(f"/login?next=/phone/meet/{mid}")
-    m = load_meet(mid)
-    if not can_record_meet(m):
-        from flask import abort
-        abort(403)
-    return _meet_card(m)
