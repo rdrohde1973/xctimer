@@ -101,16 +101,20 @@ def shell(principal, body, *, active="", active_district=None, districts=None,
         cls = "on" if active == key else ""
         return f'<a class="{cls}" href="{href}">{escape(label)}</a>'
 
-    nav.append(link("/dashboard", "Dashboard", "dashboard"))
-    if role in ("super_admin", "district_admin"):
-        nav.append(link("/schools", "Schools", "schools"))
-        nav.append(link("/users", "Users", "users"))
-    elif role == "coach":
-        nav.append(link("/schools", "Roster", "schools"))
-    if role in ("super_admin", "district_admin", "coach"):
-        nav.append(link("/bibcheck", "Bib check", "bibcheck"))
-    if role == "super_admin":
-        nav.append(link("/districts", "Districts", "districts"))
+    if getattr(principal, "meet_scope", None):
+        nav = []  # meet-day QR principal: minimal chrome, no navigation
+    else:
+        nav.append(link("/dashboard", "Dashboard", "dashboard"))
+        nav.append(link("/meets", "Meets", "meets"))
+        if role in ("super_admin", "district_admin"):
+            nav.append(link("/schools", "Schools", "schools"))
+            nav.append(link("/users", "Users", "users"))
+        elif role == "coach":
+            nav.append(link("/schools", "Roster", "schools"))
+        if role in ("super_admin", "district_admin", "coach"):
+            nav.append(link("/bibcheck", "Bib check", "bibcheck"))
+        if role == "super_admin":
+            nav.append(link("/districts", "Districts", "districts"))
 
     # District switcher (super admin) or fixed label
     switch = ""
