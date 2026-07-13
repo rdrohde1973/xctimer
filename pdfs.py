@@ -112,8 +112,7 @@ def _draw_heat_section(c, ph, pw, left, title, rows, laned, token=None):
         c.setFont("Helvetica-Bold", 9)
         c.setFillGray(0.35)
         cols = ([("LANE", 0)] if laned else [("ORDER", 0)]) + \
-               [("BIB", 0.7 * inch), ("NAME", 1.4 * inch), ("SCHOOL", 3.7 * inch),
-                ("MARK / TIME", 5.6 * inch)]
+               [("BIB", 0.7 * inch), ("NAME", 1.4 * inch), ("MARK / TIME", 4.3 * inch)]
         for label, dx in cols:
             c.drawString(left + dx, y, label)
         c.setFillGray(0)
@@ -129,13 +128,12 @@ def _draw_heat_section(c, ph, pw, left, title, rows, laned, token=None):
                 c.setFont("Helvetica", 11)
             c.drawString(left, y, str(r["lane"] or ""))
             c.drawString(left + 0.7 * inch, y, "" if r["bib"] is None else str(r["bib"]))
-            c.drawString(left + 1.4 * inch, y, (r["name"] or "")[:26])
-            c.drawString(left + 3.7 * inch, y, (r["school"] or "")[:22])
-            c.line(left + 5.6 * inch, y - 0.02 * inch, pw - 0.6 * inch, y - 0.02 * inch)
+            c.drawString(left + 1.4 * inch, y, (r["name"] or "")[:34])
+            c.line(left + 4.3 * inch, y - 0.02 * inch, pw - 0.6 * inch, y - 0.02 * inch)
             y -= 0.34 * inch
         # blank rows for last-minute additions
         for _ in range(2):
-            c.line(left + 5.6 * inch, y - 0.02 * inch, pw - 0.6 * inch, y - 0.02 * inch)
+            c.line(left + 4.3 * inch, y - 0.02 * inch, pw - 0.6 * inch, y - 0.02 * inch)
             y -= 0.34 * inch
         c.showPage()
 
@@ -154,18 +152,17 @@ def _draw_field_section(c, ph, pw, left, title, rows, hj, token=None, bars=None)
     c.drawString(left, y, _HOWTO["hj"] if hj else _HOWTO["field"])
     c.setFillGray(0)
 
-    if hj:                       # tighter name/school -> room for big, readable boxes
-        name_x, school_x, gx = left + 0.5 * inch, left + 2.35 * inch, left + 3.75 * inch
-        cols, cw, gap, boxh, rowh = 7, 0.5 * inch, 0.58 * inch, 0.46 * inch, 0.6 * inch
+    if hj:                       # no school -> room for big, readable bar boxes
+        name_x, gx = left + 0.5 * inch, left + 2.4 * inch
+        cols, cw, gap, boxh, rowh = 9, 0.46 * inch, 0.52 * inch, 0.46 * inch, 0.6 * inch
     else:
-        name_x, school_x, gx = left + 0.7 * inch, left + 3.0 * inch, left + 4.5 * inch
+        name_x, gx = left + 0.7 * inch, left + 4.5 * inch
 
     y -= 0.34 * inch
     c.setFont("Helvetica-Bold", 9)
     c.setFillGray(0.35)
     c.drawString(left, y, "BIB")
     c.drawString(name_x, y, "NAME")
-    c.drawString(school_x, y, "SCHOOL")
     c.setFillGray(0)
     if hj:
         c.setFont("Helvetica", 7)
@@ -195,8 +192,7 @@ def _draw_field_section(c, ph, pw, left, title, rows, hj, token=None, bars=None)
         c.setFont("Helvetica", 11)
         if r:
             c.drawString(left, y, "" if r["bib"] is None else str(r["bib"]))
-            c.drawString(name_x, y, (r["name"] or "")[:22 if hj else 24])
-            c.drawString(school_x, y, (r["school"] or "")[:16 if hj else 20])
+            c.drawString(name_x, y, (r["name"] or "")[:24 if hj else 40])
         if hj:
             for i in range(cols):
                 c.rect(gx + i * gap, y - 0.12 * inch, cw, boxh)
