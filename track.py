@@ -1031,41 +1031,59 @@ def event_page(meid):
   <div style="display:flex;align-items:flex-end"><button type="submit">Add</button></div>
 </form></div>"""
 
-    # Seeding + heat sheet + scan controls
-    tools = ""
+    # Seed / sheets (setup) + camera scan-back (record)
+    seed_part = ""
     if setup:
-        tools = f"""
-<div class="card"><h2>Seed &amp; sheets</h2>
+        seed_part = f"""
 <div class="row">
   <form class="inline" method="post" action="/meet-events/{meid}/seed">
-    <input type="hidden" name="mode" value="seeded"><button type="submit">Seed by mark</button></form>
+    <input type="hidden" name="mode" value="seeded"><button type="submit">Seed by season best</button></form>
   <form class="inline" method="post" action="/meet-events/{meid}/seed">
     <input type="hidden" name="mode" value="random"><button class="ghost" type="submit">Random draw</button></form>
   <a class="btn ghost" href="/meet-events/{meid}/heatsheet.pdf">Heat sheet (PDF)</a>
-</div>
-<div style="margin-top:1rem"><label>AI scan-back: photograph a filled heat sheet</label>
-  <input type="file" id="scanf" accept="image/*">
+</div>"""
+    scan_part = ""
+    if record:
+        scan_part = f"""
+<div style="margin-top:1rem"><label>📷 Scan a filled sheet — reads the handwritten marks with AI</label>
+  <input type="file" id="scanf" accept="image/*" capture="environment">
   <button type="button" onclick="scan()" style="margin-top:.5rem">Read marks</button>
   <div id="scanout"></div>
-</div>
-</div>
+</div>"""
+    tools = ""
+    if seed_part or scan_part:
+        tools = f"""
+<div class="card"><h2>Seed, sheets &amp; scan</h2>{seed_part}{scan_part}</div>
 <script>
 async function scan(){{
   const f=document.getElementById('scanf').files[0];
-  if(!f){{alert('Choose a photo');return;}}
+  if(!f){{alert('Take or choose a photo');return;}}
   document.getElementById('scanout').innerHTML='<p class="muted">Reading…</p>';
   const fd=new FormData(); fd.append('image',f);
   const r=await fetch('/meet-events/{meid}/scan',{{method:'POST',body:fd}});
   const j=await r.json();
   if(!r.ok){{document.getElementById('scanout').innerHTML='<p class="msg err">'+esc(j.error||'Failed')+'</p>';return;}}
-  let h='<table><tr><th>Bib</th><th>Name</th><th>Mark (read)</th></tr>';
-  for(const m of j.marks) h+='<tr><td>'+esc(m.bib??'')+'</td><td>'+esc(m.name??'')+'</td><td><b>'+esc(m.mark??'')+'</b></td></tr>';
-  h+='</table><p class="muted">Review, then type these into the marks grid above and Save.</p>';
+  if(!j.marks||!j.marks.length){{document.getElementById('scanout').innerHTML='<p class="msg err">No marks read.</p>';return;}}
+  let h='<p class="muted">Review &amp; edit, then post. Marks match to athletes by bib.</p>'
+    +'<table><tr><th>Bib</th><th>Mark</th></tr>';
+  j.marks.forEach((m,i)=>{{ h+='<tr><td><input id="sb'+i+'" value="'+esc(m.bib??'')+'" style="width:70px"></td>'
+    +'<td><input id="sm'+i+'" value="'+esc(m.mark??'')+'" style="width:120px"></td></tr>'; }});
+  h+='</table><button type="button" onclick="postScan('+j.marks.length+')" style="margin-top:.6rem">Post marks</button>';
   document.getElementById('scanout').innerHTML=h;
+}}
+async function postScan(n){{
+  const marks=[];
+  for(let i=0;i<n;i++){{ const b=document.getElementById('sb'+i).value.trim();
+    const mk=document.getElementById('sm'+i).value.trim();
+    if(b&&mk) marks.push({{bib:b,mark:mk}}); }}
+  try{{ const j=await jpost('/meet-events/{meid}/scan/post',{{marks}});
+    alert('Posted '+j.applied+' marks'+(j.unmatched&&j.unmatched.length?'; unmatched bibs: '+j.unmatched.join(', '):''));
+    location.reload(); }}
+  catch(e){{ alert(e.message); }}
 }}
 </script>"""
 
-    body = (f'<p class="muted"><a href="/meets/{me["meet_id"]}/events">← Events</a></p>'
+    body = (f'<p class="muted"><a href="/meets/{me["meet_id"]}/meet-day">← Meet day</a></p>'
             f'<h1>{escape(ename)}</h1>{err}{marks_form}{add}{tools}')
     return shell(g.principal, body, active="meets")
 
@@ -1089,6 +1107,54 @@ def scan_back(meid):
     return jsonify(marks=marks)
 
 
+@bp.post("/meet-events/<int:meid>/scan/post")
+@login_required
+def scan_post(meid):
+    """Apply reviewed scan marks: match each bib to its entry, write the mark, re-rank."""
+    me = load_meet_event(meid)
+    m = load_meet(me["meet_id"])
+    if not can_record_meet(m):
+        abort(403)
+    marks = (request.get_json(silent=True) or {}).get("marks", [])
+    conn = db.connect()
+    meids = _combine_meids(conn, me)
+    qm = ",".join("?" * len(meids))
+    # bib -> entry (individual entries in this event/group)
+    entrymap = {}
+    for r in conn.execute(
+        f"SELECT en.id AS eid, a.bib, a.name, s.name AS sname FROM entries en "
+        f"JOIN athletes a ON a.id=en.runner_id JOIN schools s ON s.id=a.school_id "
+        f"WHERE en.meet_event_id IN ({qm}) AND a.bib IS NOT NULL", tuple(meids)).fetchall():
+        entrymap[r["bib"]] = r
+    applied, unmatched = 0, []
+    for mk in marks:
+        try:
+            bib = int(str(mk.get("bib")).strip())
+        except (TypeError, ValueError):
+            continue
+        row = entrymap.get(bib)
+        if not row:
+            unmatched.append(bib)
+            continue
+        raw = str(mk.get("mark", "")).strip()
+        if me["unit"] == "seconds":
+            sec, met = parse_time(raw), None
+        else:
+            sec, met = None, parse_metric(raw)
+        if sec is None and met is None:
+            continue
+        conn.execute("DELETE FROM results WHERE entry_id=?", (row["eid"],))
+        conn.execute(
+            "INSERT INTO results (entry_id, mark_seconds, mark_metric, dq, snap_name, snap_bib, snap_school) "
+            "VALUES (?,?,?,0,?,?,?)", (row["eid"], sec, met, row["name"], bib, row["sname"]))
+        applied += 1
+    for m2 in meids:
+        _recompute_places(conn, load_meet_event(m2))
+    conn.commit()
+    conn.close()
+    return jsonify(applied=applied, unmatched=unmatched)
+
+
 # ------------------------------- heat sheet PDF -------------------------------
 @bp.get("/meet-events/<int:meid>/heatsheet.pdf")
 @login_required
@@ -1108,7 +1174,9 @@ def heatsheet_pdf(meid):
     conn.close()
     div = {"M": "Boys", "F": "Girls"}.get(me["gender"], "Open")
     title = f'{m["name"]} — {me["ename"]} ({div})'
-    pdf = pdfs.heat_sheet_pdf(title, rows, laned=bool(me["laned"]))
+    kind = ("hj" if _is_hj(me) else "field") if me["kind"] == "field" else "track"
+    pdf = pdfs.heat_sheet_pdf(title, rows, laned=bool(me["laned"]),
+                              token=f"XCTSHEET E{meid}", kind=kind)
     return Response(pdf, mimetype="application/pdf",
                     headers={"Content-Disposition": f'inline; filename="heatsheet.pdf"'})
 
@@ -1122,7 +1190,7 @@ def meet_heatsheets(mid):
         abort(403)
     conn = db.connect()
     mes = conn.execute(
-        "SELECT me.id, me.gender, me.grade, e.name AS ename, e.laned FROM meet_events me "
+        "SELECT me.id, me.gender, me.grade, e.name AS ename, e.laned, e.kind FROM meet_events me "
         "JOIN events e ON e.id=me.event_id WHERE me.meet_id=? ORDER BY e.sort, me.gender", (mid,)).fetchall()
     sections = []
     for me in mes:
@@ -1135,7 +1203,8 @@ def meet_heatsheets(mid):
                          "name": name, "school": school})
         div = {"M": "Boys", "F": "Girls"}.get(me["gender"], "Open")
         title = f'{me["ename"]} — {div}' + (f' G{me["grade"]}' if me["grade"] else "")
-        sections.append((title, rows, bool(me["laned"])))
+        kind = ("hj" if me["ename"] == "High Jump" else "field") if me["kind"] == "field" else "track"
+        sections.append((title, rows, bool(me["laned"]), f"XCTSHEET E{me['id']}", kind))
     conn.close()
     pdf = pdfs.multi_heat_sheet_pdf(sections)
     return Response(pdf, mimetype="application/pdf",

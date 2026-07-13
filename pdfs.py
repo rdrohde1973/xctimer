@@ -64,8 +64,30 @@ def bib_stickers_pdf(school_name, athletes, *, template="5160", qr_prefix="", lo
     return buf.read()
 
 
-def _draw_heat_section(c, ph, pw, left, title, rows, laned):
-    """Draw one event's heats (one heat/section per page) onto canvas `c`."""
+_HOWTO = {
+    "track": "HOW TO RECORD: write each athlete's finish TIME (e.g. 1:02.34), then photograph this sheet on the Scan tab.",
+    "field": "HOW TO RECORD: write each of the 3 attempts (F = foul); the best legal mark scores. Then scan this sheet.",
+    "hj": "HOW TO RECORD: write bar heights across the top; per bar mark O=clear, X=miss, P=pass. Then scan this sheet.",
+}
+
+
+def _draw_token(c, ph, pw, token):
+    """QR + token text in the top-right corner (lets the scanner auto-ID the sheet)."""
+    if not token:
+        return
+    try:
+        c.drawImage(_qr_image(token), pw - 1.15 * inch, ph - 1.2 * inch, 0.72 * inch, 0.72 * inch,
+                    preserveAspectRatio=True, mask="auto")
+    except Exception:  # noqa: BLE001
+        pass
+    c.setFont("Helvetica", 7)
+    c.setFillGray(0.45)
+    c.drawRightString(pw - 0.42 * inch, ph - 1.33 * inch, token)
+    c.setFillGray(0)
+
+
+def _draw_heat_section(c, ph, pw, left, title, rows, laned, token=None):
+    """Draw one running event's heats (one heat/section per page) onto canvas `c`."""
     from collections import OrderedDict
     groups = OrderedDict()
     for r in rows:
@@ -76,14 +98,20 @@ def _draw_heat_section(c, ph, pw, left, title, rows, laned):
     for heat, items in groups.items():
         y = ph - 0.9 * inch
         c.setFont("Helvetica-Bold", 16)
-        c.drawString(left, y, title[:70])
-        y -= 0.3 * inch
+        c.drawString(left, y, title[:60])
+        _draw_token(c, ph, pw, token)
+        y -= 0.28 * inch
         c.setFont("Helvetica-Bold", 13)
         c.drawString(left, y, f"{unit} {heat}")
-        y -= 0.32 * inch
+        y -= 0.24 * inch
+        c.setFont("Helvetica", 8)
+        c.setFillGray(0.4)
+        c.drawString(left, y, _HOWTO["track"])
+        c.setFillGray(0)
+        y -= 0.26 * inch
         c.setFont("Helvetica-Bold", 9)
         c.setFillGray(0.35)
-        cols = ([("LANE", 0)] if laned else [("", 0)]) + \
+        cols = ([("LANE", 0)] if laned else [("ORDER", 0)]) + \
                [("BIB", 0.7 * inch), ("NAME", 1.4 * inch), ("SCHOOL", 3.7 * inch),
                 ("MARK / TIME", 5.6 * inch)]
         for label, dx in cols:
@@ -99,37 +127,97 @@ def _draw_heat_section(c, ph, pw, left, title, rows, laned):
                 c.showPage()
                 y = ph - 0.9 * inch
                 c.setFont("Helvetica", 11)
-            if laned:
-                c.drawString(left, y, str(r["lane"] or ""))
+            c.drawString(left, y, str(r["lane"] or ""))
             c.drawString(left + 0.7 * inch, y, "" if r["bib"] is None else str(r["bib"]))
             c.drawString(left + 1.4 * inch, y, (r["name"] or "")[:26])
             c.drawString(left + 3.7 * inch, y, (r["school"] or "")[:22])
             c.line(left + 5.6 * inch, y - 0.02 * inch, pw - 0.6 * inch, y - 0.02 * inch)
             y -= 0.34 * inch
+        # blank rows for last-minute additions
+        for _ in range(2):
+            c.line(left + 5.6 * inch, y - 0.02 * inch, pw - 0.6 * inch, y - 0.02 * inch)
+            y -= 0.34 * inch
         c.showPage()
 
 
-def heat_sheet_pdf(title, rows, *, laned=True):
-    """Meet-day packet for one event: entries grouped by heat/section, blank mark column."""
+def _draw_field_section(c, ph, pw, left, title, rows, hj, token=None):
+    """One page for a field event: LJ/SP 3-attempt boxes, or HJ make/miss bar grid."""
+    y = ph - 0.9 * inch
+    c.setFont("Helvetica-Bold", 16)
+    c.drawString(left, y, title[:60])
+    _draw_token(c, ph, pw, token)
+    y -= 0.28 * inch
+    c.setFont("Helvetica", 8)
+    c.setFillGray(0.4)
+    c.drawString(left, y, _HOWTO["hj"] if hj else _HOWTO["field"])
+    c.setFillGray(0)
+    y -= 0.3 * inch
+    c.setFont("Helvetica-Bold", 9)
+    c.setFillGray(0.35)
+    c.drawString(left, y, "BIB")
+    c.drawString(left + 0.7 * inch, y, "NAME")
+    c.drawString(left + 3.0 * inch, y, "SCHOOL")
+    if hj:
+        for i in range(7):
+            c.drawString(left + 4.5 * inch + i * 0.42 * inch, y, "____")
+    else:
+        for i, lbl in enumerate(("ATT 1", "ATT 2", "ATT 3")):
+            c.drawString(left + 4.5 * inch + i * 0.85 * inch, y, lbl)
+    c.setFillGray(0)
+    y -= 0.08 * inch
+    c.line(left, y, pw - 0.5 * inch, y)
+    y -= 0.3 * inch
+    display = list(rows) + [None] * 3  # blank rows for additions
+    c.setFont("Helvetica", 11)
+    for r in display:
+        if y < 0.9 * inch:
+            c.showPage()
+            y = ph - 0.9 * inch
+            c.setFont("Helvetica", 11)
+        if r:
+            c.drawString(left, y, "" if r["bib"] is None else str(r["bib"]))
+            c.drawString(left + 0.7 * inch, y, (r["name"] or "")[:24])
+            c.drawString(left + 3.0 * inch, y, (r["school"] or "")[:20])
+        if hj:
+            for i in range(7):
+                c.rect(left + 4.5 * inch + i * 0.42 * inch, y - 0.05 * inch, 0.36 * inch, 0.26 * inch)
+        else:
+            for i in range(3):
+                c.rect(left + 4.5 * inch + i * 0.85 * inch, y - 0.05 * inch, 0.7 * inch, 0.26 * inch)
+        y -= 0.42 * inch
+    c.showPage()
+
+
+def heat_sheet_pdf(title, rows, *, laned=True, token=None, kind="track"):
+    """Meet-day packet for one event. kind: 'track' | 'field' | 'hj'."""
     buf = io.BytesIO()
     c = pdfcanvas.Canvas(buf, pagesize=letter)
     pw, ph = letter
-    _draw_heat_section(c, ph, pw, 0.75 * inch, title, rows, laned)
+    if kind in ("field", "hj"):
+        _draw_field_section(c, ph, pw, 0.75 * inch, title, rows, kind == "hj", token)
+    else:
+        _draw_heat_section(c, ph, pw, 0.75 * inch, title, rows, laned, token)
     c.save()
     buf.seek(0)
     return buf.read()
 
 
 def multi_heat_sheet_pdf(sections):
-    """Meet-wide heat sheets. `sections` = list of (title, rows, laned)."""
+    """Meet-wide sheets. `sections` = list of (title, rows, laned, token, kind)."""
     buf = io.BytesIO()
     c = pdfcanvas.Canvas(buf, pagesize=letter)
     pw, ph = letter
     drew = False
-    for title, rows, laned in sections:
+    for sec in sections:
+        title, rows, laned = sec[0], sec[1], sec[2]
+        token = sec[3] if len(sec) > 3 else None
+        kind = sec[4] if len(sec) > 4 else "track"
         if not rows:
             continue
-        _draw_heat_section(c, ph, pw, 0.75 * inch, title, rows, laned)
+        if kind in ("field", "hj"):
+            _draw_field_section(c, ph, pw, 0.75 * inch, title, rows, kind == "hj", token)
+        else:
+            _draw_heat_section(c, ph, pw, 0.75 * inch, title, rows, laned, token)
         drew = True
     if not drew:
         c.showPage()
