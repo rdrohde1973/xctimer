@@ -904,9 +904,9 @@ def bibs_pdf(sid):
 def stickers_pdf(sid):
     s = _load_school_or_403(sid)
     template = request.args.get("template", "5160")
-    prefix = f'{os.environ.get("XC_PUBLIC_URL", "")}/bibcheck?bib='
+    # QR encodes just the bib number (no URL).
     pdf = pdfs.bib_stickers_pdf(s["name"], _roster_rows(sid), template=template,
-                                qr_prefix=prefix, logo_path=s["logo_path"])
+                                qr_prefix="", logo_path=s["logo_path"])
     return Response(pdf, mimetype="application/pdf",
                     headers={"Content-Disposition": f'inline; filename="{s["name"]}-stickers.pdf"'})
 

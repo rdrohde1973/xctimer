@@ -512,10 +512,10 @@ def meet_stickers(mid):
     m = load_meet(mid)
     if not can_view_meet(m):
         abort(403)
-    prefix = f'{os.environ.get("XC_PUBLIC_URL", "")}/bibcheck?bib='
     groups = _sticker_groups(mid, with_events=(m["sport"] == "track"))
+    # QR encodes just the bib number (no URL).
     pdf = pdfs.meet_stickers_pdf(groups,
-                                 template=request.args.get("template", "5160"), qr_prefix=prefix)
+                                 template=request.args.get("template", "5160"), qr_prefix="")
     return Response(pdf, mimetype="application/pdf",
                     headers={"Content-Disposition": 'inline; filename="meet-stickers.pdf"'})
 
