@@ -131,6 +131,35 @@ def waiver_template_from_text(raw_text, *, max_chars=20000):
             "body": str(obj.get("body") or "").strip()}
 
 
+_FIELD_SYS = (
+    "You read a photographed Long Jump / Shot Put sheet. Each row has a BIB and up to THREE "
+    "attempt columns (A1, A2, A3). Each attempt is a mark in feet-inches exactly as written "
+    "(e.g. 15-06, 5-03, 18-11.5), or 'F' for a foul/scratch, or blank if not taken. "
+    'Return ONLY JSON: {"sheet_code": "<XCTSHEET code top-right, or null>", '
+    '"rows": [{"bib": <int or null>, "name": "<string or null>", '
+    '"attempts": ["<A1>", "<A2>", "<A3>"]}]}. Keep every mark EXACTLY as written — do not '
+    "convert, round, or pick a best. Use 'F' for fouls and \"\" for blank. Skip fully empty rows."
+)
+
+
+def vision_read_field(image_bytes, media_type="image/jpeg"):
+    """Read a field sheet's code + each athlete's THREE attempts (verbatim strings)."""
+    out = claude_vision(_FIELD_SYS, "Read this field-event sheet's code and all attempts.",
+                        image_bytes, media_type=media_type, max_tokens=4000)
+    obj = _find_json_object(out)
+    rows = []
+    for r in (obj.get("rows", []) if isinstance(obj, dict) else []):
+        if not isinstance(r, dict):
+            continue
+        atts = [("" if a is None else str(a).strip()) for a in (r.get("attempts") or [])][:3]
+        atts += [""] * (3 - len(atts))
+        if r.get("bib") is None and not any(atts):
+            continue
+        rows.append({"bib": r.get("bib"), "name": r.get("name"), "attempts": atts})
+    code = obj.get("sheet_code") if isinstance(obj, dict) else None
+    return {"sheet_code": (str(code).strip() if code else None), "rows": rows}
+
+
 def _find_json_object(s):
     """Locate and parse the first JSON object from a model response (handles fences)."""
     s = (s or "").strip()

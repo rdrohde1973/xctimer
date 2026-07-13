@@ -371,19 +371,31 @@ async function doScan(){{
   const r=await fetch('/track/scan',{{method:'POST',body:fd}});
   const j=await r.json();
   if(!r.ok){{document.getElementById('scanout').innerHTML='<p class="msg err">'+esc(j.error||'Could not read the sheet')+'</p>';return;}}
-  SCAN_MEID=j.meid;
+  SCAN_MEID=j.meid; window.SCAN_FIELD=!!j.field;
   if(!(j.marks||[]).length){{document.getElementById('scanout').innerHTML='<p class="msg err">Read <b>'+esc(j.label)+'</b> but found no marks — retake the photo.</p>';return;}}
-  let h='<p><b>Detected:</b> '+esc(j.label)+'</p><p class="muted">Review, then post.</p><table><tr><th>Bib</th><th>Mark</th></tr>';
-  j.marks.forEach(function(m,i){{h+='<tr><td><input id="sb'+i+'" value="'+esc(m.bib==null?'':m.bib)+'" style="width:70px"></td>'
-    +'<td><input id="sm'+i+'" value="'+esc(m.mark==null?'':m.mark)+'" style="width:120px"></td></tr>';}});
+  let h='<p><b>Detected:</b> '+esc(j.label)+'</p><p class="muted">Review, then post.</p><table>';
+  if(SCAN_FIELD){{
+    h+='<tr><th>Bib</th><th>A1</th><th>A2</th><th>A3</th></tr>';
+    j.marks.forEach(function(m,i){{ var a=m.attempts||['','',''];
+      h+='<tr><td><input id="sb'+i+'" value="'+esc(m.bib==null?'':m.bib)+'" style="width:56px"></td>'
+        +[0,1,2].map(function(k){{return '<td><input id="sa'+i+'_'+k+'" value="'+esc(a[k]||'')+'" style="width:62px"></td>';}}).join('')+'</tr>';}});
+  }} else {{
+    h+='<tr><th>Bib</th><th>Mark</th></tr>';
+    j.marks.forEach(function(m,i){{h+='<tr><td><input id="sb'+i+'" value="'+esc(m.bib==null?'':m.bib)+'" style="width:70px"></td>'
+      +'<td><input id="sm'+i+'" value="'+esc(m.mark==null?'':m.mark)+'" style="width:120px"></td></tr>';}});
+  }}
   h+='</table><button onclick="postScan('+j.marks.length+')" style="margin-top:.6rem">Post to '+esc(j.label)+'</button>';
   document.getElementById('scanout').innerHTML=h;
 }}
 async function postScan(n){{
   if(!SCAN_MEID)return;
   const marks=[];
-  for(let i=0;i<n;i++){{const b=document.getElementById('sb'+i).value.trim();const mk=document.getElementById('sm'+i).value.trim();if(b&&mk)marks.push({{bib:b,mark:mk}});}}
-  try{{const j=await jpost('/meet-events/'+SCAN_MEID+'/scan/post',{{marks}});alert('Posted '+j.applied+' marks'+(j.unmatched&&j.unmatched.length?'; unmatched: '+j.unmatched.join(', '):''));}}
+  for(let i=0;i<n;i++){{const b=document.getElementById('sb'+i).value.trim();if(!b)continue;
+    if(window.SCAN_FIELD){{var a=[0,1,2].map(function(k){{return document.getElementById('sa'+i+'_'+k).value.trim();}});
+      if(a.some(function(x){{return x;}})) marks.push({{bib:b,attempts:a}});}}
+    else {{const mk=document.getElementById('sm'+i).value.trim();if(mk)marks.push({{bib:b,mark:mk}});}}
+  }}
+  try{{const j=await jpost('/meet-events/'+SCAN_MEID+'/scan/post',{{marks}});alert('Posted '+j.applied+' marks'+(j.unmatched&&j.unmatched.length?'; unmatched: '+j.unmatched.join(', '):''));location.reload();}}
   catch(e){{alert(e.message);}}
 }}
 </script>"""

@@ -1028,17 +1028,16 @@ def save_marks(meid):
             mark_seconds = parse_time(request.form.get(f"mark_{eid}"))
         elif hj:
             mark_metric = parse_metric(request.form.get(f"mark_{eid}"))
-        else:  # LJ / SP: three attempts in feet-inches, best legal
-            atts = [_parse_ht(request.form.get(f"a{n}_{eid}")) for n in (1, 2, 3)]
-            attempts = atts
-            legal = [x for x in atts if x is not None]
+        else:  # LJ / SP: three attempts kept verbatim (incl 'F' fouls), best = max legal
+            attempts = [(request.form.get(f"a{n}_{eid}") or "").strip() for n in (1, 2, 3)]
+            legal = [v for v in (_parse_ht(x) for x in attempts) if v is not None]
             mark_metric = max(legal) if legal else None
         name, bib, school = _entry_label(conn, e)
         conn.execute("DELETE FROM results WHERE entry_id=?", (eid,))
         conn.execute(
             "INSERT INTO results (entry_id, mark_seconds, mark_metric, attempts_json, dq, "
             "snap_name, snap_bib, snap_school) VALUES (?,?,?,?,?,?,?,?)",
-            (eid, mark_seconds, mark_metric, json.dumps(attempts) if attempts else None,
+            (eid, mark_seconds, mark_metric, json.dumps(attempts) if (attempts and any(attempts)) else None,
              dq, name, bib, school))
     # Rank within each meet-event so combined races still score by grade/gender.
     for m2 in meids:
@@ -1255,9 +1254,12 @@ def event_page(meid):
         if hj:
             v = _fmt_ht(r["mark_metric"]) if r and r["mark_metric"] is not None else ""
             return f'<input name="mark_{e["id"]}" value="{v}" placeholder="5-02" style="width:90px">'
-        atts = json.loads(r["attempts_json"]) if r and r["attempts_json"] else [None, None, None]
+        atts = json.loads(r["attempts_json"]) if r and r["attempts_json"] else ["", "", ""]
+
+        def _av(x):
+            return _fmt_ht(x) if isinstance(x, (int, float)) else (x or "")   # old data was numeric
         cells = "".join(
-            f'<input name="a{n}_{e["id"]}" value="{_fmt_ht(atts[n-1]) if n-1 < len(atts) and atts[n-1] is not None else ""}" '
+            f'<input name="a{n}_{e["id"]}" value="{escape(_av(atts[n-1]) if n-1 < len(atts) else "")}" '
             f'placeholder="A{n} · 15-06" style="width:82px">' for n in (1, 2, 3))
         return cells
 
@@ -1358,18 +1360,28 @@ async function scan(){{
   const j=await r.json();
   if(!r.ok){{document.getElementById('scanout').innerHTML='<p class="msg err">'+esc(j.error||'Failed')+'</p>';return;}}
   if(!j.marks||!j.marks.length){{document.getElementById('scanout').innerHTML='<p class="msg err">No marks read.</p>';return;}}
-  let h='<p class="muted">Review &amp; edit, then post. Marks match to athletes by bib.</p>'
-    +'<table><tr><th>Bib</th><th>Mark</th></tr>';
-  j.marks.forEach((m,i)=>{{ h+='<tr><td><input id="sb'+i+'" value="'+esc(m.bib??'')+'" style="width:70px"></td>'
-    +'<td><input id="sm'+i+'" value="'+esc(m.mark??'')+'" style="width:120px"></td></tr>'; }});
+  window.SCANFIELD=!!j.field;
+  let h='<p class="muted">Review &amp; edit, then post. Matches to athletes by bib.</p><table>';
+  if(SCANFIELD){{
+    h+='<tr><th>Bib</th><th>A1</th><th>A2</th><th>A3</th></tr>';
+    j.marks.forEach((m,i)=>{{ const a=m.attempts||['','',''];
+      h+='<tr><td><input id="sb'+i+'" value="'+esc(m.bib==null?'':m.bib)+'" style="width:64px"></td>'
+        +[0,1,2].map(k=>'<td><input id="sa'+i+'_'+k+'" value="'+esc(a[k]||'')+'" style="width:74px"></td>').join('')+'</tr>'; }});
+  }} else {{
+    h+='<tr><th>Bib</th><th>Mark</th></tr>';
+    j.marks.forEach((m,i)=>{{ h+='<tr><td><input id="sb'+i+'" value="'+esc(m.bib==null?'':m.bib)+'" style="width:70px"></td>'
+      +'<td><input id="sm'+i+'" value="'+esc(m.mark==null?'':m.mark)+'" style="width:120px"></td></tr>'; }});
+  }}
   h+='</table><button type="button" onclick="postScan('+j.marks.length+')" style="margin-top:.6rem">Post marks</button>';
   document.getElementById('scanout').innerHTML=h;
 }}
 async function postScan(n){{
   const marks=[];
-  for(let i=0;i<n;i++){{ const b=document.getElementById('sb'+i).value.trim();
-    const mk=document.getElementById('sm'+i).value.trim();
-    if(b&&mk) marks.push({{bib:b,mark:mk}}); }}
+  for(let i=0;i<n;i++){{ const b=document.getElementById('sb'+i).value.trim(); if(!b)continue;
+    if(SCANFIELD){{ const a=[0,1,2].map(k=>document.getElementById('sa'+i+'_'+k).value.trim());
+      if(a.some(x=>x)) marks.push({{bib:b,attempts:a}}); }}
+    else {{ const mk=document.getElementById('sm'+i).value.trim(); if(mk) marks.push({{bib:b,mark:mk}}); }}
+  }}
   try{{ const j=await jpost('/meet-events/{meid}/scan/post',{{marks}});
     alert('Posted '+j.applied+' marks'+(j.unmatched&&j.unmatched.length?'; unmatched bibs: '+j.unmatched.join(', '):''));
     location.reload(); }}
@@ -1398,8 +1410,9 @@ def scan_auto():
     if not f:
         return jsonify(error="No image"), 400
     media = f.mimetype or "image/jpeg"
+    data = f.read()
     try:
-        res = ai.vision_read_sheet(f.read(), media_type=media)
+        res = ai.vision_read_sheet(data, media_type=media)
     except Exception as e:  # noqa: BLE001
         return jsonify(error=f"Vision read failed: {e}"), 400
     code = res.get("sheet_code") or ""
@@ -1420,7 +1433,16 @@ def scan_auto():
     gword = {"M": "Boys", "F": "Girls"}.get(me["gender"], "")
     gr = f'{me["grade"]}th Grade ' if me["grade"] else ""
     label = f'{gr}{gword + " " if gword else ""}{me["ename"]}'.strip()
-    return jsonify(meid=meid, label=label, meet=m["name"], marks=res.get("marks", []))
+    field = me["unit"] == "metric" and not _is_hj(me)   # LJ / SP -> read all 3 attempts
+    if field:
+        try:
+            rows = ai.vision_read_field(data, media_type=media)["rows"]
+        except Exception as e:  # noqa: BLE001
+            return jsonify(error=f"Vision read failed: {e}"), 400
+        marks = [{"bib": r["bib"], "name": r["name"], "attempts": r["attempts"]} for r in rows]
+    else:
+        marks = res.get("marks", [])
+    return jsonify(meid=meid, label=label, meet=m["name"], marks=marks, field=field)
 
 
 @bp.post("/meet-events/<int:meid>/scan")
@@ -1434,11 +1456,16 @@ def scan_back(meid):
     if not f:
         return jsonify(error="No image"), 400
     media = f.mimetype or "image/jpeg"
+    field = me["unit"] == "metric" and not _is_hj(me)   # LJ / SP -> 3 attempts each
     try:
-        marks = ai.vision_read_marks(f.read(), media_type=media)
+        if field:
+            rows = ai.vision_read_field(f.read(), media_type=media)["rows"]
+            marks = [{"bib": r["bib"], "name": r["name"], "attempts": r["attempts"]} for r in rows]
+        else:
+            marks = ai.vision_read_marks(f.read(), media_type=media)
     except Exception as e:  # noqa: BLE001
         return jsonify(error=f"Vision read failed: {e}"), 400
-    return jsonify(marks=marks)
+    return jsonify(marks=marks, field=field)
 
 
 @bp.post("/meet-events/<int:meid>/scan/post")
@@ -1470,21 +1497,32 @@ def scan_post(meid):
         if not row:
             unmatched.append(bib)
             continue
+        if "attempts" in mk and me["unit"] != "seconds":   # LJ / SP: keep all 3, verbatim
+            atts = [str(a or "").strip() for a in (mk.get("attempts") or [])][:3]
+            atts += [""] * (3 - len(atts))
+            legal = [v for v in (_parse_ht(a) for a in atts) if v is not None]
+            if not any(atts):
+                continue
+            best = max(legal) if legal else None
+            conn.execute("DELETE FROM results WHERE entry_id=?", (row["eid"],))
+            conn.execute(
+                "INSERT INTO results (entry_id, mark_metric, attempts_json, dq, "
+                "snap_name, snap_bib, snap_school) VALUES (?,?,?,0,?,?,?)",
+                (row["eid"], best, json.dumps(atts), row["name"], bib, row["sname"]))
+            applied += 1
+            continue
         raw = str(mk.get("mark", "")).strip()
-        atts = None
         if me["unit"] == "seconds":
             sec, met = parse_time(raw), None
         else:
-            sec, met = None, _parse_ht(raw)   # field marks are feet-inches
-            if met is not None and not _is_hj(me):
-                atts = [met, None, None]      # show the scanned mark in the A1 box
+            sec, met = None, _parse_ht(raw)   # field, single mark
         if sec is None and met is None:
             continue
         conn.execute("DELETE FROM results WHERE entry_id=?", (row["eid"],))
         conn.execute(
-            "INSERT INTO results (entry_id, mark_seconds, mark_metric, attempts_json, dq, "
-            "snap_name, snap_bib, snap_school) VALUES (?,?,?,?,0,?,?,?)",
-            (row["eid"], sec, met, json.dumps(atts) if atts else None, row["name"], bib, row["sname"]))
+            "INSERT INTO results (entry_id, mark_seconds, mark_metric, dq, "
+            "snap_name, snap_bib, snap_school) VALUES (?,?,?,0,?,?,?)",
+            (row["eid"], sec, met, row["name"], bib, row["sname"]))
         applied += 1
     for m2 in meids:
         _recompute_places(conn, load_meet_event(m2))
@@ -1713,8 +1751,9 @@ def build_results(mid):
                 mark = _fmt_ht(r["mark_metric"])
                 if me["ename"] != "High Jump" and r["attempts_json"]:
                     try:
-                        atts = ", ".join(_fmt_ht(x) for x in json.loads(r["attempts_json"])
-                                         if x is not None)
+                        arr = json.loads(r["attempts_json"])
+                        atts = ", ".join((_fmt_ht(x) if isinstance(x, (int, float)) else str(x))
+                                         for x in arr if x not in (None, ""))
                     except (ValueError, TypeError):
                         atts = ""
             items.append({"place": r["place"], "mark": mark, "attempts": atts,
