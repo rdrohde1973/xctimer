@@ -145,11 +145,22 @@ def _docx_text(data):
 _ROSTER_SYS = (
     "You extract a cross-country / track team roster from messy text (spreadsheet "
     "dumps, PDFs, exports). Return ONLY a JSON array, no prose. Each element: "
-    '{"name": "First Last", "grade": <int 6-12 or null>, "gender": "M"|"F"|null}. '
+    '{"name": "First Last", "grade": <int 6-12 or null>, "gender": "M"|"F"|null, '
+    '"email": <string or null>, "phone": <string or null>, '
+    '"parent_name": <string or null>, "parent_email": <string or null>, '
+    '"parent_phone": <string or null>, "emergency_name": <string or null>, '
+    '"emergency_phone": <string or null>}. '
+    "Include the contact/parent/emergency fields ONLY when clearly present in the "
+    "source (matching column headers like Email, Phone, Parent/Guardian, "
+    "Emergency Contact); otherwise use null — never invent contact info. "
     "Normalize names to 'First Last' with proper capitalization. Infer gender only "
     "if explicit (a column, or M/F/Boys/Girls). Skip header rows, coaches, blanks, "
     "and totals. If a grade is given as 9th/Fr/Freshman etc., map to the integer."
 )
+
+# Optional contact fields carried through import when the source has them.
+_CONTACT_FIELDS = ("email", "phone", "parent_name", "parent_email",
+                   "parent_phone", "emergency_name", "emergency_phone")
 
 
 def normalize_roster(raw_text, *, max_chars=20000):
@@ -198,7 +209,11 @@ def _parse_json_array(s):
         gender = gender.upper()[0] if isinstance(gender, str) and gender else None
         if gender not in ("M", "F"):
             gender = None
-        clean.append({"name": name, "grade": grade, "gender": gender})
+        row = {"name": name, "grade": grade, "gender": gender}
+        for k in _CONTACT_FIELDS:
+            v = r.get(k)
+            row[k] = str(v).strip() if isinstance(v, (str, int)) and str(v).strip() else None
+        clean.append(row)
     return clean
 
 

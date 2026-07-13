@@ -194,6 +194,38 @@ CREATE TABLE IF NOT EXISTS results (
     snap_bib INTEGER,
     snap_school TEXT
 );
+
+-- District-level waiver templates a district admin writes once and reuses.
+CREATE TABLE IF NOT EXISTS waiver_templates (
+    id INTEGER PRIMARY KEY,
+    district_id INTEGER NOT NULL REFERENCES districts(id),
+    title TEXT NOT NULL,
+    body TEXT NOT NULL,
+    active INTEGER DEFAULT 1,
+    created_at TEXT DEFAULT (datetime('now'))
+);
+
+-- One row per waiver sent to an athlete's parent. The doc text is snapshotted so
+-- the signed record is exactly what was agreed to, even if the template changes.
+CREATE TABLE IF NOT EXISTS athlete_waivers (
+    id INTEGER PRIMARY KEY,
+    athlete_id INTEGER NOT NULL REFERENCES athletes(id),
+    template_id INTEGER REFERENCES waiver_templates(id),
+    token TEXT UNIQUE NOT NULL,
+    status TEXT DEFAULT 'pending',      -- pending | signed | void
+    doc_title TEXT,
+    doc_body TEXT,
+    doc_hash TEXT,
+    sent_to TEXT,
+    signer_name TEXT,
+    signer_relationship TEXT,
+    signer_sig_path TEXT,
+    signed_at TEXT,
+    signed_ip TEXT,
+    signed_ua TEXT,
+    created_by INTEGER,
+    created_at TEXT DEFAULT (datetime('now'))
+);
 """
 
 # Index the scoping/join columns (handoff §6.5) — every query filters by these.
@@ -265,6 +297,11 @@ def migrate(conn):
         conn.execute("ALTER TABLE athletes ADD COLUMN does_track INTEGER DEFAULT 1")
     if "active" not in acols:      # graduated athletes go inactive, never deleted
         conn.execute("ALTER TABLE athletes ADD COLUMN active INTEGER DEFAULT 1")
+    # Contact / parent / emergency / physical fields (importable from the roster file).
+    for col in ("email", "phone", "parent_name", "parent_email", "parent_phone",
+                "emergency_name", "emergency_phone", "physical_date"):
+        if col not in acols:
+            conn.execute(f"ALTER TABLE athletes ADD COLUMN {col} TEXT")
 
     # Meet setup fields ported from the reference apps.
     mcols = _column_names(conn, "meets")

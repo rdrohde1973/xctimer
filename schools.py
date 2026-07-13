@@ -277,7 +277,8 @@ def roster(sid):
             f'<button class="danger" type="submit">✕</button></form>')
         trs.append(
             f'<tr><td>{"" if a["bib"] is None or mode=="anon" else a["bib"]}</td>'
-            f'<td><b><a href="/athletes/{a["id"]}/progress">{escape(nm)}</a></b> 📈</td>'
+            f'<td><b><a href="#" onclick="openCard({a["id"]});return false">{escape(nm)}</a></b> '
+            f'<a href="/athletes/{a["id"]}/progress" title="Progress &amp; stats">📈</a></td>'
             f'<td>{"" if a["grade"] is None else a["grade"]}</td>'
             f'<td>{a["gender"] or ""}</td>'
             f'<td style="text-align:center"><input type="checkbox" style="width:auto" {xc} {dis} '
@@ -328,14 +329,53 @@ def roster(sid):
 </div>
 {filt}
 {table}
-"""
-    if not ro and not grad_view:
-        body += f"""
+<div id="cardModal" class="cardmodal" style="display:none" onclick="if(event.target===this)closeCard()">
+  <div class="cardbox"><button class="cardx" onclick="closeCard()">✕</button>
+  <div id="cardBody"></div></div>
+</div>
+<style>
+.cardmodal{{position:fixed;inset:0;background:rgba(0,0,0,.55);display:flex;
+  align-items:flex-start;justify-content:center;padding:4vh 1rem;z-index:50;overflow:auto}}
+.cardbox{{background:var(--panel);border:1px solid var(--line);border-radius:14px;
+  padding:1.4rem;max-width:520px;width:100%;position:relative}}
+.cardx{{position:absolute;top:.6rem;right:.6rem;background:transparent;color:var(--mut);
+  border:1px solid var(--line);border-radius:8px;padding:.2rem .55rem}}
+.crow{{display:flex;justify-content:space-between;gap:1rem;padding:.4rem 0;border-bottom:1px solid var(--line)}}
+.crow .k{{color:var(--mut);font-size:.82rem}}
+.cbadge{{padding:.12rem .55rem;border-radius:999px;font-size:.75rem}}
+.cbadge.ok{{background:rgba(63,191,127,.18);color:var(--ok)}}
+.cbadge.no{{background:rgba(240,98,91,.16);color:var(--err)}}
+.cbadge.warn{{background:rgba(240,178,75,.16);color:var(--warn)}}
+</style>
 <script>
-async function tog(aid, sport, el){{
-  try{{ await jpost('/athletes/'+aid+'/sports', {{sport, on: el.checked}}); }}
-  catch(e){{ alert(e.message); el.checked = !el.checked; }}
+async function openCard(aid){{
+  const m=document.getElementById('cardModal'), b=document.getElementById('cardBody');
+  b.innerHTML='<p class="muted">Loading…</p>'; m.style.display='flex';
+  try{{ const r=await fetch('/athletes/'+aid+'/card'); b.innerHTML=await r.text(); }}
+  catch(e){{ b.innerHTML='<p class="msg err">Could not load.</p>'; }}
 }}
+function closeCard(){{ document.getElementById('cardModal').style.display='none'; }}
+function editInfo(){{ document.getElementById('cardView').style.display='none';
+  document.getElementById('cardEdit').style.display='block'; }}
+async function saveInfo(aid){{
+  const f={{}}; ['email','phone','parent_name','parent_email','parent_phone',
+    'emergency_name','emergency_phone','physical_date'].forEach(k=>{{
+      const el=document.getElementById('f_'+k); if(el) f[k]=el.value; }});
+  try{{ await jpost('/athletes/'+aid+'/info', f); openCard(aid); }}
+  catch(e){{ alert(e.message); }}
+}}
+async function sendWaiver(aid){{
+  if(!confirm('Email the waiver link to the parent on file?'))return;
+  try{{ const j=await jpost('/athletes/'+aid+'/waiver/send',{{}});
+    alert(j.sent ? ('Waiver link sent to '+j.to) : ('Link created but email is off. Link: '+j.url));
+    openCard(aid); }}
+  catch(e){{ alert(e.message); }}
+}}
+{"" if (ro or grad_view) else '''
+async function tog(aid, sport, el){
+  try{ await jpost('/athletes/'+aid+'/sports', {sport, on: el.checked}); }
+  catch(e){ alert(e.message); el.checked = !el.checked; }
+}'''}
 </script>"""
     if not ro:
         body += f"""
@@ -554,6 +594,131 @@ def delete_athlete(aid):
     return redirect(f"/schools/{a['school_id']}")
 
 
+# ------------------------------- athlete card (popup) -------------------------------
+def _phys_badge(pd):
+    from datetime import date, datetime
+    if not pd:
+        return '<span class="cbadge no">none on file</span>', ""
+    try:
+        d = datetime.strptime(str(pd)[:10], "%Y-%m-%d").date()
+    except ValueError:
+        return '<span class="cbadge warn">on file</span>', str(pd)
+    days = (date.today() - d).days
+    cls = "no" if days > 365 else "ok"
+    lbl = "expired" if days > 365 else "current"
+    return f'<span class="cbadge {cls}">{lbl}</span>', d.isoformat()
+
+
+def _card_fragment(a, w, ro):
+    aid = a["id"]
+    pb, pd = _phys_badge(a["physical_date"])
+    if w and w["status"] == "signed":
+        wb = (f'<span class="cbadge ok">✅ signed</span> '
+              f'<span class="muted">{escape(w["signer_name"] or "")} · '
+              f'{escape((w["signed_at"] or "")[:10])}</span> '
+              f'<a href="/waiver/{w["id"]}/cert.pdf" target="_blank">certificate ↗</a>')
+        btn = "" if ro else f'<button class="ghost" onclick="sendWaiver({aid})">Resend</button>'
+    elif w and w["status"] == "pending":
+        wb = (f'<span class="cbadge warn">⏳ pending</span> '
+              f'<span class="muted">sent {escape((w["created_at"] or "")[:10])} '
+              f'to {escape(w["sent_to"] or "")}</span>')
+        btn = "" if ro else f'<button class="ghost" onclick="sendWaiver({aid})">Resend</button>'
+    else:
+        wb = '<span class="cbadge no">not sent</span>'
+        btn = "" if ro else f'<button onclick="sendWaiver({aid})">Send waiver</button>'
+
+    def row(k, v):
+        return (f'<div class="crow"><span class="k">{k}</span>'
+                f'<span>{escape(v) if v else "—"}</span></div>')
+
+    meta = (f'{"" if a["grade"] is None else "Grade " + str(a["grade"]) + " · "}'
+            f'{a["gender"] or ""}{" · bib " + str(a["bib"]) if a["bib"] else ""}')
+    view = f"""
+<div id="cardView">
+  <h2 style="margin:.1em 0">{escape(a['name'])}</h2>
+  <p class="sub" style="margin:.1em 0 1rem">{escape(a['sname'])} · {escape(meta)}
+     · <a href="/athletes/{aid}/progress">📈 progress</a></p>
+  <div class="crow"><span class="k">Waiver</span><span>{wb} {btn}</span></div>
+  <div class="crow"><span class="k">Physical</span><span>{pb}{" · " + escape(pd) if pd else ""}</span></div>
+  {row("Athlete email", a["email"])}
+  {row("Athlete phone", a["phone"])}
+  {row("Parent / guardian", a["parent_name"])}
+  {row("Parent email", a["parent_email"])}
+  {row("Parent phone", a["parent_phone"])}
+  {row("Emergency contact", a["emergency_name"])}
+  {row("Emergency phone", a["emergency_phone"])}
+  <div class="crow"><span class="k">Medical forms</span>
+     <span class="muted">— coming soon</span></div>
+  {"" if ro else f'<button style="margin-top:1rem" onclick="editInfo()">✏️ Edit info</button>'}
+</div>"""
+    if ro:
+        return view
+
+    def inp(k, label, typ="text"):
+        return (f'<label>{label}</label>'
+                f'<input id="f_{k}" type="{typ}" value="{escape(a[k] or "")}">')
+    edit = f"""
+<div id="cardEdit" style="display:none">
+  <h2 style="margin:.1em 0 1rem">Edit — {escape(a['name'])}</h2>
+  <label>Physical date</label>
+  <input id="f_physical_date" type="date" value="{escape((a['physical_date'] or '')[:10])}">
+  {inp("email", "Athlete email", "email")}
+  {inp("phone", "Athlete phone", "tel")}
+  {inp("parent_name", "Parent / guardian name")}
+  {inp("parent_email", "Parent email", "email")}
+  {inp("parent_phone", "Parent phone", "tel")}
+  {inp("emergency_name", "Emergency contact name")}
+  {inp("emergency_phone", "Emergency phone", "tel")}
+  <div style="margin-top:1rem;display:flex;gap:.5rem">
+    <button onclick="saveInfo({aid})">Save</button>
+    <button class="ghost" onclick="openCard({aid})">Cancel</button>
+  </div>
+</div>"""
+    return view + edit
+
+
+@bp.get("/athletes/<int:aid>/card")
+@login_required
+def athlete_card(aid):
+    conn = db.connect()
+    a = conn.execute("SELECT a.*, s.name AS sname FROM athletes a JOIN schools s ON s.id=a.school_id "
+                     "WHERE a.id=?", (aid,)).fetchone()
+    s = conn.execute("SELECT * FROM schools WHERE id=?", (a["school_id"],)).fetchone() if a else None
+    if not a:
+        conn.close()
+        abort(404)
+    if not _can_access_school(s):
+        conn.close()
+        abort(403)
+    w = conn.execute("SELECT * FROM athlete_waivers WHERE athlete_id=? ORDER BY id DESC LIMIT 1",
+                     (aid,)).fetchone()
+    conn.close()
+    return _card_fragment(a, w, g.principal.is_demo)
+
+
+@bp.post("/athletes/<int:aid>/info")
+@login_required
+def athlete_info(aid):
+    conn = db.connect()
+    a = conn.execute("SELECT * FROM athletes WHERE id=?", (aid,)).fetchone()
+    s = conn.execute("SELECT * FROM schools WHERE id=?", (a["school_id"],)).fetchone() if a else None
+    conn.close()
+    if not a:
+        abort(404)
+    if not _can_access_school(s) or g.principal.is_demo:
+        abort(403)
+    d = request.get_json(silent=True) or {}
+    fields = ("email", "phone", "parent_name", "parent_email", "parent_phone",
+              "emergency_name", "emergency_phone", "physical_date")
+    vals = [(str(d.get(k)).strip() or None) if d.get(k) is not None else None for k in fields]
+    conn = db.connect()
+    conn.execute(f"UPDATE athletes SET {', '.join(k + '=?' for k in fields)} WHERE id=?",
+                 (*vals, aid))
+    conn.commit()
+    conn.close()
+    return jsonify(ok=True)
+
+
 # ------------------------------- import -------------------------------
 @bp.post("/schools/<int:sid>/import/parse")
 @login_required
@@ -601,10 +766,15 @@ def import_commit(sid):
         gender = r.get("gender")
         gender = gender if gender in ("M", "F") else None
         bib = _next_bib(conn, s)
+        cf = {k: (str(r.get(k)).strip() if r.get(k) else None) for k in
+              ("email", "phone", "parent_name", "parent_email", "parent_phone",
+               "emergency_name", "emergency_phone")}
         conn.execute(
-            "INSERT INTO athletes (school_id, bib, name, grade, gender, does_xc, does_track) "
-            "VALUES (?,?,?,?,?,1,1)",
-            (sid, bib, name, grade, gender),
+            "INSERT INTO athletes (school_id, bib, name, grade, gender, does_xc, does_track, "
+            "email, phone, parent_name, parent_email, parent_phone, emergency_name, emergency_phone) "
+            "VALUES (?,?,?,?,?,1,1,?,?,?,?,?,?,?)",
+            (sid, bib, name, grade, gender, cf["email"], cf["phone"], cf["parent_name"],
+             cf["parent_email"], cf["parent_phone"], cf["emergency_name"], cf["emergency_phone"]),
         )
         added += 1
     conn.commit()

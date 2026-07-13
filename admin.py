@@ -95,10 +95,11 @@ def dashboard():
         f'<div class="muted">{escape(k)}</div></div>'
         for k, v in stats.items()
     )
+    from .waivers import dashboard_card as _waiver_card
     body = (
         f"<h1>Dashboard</h1><p class='sub'>Signed in as "
         f"<b>{escape(p.name or p.email)}</b> · {escape(scope_note)}</p>"
-        f'<div class="row">{cards}</div>{branding}'
+        f'<div class="row">{cards}</div>{branding}{_waiver_card(p)}'
     )
     return shell(p, body, active="dashboard",
                  active_district=did, districts=_districts_for_switcher())
