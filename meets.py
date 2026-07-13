@@ -136,7 +136,7 @@ def list_meets():
              if rows else '<div class="card muted">No meets yet.</div>')
 
     form = ""
-    can_create = p.is_admin or p.role == "coach"
+    can_create = p.is_admin   # only super / district admins create meets
     if can_create and not (p.is_super and did is None):
         schools = _district_schools(did)
         host_opts = '<option value="">— none —</option>' + "".join(
@@ -176,7 +176,7 @@ def create_meet():
     did = active_district_id()
     if did is None:
         abort(400)
-    if not (p.is_admin or p.role == "coach"):
+    if not p.is_admin:   # only super / district admins create meets
         abort(403)
     name = (request.form.get("name") or "").strip()
     sport = request.form.get("sport") if request.form.get("sport") in ("xc", "track") else "xc"
@@ -194,10 +194,6 @@ def create_meet():
     school_ids = [s for s in school_ids if s in valid]
     if host is not None and host not in valid:
         host = None
-    # coach can only create meets hosted by one of their schools
-    if p.role == "coach" and (host is None or host not in p.school_ids()):
-        conn.close()
-        abort(403)
     cur = conn.execute(
         "INSERT INTO meets (district_id, sport, name, date, host_school_id, public_token) "
         "VALUES (?,?,?,?,?,?)",
