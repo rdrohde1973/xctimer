@@ -136,7 +136,7 @@ body.phone{margin:0;display:flex;flex-direction:column;overflow:hidden;backgroun
 .tcount{line-height:1.05}
 .tcount span{font-size:1.5rem;font-weight:800}
 .tcount small{display:block;font-size:.58rem;letter-spacing:.14em;color:#9aa}
-.tclock{font-size:2rem;font-weight:800;font-variant-numeric:tabular-nums}
+.tclock{font-size:1.7rem;font-weight:800;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
 .subbar{display:flex;align-items:center;background:var(--panel);padding:.5rem 1rem;border-bottom:1px solid var(--line)}
 .subbar .back{color:var(--link);font-weight:600;min-width:74px}
 .subbar .rn{flex:1;text-align:center;font-weight:700;padding-right:74px}
@@ -205,9 +205,9 @@ def phone_race(rid):
 const RID={rid};
 let OFFSET=0, START=null, STOPMS=null, STOPPED=false, STARTED=false, MODE='tap', FIN=[];
 function nowms(){{ return Date.now()+OFFSET; }}
-function fmt(sec){{ sec=Math.max(0,Math.floor(sec));
-  const h=Math.floor(sec/3600), m=Math.floor((sec%3600)/60), s=sec%60;
-  return h+':'+String(m).padStart(2,'0')+':'+String(s).padStart(2,'0'); }}
+function fmt(sec){{ if(sec==null)return''; sec=Math.max(0,sec);
+  const h=Math.floor(sec/3600), m=Math.floor((sec%3600)/60), s=sec-3600*h-60*m;
+  return h+':'+String(m).padStart(2,'0')+':'+s.toFixed(3).padStart(6,'0'); }}
 async function load(){{
   const s=await jget('/races/'+RID+'/state');
   OFFSET=s.server_ms-Date.now(); START=s.start_ms; STOPMS=s.stop_ms;
@@ -230,7 +230,7 @@ function sync(){{
 }}
 function tick(){{
   const c=document.getElementById('clock');
-  if(!START){{ c.textContent='0:00:00'; return; }}
+  if(!START){{ c.textContent='0:00:00.000'; return; }}
   const end=(STOPPED&&STOPMS)?STOPMS:nowms(); let e=(end-START)/1000; if(e<0)e=0;
   c.textContent=fmt(e);
 }}
@@ -240,7 +240,7 @@ function render(){{
   if(!FIN.length){{ list.innerHTML='<div class="empty">Finishers appear here as you record them.</div>'; return; }}
   let h='';
   [...FIN].reverse().forEach(f=>{{
-    const t=(f.elapsed_str||'').replace(/\\.\\d+$/,'');
+    const t=(f.elapsed_str||'');
     const who = f.name? esc(f.name) : (f.bib? ('Bib '+f.bib) : '—');
     h+='<div class="frow"><span class="fp">'+f.seq+'</span>'
       +'<span class="ft">'+t+'</span><span class="fw">'+who+'</span></div>';
@@ -254,7 +254,7 @@ async function undo(){{ try{{ await jpost('/races/'+RID+'/untap',{{}}); }}catch(
 async function rec(){{ const el=document.getElementById('sbib'); const v=el.value.trim(); if(!v)return;
   try{{ await jpost('/races/'+RID+'/finish',{{bib:v}}); el.value=''; el.focus(); }}
   catch(e){{ alert(e.message); }} load(); }}
-setInterval(tick,120);
+setInterval(tick,60);
 setInterval(load,3000);
 load();
 </script>
