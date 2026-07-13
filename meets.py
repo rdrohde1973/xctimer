@@ -125,13 +125,25 @@ def list_meets():
     rows = [m for m in rows if can_view_meet(m)]
 
     show_d = p.is_super and did is None
+    show_x = p.is_admin   # super / district admin get a delete X per row
     trs = []
     for m in rows:
         sport = "🏃 XC" if m["sport"] == "xc" else "🎽 Track"
         dcol = f'<td>{escape(m["dname"])}</td>' if show_d else ""
+        xcol = ""
+        if show_x:
+            x = ""
+            if can_delete_meet(m):
+                x = (f'<form class="inline" method="post" action="/meets/{m["id"]}/delete" '
+                     f'onsubmit="return confirm(\'Delete this meet and ALL its data — heats, '
+                     f'entries, results, and timing? This cannot be undone.\')">'
+                     f'<button class="danger" style="padding:.2rem .5rem;line-height:1" '
+                     f'title="Delete meet">✕</button></form>')
+            xcol = f'<td style="text-align:right">{x}</td>'
         trs.append(f'<tr><td><b><a href="/meets/{m["id"]}">{escape(m["name"])}</a></b></td>'
-                   f'<td>{sport}</td><td>{escape(m["date"] or "")}</td>{dcol}</tr>')
-    hdr = f'<tr><th>Meet</th><th>Sport</th><th>Date</th>{"<th>District</th>" if show_d else ""}</tr>'
+                   f'<td>{sport}</td><td>{escape(m["date"] or "")}</td>{dcol}{xcol}</tr>')
+    hdr = (f'<tr><th>Meet</th><th>Sport</th><th>Date</th>'
+           f'{"<th>District</th>" if show_d else ""}{"<th></th>" if show_x else ""}</tr>')
     table = (f'<div class="card"><table>{hdr}{"".join(trs)}</table></div>'
              if rows else '<div class="card muted">No meets yet.</div>')
 
@@ -394,16 +406,6 @@ def meet_detail(mid):
     section = _sport.setup_section(m, setup)
     tabs = "" if is_xc else _sport._track_tabs(mid, "setup")
 
-    delete_card = ""
-    if can_delete_meet(m):
-        delete_card = (
-            '<div class="card" style="border-color:var(--err)"><h2>Danger zone</h2>'
-            '<p class="muted">Deleting this meet also removes its heats, entries, results, '
-            'and timing data. This can\'t be undone.</p>'
-            f'<form method="post" action="/meets/{mid}/delete" '
-            'onsubmit="return confirm(\'Delete this meet and ALL its data? This cannot be undone.\')">'
-            '<button class="danger">🗑 Delete meet</button></form></div>')
-
     body = f"""
 <p class="muted"><a href="/meets">← Meets</a></p>
 <h1>{escape(m['name'])}</h1>
@@ -414,7 +416,6 @@ def meet_detail(mid):
 {print_bar}
 {setup_card}
 {section}
-{delete_card}
 <div class="card"><h2>No-login timer QR</h2>
 <p class="muted">Share this QR/link with helpers — it opens the phone timing app for
 <b>this meet only</b>, no login, anytime. Rotate to revoke.</p>
