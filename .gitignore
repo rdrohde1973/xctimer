@@ -3,6 +3,7 @@ venv/
 *.db
 *.db-wal
 *.db-shm
+static/logos/
 env
 secret.key
 __pycache__/

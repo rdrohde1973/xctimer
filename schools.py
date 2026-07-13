@@ -79,6 +79,31 @@ def _visible_schools():
     return rows
 
 
+def _slug(name):
+    import re
+    return re.sub(r"[^a-z0-9]+", "-", (name or "").lower()).strip("-") or "school"
+
+
+def _save_logo(file_storage, prefix):
+    """Save an uploaded school logo (optimized PNG) -> '/static/logos/<name>'."""
+    if not file_storage or not file_storage.filename:
+        return None
+    import io
+    import secrets
+    from PIL import Image
+    try:
+        im = Image.open(io.BytesIO(file_storage.read())).convert("RGBA")
+    except Exception:  # noqa: BLE001 — not a valid image
+        return None
+    if im.width > 400:
+        im = im.resize((400, round(400 * im.height / im.width)), Image.LANCZOS)
+    d = os.path.join(os.path.dirname(__file__), "static", "logos")
+    os.makedirs(d, exist_ok=True)
+    name = f"{_slug(prefix)}-{secrets.token_hex(4)}.png"
+    im.save(os.path.join(d, name), format="PNG", optimize=True)
+    return f"/static/logos/{name}"
+
+
 def _next_bib(conn, school):
     """Lowest free bib within the school's block, or None if unset/full."""
     lo, hi = school["bib_start"], school["bib_end"]
@@ -117,7 +142,10 @@ def list_schools():
             actions += (f' <form class="inline" method="post" action="/schools/{s["id"]}/delete" '
                         f'onsubmit="return confirm(\'Delete {escape(s["name"])} and its roster?\')">'
                         f'<button class="danger" type="submit">Delete</button></form>')
-        trs.append(f'<tr><td><b>{escape(s["name"])}</b></td>{dcol}<td>{n}</td>'
+        logo = (f'<img src="{escape(s["logo_path"])}" alt="" '
+                f'style="height:28px;width:28px;object-fit:contain;vertical-align:middle;margin-right:.5rem">'
+                if s["logo_path"] else "")
+        trs.append(f'<tr><td>{logo}<b>{escape(s["name"])}</b></td>{dcol}<td>{n}</td>'
                    f'<td>{bib}</td><td style="text-align:right">{actions}</td></tr>')
     conn.close()
     table = (f'<div class="card"><table>{hdr}{"".join(trs)}</table></div>'
@@ -130,13 +158,13 @@ def list_schools():
         else:
             form = """
 <div class="card"><h2>Add a school</h2>
-<form method="post" action="/schools">
+<form method="post" action="/schools" enctype="multipart/form-data">
   <label>Name</label><input name="name" required>
   <div class="row">
     <div><label>Bib start</label><input name="bib_start" type="number" inputmode="numeric"></div>
     <div><label>Bib end</label><input name="bib_end" type="number" inputmode="numeric"></div>
   </div>
-  <label>Logo path (optional)</label><input name="logo_path" placeholder="static/logos/....png">
+  <label>Logo (optional)</label><input name="logo" type="file" accept="image/*">
   <button type="submit" style="margin-top:1rem">Add school</button>
 </form></div>"""
 
@@ -158,15 +186,35 @@ def create_school():
         v = (v or "").strip()
         return int(v) if v.lstrip("-").isdigit() else None
 
+    logo_path = _save_logo(request.files.get("logo"), name)
     conn = db.connect()
     conn.execute(
         "INSERT INTO schools (district_id, name, bib_start, bib_end, logo_path) VALUES (?,?,?,?,?)",
-        (did, name, _int(request.form.get("bib_start")), _int(request.form.get("bib_end")),
-         (request.form.get("logo_path") or "").strip() or None),
+        (did, name, _int(request.form.get("bib_start")), _int(request.form.get("bib_end")), logo_path),
     )
     conn.commit()
     conn.close()
     return redirect("/schools")
+
+
+@bp.post("/schools/<int:sid>/edit")
+@role_required("super_admin", "district_admin")
+def edit_school(sid):
+    s = _load_school_or_403(sid)
+
+    def _int(v):
+        v = (v or "").strip()
+        return int(v) if v.lstrip("-").isdigit() else None
+
+    name = (request.form.get("name") or "").strip() or s["name"]
+    logo_path = _save_logo(request.files.get("logo"), name) or s["logo_path"]
+    conn = db.connect()
+    conn.execute("UPDATE schools SET name=?, bib_start=?, bib_end=?, logo_path=? WHERE id=?",
+                 (name, _int(request.form.get("bib_start")), _int(request.form.get("bib_end")),
+                  logo_path, sid))
+    conn.commit()
+    conn.close()
+    return redirect(f"/schools/{sid}")
 
 
 @bp.post("/schools/<int:sid>/delete")
@@ -215,9 +263,13 @@ def roster(sid):
 
     bib_hint = (f'{s["bib_start"]}–{s["bib_end"]}' if s["bib_start"]
                 else "no block set (bibs left blank)")
+    logo_img = (f'<img src="{escape(s["logo_path"])}" alt="" style="height:42px;width:42px;'
+                f'object-fit:contain;vertical-align:middle;margin-right:.6rem;background:#fff;'
+                f'border-radius:8px;padding:3px"> ' if s["logo_path"] else "")
     body = f"""
 <p class="muted"><a href="/schools">← Schools</a></p>
-<h1>{escape(s['name'])}</h1>
+<h1>{logo_img}{escape(s['name'])}</h1>"""
+    body += f"""
 <p class="sub">{len(ath)} athletes · bib block {bib_hint}</p>
 
 <div class="row">
@@ -302,6 +354,18 @@ async function commitImport(){{
 }}
 </script>
 """
+    if g.principal.is_admin and not ro:
+        body += f"""
+<div class="card"><h2>Edit school</h2>
+<form method="post" action="/schools/{sid}/edit" enctype="multipart/form-data">
+  <div class="row">
+    <div><label>Name</label><input name="name" value="{escape(s['name'])}"></div>
+    <div style="max-width:120px"><label>Bib start</label><input name="bib_start" type="number" value="{s['bib_start'] or ''}"></div>
+    <div style="max-width:120px"><label>Bib end</label><input name="bib_end" type="number" value="{s['bib_end'] or ''}"></div>
+  </div>
+  <label>Replace logo (optional)</label><input name="logo" type="file" accept="image/*">
+  <button type="submit" style="margin-top:.8rem">Save changes</button>
+</form></div>"""
     return shell(g.principal, body, active="schools",
                  active_district=active_district_id(), districts=_districts_for_switcher())
 
