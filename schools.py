@@ -497,7 +497,7 @@ def stickers_pdf(sid):
     template = request.args.get("template", "5160")
     prefix = f'{os.environ.get("XC_PUBLIC_URL", "")}/bibcheck?bib='
     pdf = pdfs.bib_stickers_pdf(s["name"], _roster_rows(sid), template=template,
-                                qr_prefix=prefix)
+                                qr_prefix=prefix, logo_path=s["logo_path"])
     return Response(pdf, mimetype="application/pdf",
                     headers={"Content-Disposition": f'inline; filename="{s["name"]}-stickers.pdf"'})
 

@@ -151,6 +151,20 @@ def _digest(principal):
 
     d = conn.execute("SELECT name FROM districts WHERE id=?", (did,)).fetchone()
     lines.append(f"DISTRICT: {d['name'] if d else did}")
+
+    # District record board first (so it survives truncation) — key for
+    # "what's the district record for the 100m?" questions.
+    recs = conn.execute(
+        "SELECT gender, grade, event, mark, athlete, school, year FROM district_records "
+        "WHERE district_id=? ORDER BY event, gender, grade", (did,)).fetchall()
+    if recs:
+        lines.append("\nDISTRICT RECORDS (best mark per event × grade × gender; "
+                     "for an event's overall record, take the fastest time / longest "
+                     "distance / highest jump across grades):")
+        for r in recs:
+            lines.append(f"  {r['event']} | {r['gender']} {r['grade']} | {r['mark']} | "
+                         f"{r['athlete']} ({r['school']}, {r['year']})")
+        lines.append("")
     if school_ids is not None:
         schools = conn.execute(
             f"SELECT * FROM schools WHERE id IN ({','.join('?'*len(school_ids))})",
@@ -194,7 +208,7 @@ def _digest(principal):
                              f"({r['snap_school'] or '?'}) {mk}")
     conn.close()
     text = "\n".join(lines)
-    return text[:7000]
+    return text[:12000]
 
 
 _SYS = ("You are XCTimer's roster insights assistant for a school running program. "
@@ -223,8 +237,8 @@ def insights_page():
     <div style="display:flex;align-items:flex-end"><button onclick="ask()">Ask</button></div>
   </div>
 </div>
-<div class="card muted">Examples: “Which school has the most girls?” · “Top 3 in the 100m at the last meet?”
-· “Who improved the most?”</div>
+<div class="card muted">Examples: “What's the district record for the 100m?” · “Which school has the most girls?”
+· “Top 3 in the 100m at the last meet?” · “Who improved the most?”</div>
 <script>
 async function ask(){{
   const q=document.getElementById('q').value.trim(); if(!q)return;

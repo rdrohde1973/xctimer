@@ -166,6 +166,19 @@ CREATE TABLE IF NOT EXISTS entries (
     lane INTEGER
 );
 
+-- District record board (imported; shown in AI Insights)
+CREATE TABLE IF NOT EXISTS district_records (
+    id INTEGER PRIMARY KEY,
+    district_id INTEGER NOT NULL REFERENCES districts(id),
+    gender TEXT,
+    grade TEXT,
+    event TEXT,
+    mark TEXT,
+    athlete TEXT,
+    school TEXT,
+    year TEXT
+);
+
 CREATE TABLE IF NOT EXISTS results (
     id INTEGER PRIMARY KEY,
     entry_id INTEGER NOT NULL REFERENCES entries(id),
@@ -193,6 +206,7 @@ INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_meet_events_meet ON meet_events(meet_id)",
     "CREATE INDEX IF NOT EXISTS idx_entries_meet_event ON entries(meet_event_id)",
     "CREATE INDEX IF NOT EXISTS idx_results_entry ON results(entry_id)",
+    "CREATE INDEX IF NOT EXISTS idx_records_district ON district_records(district_id)",
 ]
 
 # Global built-in events catalog (handoff §4/§11: global defaults, district-overridable later).

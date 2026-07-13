@@ -427,6 +427,37 @@ def _attending_groups(mid):
     return groups
 
 
+def _sticker_groups(mid, with_events):
+    """[(school_name, logo_path, [athlete dicts])]. For track, attach each
+    athlete's events (name + heat/lane) and include only entered athletes."""
+    conn = db.connect()
+    schools = conn.execute(
+        "SELECT s.id, s.name, s.logo_path FROM schools s JOIN meet_schools ms ON ms.school_id=s.id "
+        "WHERE ms.meet_id=? ORDER BY s.name", (mid,)).fetchall()
+    groups = []
+    for s in schools:
+        ath = conn.execute("SELECT id, bib, name, grade, gender FROM athletes WHERE school_id=? "
+                           "ORDER BY bib IS NULL, bib, name", (s["id"],)).fetchall()
+        arr = []
+        for a in ath:
+            d = dict(a)
+            if with_events:
+                evs = conn.execute(
+                    "SELECT e.name AS ename, en.heat, en.lane FROM entries en "
+                    "JOIN meet_events me ON me.id=en.meet_event_id JOIN events e ON e.id=me.event_id "
+                    "WHERE me.meet_id=? AND en.runner_id=? ORDER BY e.sort", (mid, a["id"])).fetchall()
+                if not evs:
+                    continue  # track: sticker only for entered athletes
+                d["events"] = [
+                    ev["ename"] + (f" · H{ev['heat']} L{ev['lane']}" if ev["heat"] and ev["lane"]
+                                   else (f" · Sec {ev['heat']}" if ev["heat"] else ""))
+                    for ev in evs]
+            arr.append(d)
+        groups.append((s["name"], s["logo_path"], arr))
+    conn.close()
+    return groups
+
+
 @bp.get("/meets/<int:mid>/stickers.pdf")
 @login_required
 def meet_stickers(mid):
@@ -434,7 +465,8 @@ def meet_stickers(mid):
     if not can_view_meet(m):
         abort(403)
     prefix = f'{os.environ.get("XC_PUBLIC_URL", "")}/bibcheck?bib='
-    pdf = pdfs.meet_stickers_pdf(_attending_groups(mid),
+    groups = _sticker_groups(mid, with_events=(m["sport"] == "track"))
+    pdf = pdfs.meet_stickers_pdf(groups,
                                  template=request.args.get("template", "5160"), qr_prefix=prefix)
     return Response(pdf, mimetype="application/pdf",
                     headers={"Content-Disposition": 'inline; filename="meet-stickers.pdf"'})

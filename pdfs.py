@@ -3,11 +3,27 @@
 Later phases add heat sheets / meet-day packets (track).
 """
 import io
+import os
 
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.units import inch
 from reportlab.lib.utils import ImageReader
 from reportlab.pdfgen import canvas as pdfcanvas
+
+NAVY = (0.086, 0.259, 0.443)  # brand navy #164271
+
+
+def _logo_reader(logo_path):
+    """Resolve a '/static/...' logo URL to an ImageReader, or None."""
+    if not logo_path:
+        return None
+    p = os.path.join(os.path.dirname(__file__), logo_path.lstrip("/"))
+    if os.path.exists(p):
+        try:
+            return ImageReader(p)
+        except Exception:  # noqa: BLE001
+            return None
+    return None
 
 # Avery label geometry (US Letter), in inches: (cols, rows, label_w, label_h,
 # top_margin, side_margin, pitch_x, pitch_y).
@@ -28,47 +44,20 @@ def _qr_image(text):
     return ImageReader(buf)
 
 
-def bib_stickers_pdf(school_name, athletes, *, template="5160", qr_prefix=""):
-    """Sheet of Avery labels: bib + name + QR (+ school). `athletes` are dict-likes
-    with keys bib, name. `qr_prefix` lets you encode a URL like '.../bibcheck?bib='."""
+def bib_stickers_pdf(school_name, athletes, *, template="5160", qr_prefix="", logo_path=None):
+    """Avery label sheet for one school: logo + bib + name + school + QR."""
     t = TEMPLATES.get(template, TEMPLATES["5160"])
     buf = io.BytesIO()
     c = pdfcanvas.Canvas(buf, pagesize=letter)
-    pw, ph = letter
+    _pw, ph = letter
     per_page = t["cols"] * t["rows"]
-
+    logo = _logo_reader(logo_path)
     items = [a for a in athletes if a["bib"] is not None]
     for i, a in enumerate(items):
         slot = i % per_page
         if i and slot == 0:
             c.showPage()
-        col = slot % t["cols"]
-        row = slot // t["cols"]
-        x = t["side"] * inch + col * t["px"] * inch
-        y_top = ph - t["top"] * inch - row * t["py"] * inch
-        lw, lh = t["lw"] * inch, t["lh"] * inch
-        pad = 0.08 * inch
-
-        # QR on the right
-        qr_sz = min(lh - 2 * pad, 0.8 * inch)
-        qr_text = f"{qr_prefix}{a['bib']}" if qr_prefix else str(a["bib"])
-        try:
-            c.drawImage(_qr_image(qr_text), x + lw - qr_sz - pad,
-                        y_top - qr_sz - pad, qr_sz, qr_sz,
-                        preserveAspectRatio=True, mask="auto")
-        except Exception:  # noqa: BLE001 — never let one bad label kill the sheet
-            pass
-
-        # Bib number (large) + name + school on the left
-        c.setFont("Helvetica-Bold", 20)
-        c.drawString(x + pad, y_top - 0.34 * inch, f"#{a['bib']}")
-        c.setFont("Helvetica", 10)
-        c.drawString(x + pad, y_top - 0.54 * inch, (a["name"] or "")[:26])
-        c.setFont("Helvetica", 7)
-        c.setFillGray(0.4)
-        c.drawString(x + pad, y_top - 0.70 * inch, (school_name or "")[:32])
-        c.setFillGray(0)
-
+        _draw_label(c, t, slot, ph, a, school_name, qr_prefix, logo)
     c.showPage()
     c.save()
     buf.seek(0)
@@ -149,32 +138,89 @@ def multi_heat_sheet_pdf(sections):
     return buf.read()
 
 
-def _draw_label(c, t, slot, ph, a, school_name, qr_prefix):
+def _fit_font(c, text, font, size, max_w, min_size=6):
+    """Shrink font until text fits max_w (or hits min)."""
+    while size > min_size and c.stringWidth(text, font, size) > max_w:
+        size -= 0.5
+    return size
+
+
+def _draw_label(c, t, slot, ph, a, school_name, qr_prefix, logo=None):
+    """One sticker: [logo] [big bib] [name / school / event(s)] [QR].
+
+    Matches the reference app: full-height school logo left, big navy bib,
+    name + school, optional event lines (track), QR of the bib top-right.
+    """
     col = slot % t["cols"]
     row = slot // t["cols"]
     x = t["side"] * inch + col * t["px"] * inch
     y_top = ph - t["top"] * inch - row * t["py"] * inch
     lw, lh = t["lw"] * inch, t["lh"] * inch
-    pad = 0.08 * inch
-    qr_sz = min(lh - 2 * pad, 0.8 * inch)
+    pad = 0.07 * inch
+    top = y_top - pad
+    bottom = y_top - lh + pad
+
+    # Logo (left, vertically centered, capped so it doesn't crowd the text)
+    left = x + pad
+    if logo is not None:
+        ls = min(lh - 2 * pad, lw * 0.24)
+        cy = y_top - lh / 2
+        try:
+            c.drawImage(logo, left, cy - ls / 2, ls, ls,
+                        preserveAspectRatio=True, mask="auto")
+            left += ls + 0.08 * inch
+        except Exception:  # noqa: BLE001
+            pass
+
+    # QR (top-right)
+    qr_sz = min(lh * 0.4, 0.72 * inch)
     qr_text = f"{qr_prefix}{a['bib']}" if qr_prefix else str(a["bib"])
     try:
-        c.drawImage(_qr_image(qr_text), x + lw - qr_sz - pad, y_top - qr_sz - pad,
+        c.drawImage(_qr_image(qr_text), x + lw - qr_sz - pad, top - qr_sz,
                     qr_sz, qr_sz, preserveAspectRatio=True, mask="auto")
     except Exception:  # noqa: BLE001
         pass
-    c.setFont("Helvetica-Bold", 20)
-    c.drawString(x + pad, y_top - 0.34 * inch, f"#{a['bib']}")
-    c.setFont("Helvetica", 10)
-    c.drawString(x + pad, y_top - 0.54 * inch, (a["name"] or "")[:26])
-    c.setFont("Helvetica", 7)
-    c.setFillGray(0.4)
-    c.drawString(x + pad, y_top - 0.70 * inch, (school_name or "")[:32])
+
+    # Big navy bib number (left column)
+    big = min(lh * 0.42, 34)
+    c.setFont("Helvetica-Bold", big)
+    c.setFillColorRGB(*NAVY)
+    bib = str(a["bib"])
+    c.drawString(left, top - big * 0.8, bib)
+    bib_w = c.stringWidth(bib, "Helvetica-Bold", big)
     c.setFillGray(0)
+
+    # Text column: right of the bib, ending before the QR
+    nx = left + bib_w + 0.1 * inch
+    text_w = max(0.5 * inch, (x + lw - pad - qr_sz - 0.08 * inch) - nx)
+    ny = top
+
+    name = (a["name"] or "")
+    nsz = _fit_font(c, name, "Helvetica-Bold", min(lh * 0.16, 15), text_w)
+    c.setFont("Helvetica-Bold", nsz)
+    ny -= nsz
+    c.drawString(nx, ny, name)
+
+    ssz = min(lh * 0.11, 10)
+    c.setFont("Helvetica", ssz)
+    c.setFillGray(0.42)
+    ny -= ssz + 0.06 * inch
+    c.drawString(nx, ny, (school_name or "")[:34])
+    c.setFillGray(0)
+
+    events = a.get("events") if isinstance(a, dict) else None
+    if events:
+        esz = min(lh * 0.13, 11)
+        c.setFont("Helvetica-Bold", esz)
+        for ev in events[:4]:
+            ny -= esz + 0.07 * inch
+            if ny < bottom:
+                break
+            c.drawString(nx, ny, ev[:34])
 
 
 def meet_stickers_pdf(groups, *, template="5160", qr_prefix=""):
-    """Meet-wide sticker sheets. `groups` = list of (school_name, athletes).
+    """Meet-wide sticker sheets. `groups` = list of (school_name, logo_path, athletes).
     Each school starts on a fresh sheet (no two schools share one)."""
     t = TEMPLATES.get(template, TEMPLATES["5160"])
     per_page = t["cols"] * t["rows"]
@@ -182,15 +228,16 @@ def meet_stickers_pdf(groups, *, template="5160", qr_prefix=""):
     c = pdfcanvas.Canvas(buf, pagesize=letter)
     _pw, ph = letter
     drew = False
-    for school_name, athletes in groups:
+    for school_name, logo_path, athletes in groups:
         items = [a for a in athletes if a["bib"] is not None]
         if not items:
             continue
+        logo = _logo_reader(logo_path)
         for i, a in enumerate(items):
             slot = i % per_page
             if i and slot == 0:
                 c.showPage()
-            _draw_label(c, t, slot, ph, a, school_name, qr_prefix)
+            _draw_label(c, t, slot, ph, a, school_name, qr_prefix, logo)
         c.showPage()  # next school on a clean sheet
         drew = True
     if not drew:
