@@ -17,12 +17,34 @@ from datetime import datetime, timezone
 from markupsafe import escape
 from flask import Blueprint, request, redirect, g, abort, jsonify, Response
 
-from . import db
+from . import db, ai
 from .auth import login_required, send_email
 from .tenancy import active_district_id
 from .ui import CSS, BRAND_HTML, HEAD_EXTRA
 
 bp = Blueprint("waivers", __name__)
+
+# Placeholders filled per athlete when a waiver is sent. Shown as a hint to admins.
+PLACEHOLDER_HINT = ("{{athlete_name}}, {{school}}, {{grade}}, {{district}}, "
+                    "{{date}}, {{parent_name}}")
+
+
+def _merge(body, athlete, district_name, today):
+    """Substitute {{merge fields}} with this athlete's values (used at send time)."""
+    repl = {
+        "athlete_name": athlete["name"] or "",
+        "athlete": athlete["name"] or "",
+        "school": athlete["sname"] or "",
+        "grade": str(athlete["grade"]) if athlete["grade"] is not None else "",
+        "gender": athlete["gender"] or "",
+        "district": district_name or "",
+        "date": today,
+        "parent_name": (athlete["parent_name"] or "____________________"),
+    }
+    out = body or ""
+    for k, v in repl.items():
+        out = out.replace("{{" + k + "}}", v).replace("{{ " + k + " }}", v)
+    return out
 
 
 # ------------------------------- helpers -------------------------------
@@ -94,17 +116,66 @@ def dashboard_card(principal):
     status = (f'<p class="muted">Current template: <b>{escape(t["title"])}</b> · '
               f'{signed} signed · {pending} pending</p>' if t else
               '<p class="muted">No template yet — save one below to start sending waivers.</p>')
-    return f"""
+    verb = "Update" if t else "Save"
+    card = f"""
 <div class="card"><h2>📝 Waiver template</h2>
 {status}
+<div style="background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:.8rem 1rem;margin:.4rem 0 1rem">
+  <b>✨ Import from a document</b>
+  <p class="muted" style="margin:.3rem 0 .5rem">Upload your existing waiver (PDF, Word, or text) and
+  AI turns the athlete-specific bits into fill-in fields for you to review.</p>
+  <input type="file" id="wtplfile" accept=".pdf,.docx,.txt,.csv,.tsv">
+  <button type="button" onclick="importWaiver()" style="margin-top:.5rem">Import &amp; auto-field</button>
+  <span id="wtplmsg" class="muted"></span>
+</div>
 <form method="post" action="/waivers/template">
   <label>Title</label>
-  <input name="title" value="{title}" required>
+  <input id="wtpl_title" name="title" value="{title}" required>
   <label>Waiver text (parents read &amp; sign this)</label>
-  <textarea name="body" rows="8" required style="font:inherit">{body}</textarea>
-  <button type="submit" style="margin-top:.7rem">{"Update" if t else "Save"} waiver template</button>
+  <textarea id="wtpl_body" name="body" rows="10" required style="font:inherit">{body}</textarea>
+  <p class="muted" style="margin:.4rem 0">Fields filled in per athlete when a waiver is sent:
+  <code>{PLACEHOLDER_HINT}</code></p>
+  <button type="submit">{verb} waiver template</button>
   <span class="muted">Saving keeps prior signed waivers intact — new links use the latest text.</span>
 </form></div>"""
+    script = """
+<script>
+async function importWaiver(){
+  const f=document.getElementById('wtplfile').files[0];
+  const msg=document.getElementById('wtplmsg');
+  if(!f){ alert('Choose a file first'); return; }
+  msg.textContent=' Reading & auto-fielding…';
+  const fd=new FormData(); fd.append('file', f);
+  try{
+    const r=await fetch('/waivers/template/import', {method:'POST', body:fd});
+    const j=await r.json(); if(!r.ok) throw new Error(j.error||'Import failed');
+    document.getElementById('wtpl_title').value=j.title||'';
+    document.getElementById('wtpl_body').value=j.body||'';
+    msg.textContent=' Imported — review the {{fields}}, then Save.';
+  }catch(e){ msg.textContent=''; alert(e.message); }
+}
+</script>"""
+    return card + script
+
+
+@bp.post("/waivers/template/import")
+@login_required
+def import_template():
+    """Upload an existing waiver doc; AI returns a template with {{merge fields}}."""
+    p = g.principal
+    if p.role not in ("district_admin", "super_admin") or not _district_for(p) or p.is_demo:
+        abort(403)
+    f = request.files.get("file")
+    if not f or not f.filename:
+        return jsonify(error="No file uploaded"), 400
+    try:
+        text = ai.extract_text(f.filename, f.read())
+        tpl = ai.waiver_template_from_text(text)
+    except Exception as e:  # noqa: BLE001
+        return jsonify(error=f"Could not read that file: {e}"), 400
+    if not tpl.get("body"):
+        return jsonify(error="Couldn't find waiver text in that file."), 400
+    return jsonify(title=tpl["title"], body=tpl["body"])
 
 
 @bp.post("/waivers/template")
@@ -144,12 +215,16 @@ def send_waiver(aid):
     if not to:
         conn.close()
         return jsonify(error="No parent email on file for this athlete — add one under Edit info first."), 400
+    dname = conn.execute("SELECT name FROM districts WHERE id=?",
+                         (a["district_id"],)).fetchone()
+    today = datetime.now(timezone.utc).date().isoformat()
+    body = _merge(t["body"], a, dname["name"] if dname else "", today)
     token = secrets.token_urlsafe(24)
-    h = hashlib.sha256(t["body"].encode("utf-8")).hexdigest()[:16]
+    h = hashlib.sha256(body.encode("utf-8")).hexdigest()[:16]
     conn.execute(
         "INSERT INTO athlete_waivers (athlete_id, template_id, token, status, doc_title, "
         "doc_body, doc_hash, sent_to, created_by) VALUES (?,?,?,?,?,?,?,?,?)",
-        (aid, t["id"], token, "pending", t["title"], t["body"], h, to, g.principal.id))
+        (aid, t["id"], token, "pending", t["title"], body, h, to, g.principal.id))
     conn.commit()
     conn.close()
     base = os.environ.get("XC_PUBLIC_URL", request.host_url.rstrip("/"))

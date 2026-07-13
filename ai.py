@@ -103,6 +103,34 @@ def vision_read_sheet(image_bytes, media_type="image/jpeg"):
     return {"sheet_code": (str(code).strip() if code else None), "marks": marks}
 
 
+WAIVER_FIELDS = ("athlete_name", "school", "grade", "district", "date", "parent_name")
+
+_WAIVER_TPL_SYS = (
+    "You convert an uploaded youth-sports waiver / permission / consent form into a "
+    "REUSABLE template. Keep the wording VERBATIM, but replace the specific values that "
+    "vary per athlete with placeholders drawn ONLY from this exact list:\n"
+    "{{athlete_name}}, {{school}}, {{grade}}, {{district}}, {{date}}, {{parent_name}}\n"
+    "Guidance: a student/athlete/child name (or a blank like 'Student Name: ____') -> "
+    "{{athlete_name}}; the school or team name -> {{school}}; a grade/year -> {{grade}}; "
+    "the district/organization -> {{district}}; a date line -> {{date}}; the parent or "
+    "guardian's printed name -> {{parent_name}}. Do NOT invent placeholders outside the "
+    "list. Leave the actual signature line alone (the app captures the signature "
+    "separately). Drop letterhead, logos, and page numbers. Preserve paragraph breaks as "
+    r'\n. Return ONLY JSON: {"title": "<short title>", "body": "<template text>"}.'
+)
+
+
+def waiver_template_from_text(raw_text, *, max_chars=20000):
+    """Turn a raw uploaded waiver into {title, body} with {{merge fields}}."""
+    text = (raw_text or "").strip()
+    if not text:
+        return {"title": "", "body": ""}
+    out = claude_chat(_WAIVER_TPL_SYS, text[:max_chars], max_tokens=4000)
+    obj = _find_json_object(out)
+    return {"title": str(obj.get("title") or "Team Waiver").strip(),
+            "body": str(obj.get("body") or "").strip()}
+
+
 def _find_json_object(s):
     """Locate and parse the first JSON object from a model response (handles fences)."""
     s = (s or "").strip()
