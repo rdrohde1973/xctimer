@@ -758,6 +758,10 @@ def meet_day_page(mid):
     counts = {r[0]: r[1] for r in conn.execute(
         "SELECT me.id, COUNT(en.id) FROM meet_events me LEFT JOIN entries en ON en.meet_event_id=me.id "
         "WHERE me.meet_id=? GROUP BY me.id", (mid,)).fetchall()}
+    drawn_counts = {r[0]: r[1] for r in conn.execute(
+        "SELECT me.id, COUNT(en.id) FROM meet_events me "
+        "LEFT JOIN entries en ON en.meet_event_id=me.id AND en.heat IS NOT NULL "
+        "WHERE me.meet_id=? GROUP BY me.id", (mid,)).fetchall()}
     conn.close()
 
     def div(me):
@@ -773,6 +777,15 @@ def meet_day_page(mid):
 <form method="post" action="/meets/{mid}/draw-all" style="display:inline">
   <input type="hidden" name="mode" value="random"><button class="ghost" type="submit">Random draw</button></form>
 </div>"""
+
+    any_entries = any(counts.get(me["id"]) for me in mes)
+    packet = ""
+    if mes:
+        pk = (f'<a class="btn" href="/meets/{mid}/heatsheets.pdf" target="_blank">📄 Download meet packet</a>'
+              if any_entries else '<span class="muted">Assign athletes (and draw heats) to generate sheets.</span>')
+        packet = (f'<div class="card"><h2>📄 Heat sheets</h2>'
+                  f'<p class="muted">One packet of every event with entries, or grab a single '
+                  f'event\'s sheet from the list below.</p>{pk}</div>')
 
     combinable = [me for me in mes if me["kind"] == "relay" or (me["kind"] == "track" and not me["laned"])]
     combine = ""
@@ -802,16 +815,22 @@ physical race. Results still score by grade.</p>{existing}
 
     rows = []
     for me in mes:
-        drawn = "drawn" if counts.get(me["id"]) else ""
+        n = counts.get(me["id"], 0)
         cid = me["combine_id"] if "combine_id" in me.keys() else None
+        status = "drawn" if drawn_counts.get(me["id"]) else ("entered" if n else "")
+        hs = (f'<a class="btn ghost" href="/meet-events/{me["id"]}/heatsheet.pdf" target="_blank">'
+              f'Heat sheet</a>' if n else '<span class="muted">—</span>')
         rows.append(f'<tr><td><a href="/meet-events/{me["id"]}"><b>{escape(me["ename"])}</b></a> '
                     f'<span class="muted">{div(me)}{" 🔗" if cid else ""}</span></td>'
-                    f'<td>{counts.get(me["id"], 0)} entries</td><td>{drawn}</td></tr>')
-    ev_tbl = (f'<div class="card"><h2>Events</h2><table><tr><th>Event</th><th></th><th></th></tr>'
+                    f'<td>{n} entries</td>'
+                    f'<td>{status}</td>'
+                    f'<td style="text-align:right">{hs}</td></tr>')
+    ev_tbl = (f'<div class="card"><h2>Events</h2><table><tr><th>Event</th><th>Entries</th>'
+              f'<th>Status</th><th style="text-align:right">Heat sheet</th></tr>'
               f'{"".join(rows)}</table></div>' if mes else '<div class="card muted">No events yet.</div>')
 
     body = (f'<p class="muted"><a href="/meets">← Meets</a></p><h1>{escape(m["name"])}</h1>'
-            f'{_track_tabs(mid, "meetday")}{draw}{combine}{ev_tbl}')
+            f'{_track_tabs(mid, "meetday")}{draw}{packet}{combine}{ev_tbl}')
     return shell(g.principal, body, active="meets")
 
 
