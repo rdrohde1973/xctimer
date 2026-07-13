@@ -5,19 +5,25 @@ Vanilla HTML/CSS, no build step (handoff §5). Small helpers keep pages terse.
 from markupsafe import escape
 
 BRAND = "XCTimer"
+# Styled wordmark echoing the logo: orange "xc", light "timer".
+BRAND_HTML = '<span class="bx">xc</span><span class="bt">timer</span>'
+LOGO_URL = "/static/branding/xctimer.png"
 
+# Brand palette sampled from the logo (handoff §11 neutral platform identity):
+#   navy #164271 · orange #ea6a2d · gray #868686
 CSS = """
-:root{color-scheme:light dark;--bg:#0b1220;--panel:#131c2e;--panel2:#0f1728;
---line:#22314d;--fg:#e7edf5;--mut:#8aa0b6;--dim:#5f7488;--acc:#4f9cf9;--accd:#2f7de0;
+:root{color-scheme:light dark;--bg:#0a1728;--panel:#102440;--panel2:#0c1c33;
+--line:#213d5c;--fg:#eaf1f8;--mut:#8ea6c0;--dim:#5e7893;
+--navy:#164271;--acc:#ea6a2d;--accd:#cf5a22;--link:#6bb0f7;
 --ok:#3fbf7f;--warn:#f0b24b;--err:#f0625b;--radius:12px}
 *{box-sizing:border-box}
 body{margin:0;font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
 background:var(--bg);color:var(--fg)}
-a{color:var(--acc);text-decoration:none}a:hover{text-decoration:underline}
+a{color:var(--link);text-decoration:none}a:hover{text-decoration:underline}
+.bx{color:var(--acc)}.bt{color:var(--fg)}
 header.top{display:flex;align-items:center;gap:1rem;padding:.6rem 1rem;
 background:var(--panel);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5}
-header.top .brand{font-weight:700;font-size:1.15rem;letter-spacing:-.01em}
-header.top .brand .em{margin-right:.35rem}
+header.top .brand{font-weight:800;font-size:1.2rem;letter-spacing:-.02em}
 header.top nav{display:flex;gap:.25rem;flex-wrap:wrap}
 header.top nav a{padding:.35rem .7rem;border-radius:8px;color:var(--mut)}
 header.top nav a:hover{background:var(--panel2);color:var(--fg);text-decoration:none}
@@ -135,7 +141,7 @@ def shell(principal, body, *, active="", active_district=None, districts=None,
 <meta name=viewport content="width=device-width, initial-scale=1">
 <title>{escape(head)} · {BRAND}</title><style>{CSS}</style></head><body>
 <header class="top">
-  <div class="brand"><span class="em">🏃</span>{BRAND}</div>
+  <a class="brand" href="/dashboard" style="text-decoration:none">{BRAND_HTML}</a>
   <nav>{''.join(nav)}</nav>
   <div class="sp"></div>
   {switch}{who}{logout}
@@ -151,7 +157,7 @@ def auth_page(title, sub, body, *, msg=None, err=None):
 <meta name=viewport content="width=device-width, initial-scale=1">
 <title>{escape(title)} · {BRAND}</title><style>{CSS}</style></head><body>
 <div class="authwrap"><div class="authcard">
-  <h1><span>🏃</span> {BRAND}</h1>
+  <h1>{BRAND_HTML}</h1>
   <p class="sub">{escape(sub)}</p>
   {_flashes(msg, err)}
   {body}

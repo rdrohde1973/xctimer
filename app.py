@@ -23,23 +23,37 @@ APP_VERSION = "0.2.0-phase2"
 
 LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width, initial-scale=1">
-<title>XCTimer</title>
+<title>XCTimer — cross-country &amp; track timing</title>
 <style>
-  :root { color-scheme: light dark; }
-  body { margin:0; font:16px/1.5 system-ui,sans-serif; display:grid; place-items:center;
-         min-height:100vh; background:#0b1220; color:#e7edf5; }
-  .card { text-align:center; padding:2.5rem 3rem; }
-  h1 { font-size:2.6rem; margin:.2em 0; letter-spacing:-.02em; }
-  .tag { color:#8aa0b6; margin-bottom:1.6rem; }
-  a.btn { display:inline-block; background:#4f9cf9; color:#04101f; font-weight:700;
-          padding:.6rem 1.4rem; border-radius:10px; text-decoration:none; }
-  a.btn:hover { background:#2f7de0; }
+  :root{--navy:#164271;--orange:#ea6a2d;--orange-d:#cf5a22;--gray:#868686}
+  *{box-sizing:border-box}
+  body{margin:0;min-height:100vh;display:flex;flex-direction:column;
+       align-items:center;justify-content:center;padding:2rem 1.2rem;
+       font:16px/1.6 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:var(--navy);
+       background:radial-gradient(120% 120% at 50% 0%,#ffffff 0%,#eef1f5 60%,#e5e9ef 100%)}
+  .hero{text-align:center;max-width:640px}
+  .hero img{width:min(560px,88vw);height:auto;filter:drop-shadow(0 8px 30px rgba(22,66,113,.15))}
+  .tag{margin:1.2rem 0 2rem;font-size:1.15rem;color:var(--navy);opacity:.85}
+  .tag b{color:var(--orange)}
+  a.btn{display:inline-block;background:var(--orange);color:#fff;font-weight:700;
+        padding:.7rem 1.8rem;border-radius:11px;text-decoration:none;font-size:1.05rem;
+        box-shadow:0 6px 18px rgba(234,106,45,.35)}
+  a.btn:hover{background:var(--orange-d)}
+  .feats{margin-top:2.6rem;display:flex;gap:1.4rem;flex-wrap:wrap;justify-content:center;
+         color:var(--gray);font-size:.92rem}
+  .feats span{white-space:nowrap}
+  footer{margin-top:auto;padding-top:2.4rem;color:var(--gray);font-size:.8rem}
 </style></head><body>
-  <div class=card>
-    <h1>🏃 XCTimer</h1>
-    <p class=tag>Cross-country &amp; track timing — multi-district platform</p>
-    <a class=btn href="/login">Sign in</a>
+  <div class="hero">
+    <img src="/static/branding/xctimer.png" alt="XCTimer">
+    <p class="tag">One platform for <b>cross-country</b> &amp; <b>track &amp; field</b> — across every district.</p>
+    <a class="btn" href="/login">Sign in</a>
+    <div class="feats">
+      <span>⏱️ Live timing console</span><span>📋 Rosters &amp; bib stickers</span>
+      <span>🏆 Team scoring</span><span>📱 Meet-day QR</span>
+    </div>
   </div>
+  <footer>xctimer.com</footer>
 </body></html>"""
 
 
