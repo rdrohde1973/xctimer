@@ -405,6 +405,8 @@ def meet_detail(mid):
 
     section = _sport.setup_section(m, setup)
     tabs = "" if is_xc else _sport._track_tabs(mid, "setup")
+    # XC: heats above the schools card; track keeps its meet-setup form first.
+    mid_block = f"{section}\n{setup_card}" if is_xc else f"{setup_card}\n{section}"
 
     body = f"""
 <p class="muted"><a href="/meets">← Meets</a></p>
@@ -414,8 +416,7 @@ def meet_detail(mid):
 {tabs}
 <div class="row">{''.join(actions)}</div>
 {print_bar}
-{setup_card}
-{section}
+{mid_block}
 <div class="card"><h2>No-login timer QR</h2>
 <p class="muted">Share this QR/link with helpers — it opens the phone timing app for
 <b>this meet only</b>, no login, anytime. Rotate to revoke.</p>

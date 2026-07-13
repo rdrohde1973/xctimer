@@ -14,7 +14,7 @@ from flask import Blueprint, request, redirect, g, abort, jsonify, Response
 from . import db, demo
 from .auth import login_required
 from .tenancy import active_district_id, all_districts
-from .ui import shell, BRAND_HTML, CSS
+from .ui import shell, BRAND_HTML, CSS, HEAD_EXTRA
 from .meets import (load_meet, can_view_meet, can_setup_meet, can_record_meet)
 
 bp = Blueprint("xc", __name__)
@@ -700,13 +700,16 @@ def results_page(mid):
     return shell(g.principal, body, active="meets")
 
 
-@bp.get("/r/<token>")
-def public_results(token):
+def _meet_by_token(token):
     conn = db.connect()
     m = conn.execute("SELECT * FROM meets WHERE public_token=?", (token,)).fetchone()
     conn.close()
     if not m:
         abort(404)
+    return m
+
+
+def _public_mask(m):
     import json
     conn = db.connect()
     drow = conn.execute("SELECT settings_json FROM districts WHERE id=?",
@@ -716,13 +719,182 @@ def public_results(token):
         masked = bool(json.loads((drow["settings_json"] if drow else None) or "{}").get("mask_public"))
     except (ValueError, TypeError):
         masked = False
-    mode = "mask" if masked else None
+    return "mask" if masked else None
+
+
+PUB_CSS = """
+*{box-sizing:border-box}
+body{margin:0;font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:#eef1f5;color:#1b2b3a}
+.top{background:#12385f;color:#fff;padding:1rem 1.2rem;display:flex;gap:1rem;align-items:center;justify-content:space-between}
+.top .mt{font-size:1.4rem;font-weight:800;line-height:1.15}
+.top .sub{opacity:.85;font-size:.85rem;margin-top:.25rem}
+.top .right{display:flex;align-items:center;gap:1rem;flex-shrink:0}
+.xls{background:#2e8b57;color:#fff;text-decoration:none;font-weight:700;padding:.55rem 1rem;border-radius:9px;white-space:nowrap}
+.xls:hover{background:#287a4c}
+.qr{text-align:center}
+.qr img{width:84px;height:84px;background:#fff;padding:6px;border-radius:8px;display:block}
+.qr span{display:block;font-size:.66rem;opacity:.85;margin-top:.2rem}
+main{max-width:900px;margin:0 auto;padding:1rem 1rem 3rem}
+.tabs{display:flex;gap:.6rem;margin:.4rem 0 1.2rem}
+.tab{flex:1;text-align:center;padding:.7rem;border-radius:10px;background:#fff;border:1px solid #d5dde6;font-weight:700;color:#33475b;cursor:pointer;font-size:.95rem}
+.tab.on{background:#2f6db5;color:#fff;border-color:#2f6db5}
+.sec{background:#fff;border:1px solid #d9e0e8;border-radius:12px;overflow:hidden;margin:0 0 1.1rem}
+.sec h2{background:#12385f;color:#fff;margin:0;padding:.6rem 1rem;font-size:1.02rem}
+table{width:100%;border-collapse:collapse;font-size:.92rem}
+th{background:#f1f4f8;text-align:left;padding:.5rem .8rem;font-size:.7rem;text-transform:uppercase;letter-spacing:.04em;color:#5b6b7c}
+td{padding:.55rem .8rem;border-top:1px solid #edf1f5}
+tbody tr:nth-child(even) td{background:#f8fafb}
+.pl{color:#2f6db5;font-weight:800}
+.tm{font-weight:700;font-variant-numeric:tabular-nums}
+.mut{color:#7c8b9a;font-size:.85rem}
+@media(max-width:600px){.top{flex-wrap:wrap}.qr img{width:66px;height:66px}.top .mt{font-size:1.15rem}}
+"""
+
+
+def _pub_rows(individuals, mode, show_grade):
+    out = []
+    for i in individuals:
+        nm = i["name"]
+        if i["bib"] and (not nm or nm == f"Bib {i['bib']}"):
+            disp = "Bib not found"
+        else:
+            disp = demo.display(nm, mode)
+        bibcell = "" if (i["bib"] is None or mode) else i["bib"]
+        pl = "" if i["place"] is None else i["place"]
+        dq = " (DQ)" if i["dq"] else ""
+        grcell = f'<td>{i["grade"] or ""}</td>' if show_grade else ""
+        out.append(
+            f'<tr><td class="pl">{pl}</td><td>{bibcell}</td>'
+            f'<td>{escape(disp)}{dq}</td><td>{escape(i["school"] or "")}</td>'
+            f'{grcell}<td class="tm">{fmt_hms(i["time"])}</td></tr>')
+    return "".join(out)
+
+
+def _pub_table(label, individuals, mode, show_grade):
+    head = ('<tr><th>Place</th><th>Bib</th><th>Name</th><th>School</th>'
+            + ('<th>Gr</th>' if show_grade else '') + '<th>Time</th></tr>')
+    return (f'<div class="sec"><h2>{escape(label)}</h2><table><thead>{head}</thead>'
+            f'<tbody>{_pub_rows(individuals, mode, show_grade)}</tbody></table></div>')
+
+
+def _grade_gender_groups(mid):
+    """Rank finishers within each grade×gender group (for the 'By Grade' tab)."""
+    fins = [f for f in _meet_finishers(mid) if f["elapsed_seconds"] is not None]
+    buckets = {}
+    for f in fins:
+        buckets.setdefault((f["snap_grade"], f["snap_gender"]), []).append(f)
+
+    def sk(k):
+        grade, gender = k
+        return (grade if grade is not None else 999, {"F": 0, "M": 1}.get(gender, 2))
+
+    groups = []
+    for key in sorted(buckets, key=sk):
+        grade, gender = key
+        place = 0
+        rows = []
+        for f in sorted(buckets[key], key=lambda f: f["elapsed_seconds"]):
+            if not f["dq"]:
+                place += 1
+                p = place
+            else:
+                p = None
+            rows.append({"place": p, "time": f["elapsed_seconds"], "bib": f["bib"],
+                         "name": f["snap_name"] or (f"Bib {f['bib']}" if f["bib"] else "—"),
+                         "school": f["snap_school"], "grade": f["snap_grade"], "dq": bool(f["dq"])})
+        gword = {"F": "Girls", "M": "Boys"}.get(gender, "Other")
+        label = f"{grade}th Grade {gword}" if grade is not None else gword
+        groups.append((label, rows))
+    return groups
+
+
+def _public_xc(m, mode):
+    import os
+    import base64
+    import qrcode
+    mid = m["id"]
+    results = build_results(mid)
+    conn = db.connect()
+    races = conn.execute("SELECT start_time, stop_time FROM races WHERE meet_id=?", (mid,)).fetchall()
+    conn.close()
+    if races and all(r["stop_time"] for r in races):
+        status = "Final"
+    elif any(r["start_time"] for r in races):
+        status = "Live"
+    else:
+        status = ""
+
+    base = os.environ.get("XC_PUBLIC_URL", request.host_url.rstrip("/"))
+    url = f"{base}/r/{m['public_token']}"
+    b = io.BytesIO()
+    qrcode.make(url).save(b, format="PNG")
+    qr_uri = "data:image/png;base64," + base64.b64encode(b.getvalue()).decode()
+
+    overall = "".join(
+        _pub_table(f"{lbl} Overall", results[key]["individuals"], mode, True)
+        for key, lbl in (("F", "Girls"), ("M", "Boys"), ("U", "Other")) if results.get(key)
+    ) or '<div class="sec"><h2>No results yet</h2></div>'
+
+    grade = "".join(_pub_table(lbl, rows, mode, False) for lbl, rows in _grade_gender_groups(mid)) \
+        or '<div class="sec"><h2>No results yet</h2></div>'
+
+    team_parts = []
+    for key, lbl in (("F", "Girls"), ("M", "Boys"), ("U", "Other")):
+        g_ = results.get(key)
+        if not g_ or not g_["teams"]:
+            continue
+        trows = "".join(
+            f'<tr><td class="pl">{t["rank"]}</td><td>{escape(t["school"])}</td>'
+            f'<td class="tm">{t["score"]}</td><td class="mut">'
+            f'{" + ".join(str(p) for p in t["places"])}'
+            f'{" (" + str(t["sixth"]) + ((", " + str(t["seventh"])) if t["seventh"] else "") + ")" if t["sixth"] else ""}'
+            f'</td></tr>' for t in g_["teams"])
+        team_parts.append(
+            f'<div class="sec"><h2>{lbl} — Team Scores</h2><table><thead>'
+            f'<tr><th>Rank</th><th>School</th><th>Score</th><th>Top 5 (6th, 7th)</th></tr>'
+            f'</thead><tbody>{trows}</tbody></table></div>')
+    team = "".join(team_parts) or '<div class="sec"><h2>No complete teams yet (need 5+ per school)</h2></div>'
+
+    sub = escape(m["date"] or "") + (f" · {status}" if status else "")
+    return f"""<!doctype html><html lang=en><head><meta charset=utf-8>
+<meta name=viewport content="width=device-width, initial-scale=1">
+<title>{escape(m['name'])} — Results</title>{HEAD_EXTRA}<style>{PUB_CSS}</style></head><body>
+<div class="top">
+  <div><div class="mt">{escape(m['name'])} — Combined</div><div class="sub">{sub}</div></div>
+  <div class="right">
+    <a class="xls" href="/r/{m['public_token']}/results.xlsx">⬇ Excel</a>
+    <div class="qr"><img src="{qr_uri}" alt="QR"><span>Scan for results</span></div>
+  </div>
+</div>
+<main>
+  <div class="tabs">
+    <button class="tab on" id="t-overall" onclick="tab('overall')">📋 Overall</button>
+    <button class="tab" id="t-grade" onclick="tab('grade')">🎽 By Grade &amp; Gender</button>
+    <button class="tab" id="t-team" onclick="tab('team')">🏆 Team Score</button>
+  </div>
+  <div id="v-overall">{overall}</div>
+  <div id="v-grade" style="display:none">{grade}</div>
+  <div id="v-team" style="display:none">{team}</div>
+</main>
+<script>
+function tab(n){{
+  ['overall','grade','team'].forEach(function(k){{
+    document.getElementById('v-'+k).style.display = k===n?'':'none';
+    document.getElementById('t-'+k).className = 'tab'+(k===n?' on':'');
+  }});
+}}
+</script>
+</body></html>"""
+
+
+@bp.get("/r/<token>")
+def public_results(token):
+    m = _meet_by_token(token)
+    mode = _public_mask(m)
     if m["sport"] == "track":
         from . import track  # lazy import avoids a circular import at module load
         inner = track.results_inner(m["id"], name_mode=mode)
-    else:
-        inner = _results_inner(m, build_results(m["id"]), name_mode=mode)
-    return f"""<!doctype html><html lang=en><head><meta charset=utf-8>
+        return f"""<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width, initial-scale=1">
 <title>{escape(m['name'])} — Results · XCTimer</title><style>{CSS}
 main{{max-width:960px;margin:0 auto;padding:1.4rem 1rem 4rem}}
@@ -730,34 +902,35 @@ main{{max-width:960px;margin:0 auto;padding:1.4rem 1rem 4rem}}
 </style></head><body>
 <div class="pubhdr"><span style="font-weight:800;font-size:1.2rem">{BRAND_HTML}</span></div>
 <main><h1>{escape(m['name'])}</h1>
-<p class="sub">{"🏃 Cross-country" if m['sport']=='xc' else "🎽 Track"} · {escape(m['date'] or '')}</p>
+<p class="sub">🎽 Track · {escape(m['date'] or '')}</p>
 {inner}</main></body></html>"""
+    return _public_xc(m, mode)
+
+
+@bp.get("/r/<token>/results.xlsx")
+def public_results_xlsx(token):
+    m = _meet_by_token(token)
+    return _xlsx_response(m["id"], m["name"], _public_mask(m))
 
 
 # ------------------------------- xlsx export -------------------------------
-@bp.get("/meets/<int:mid>/results.xlsx")
-@login_required
-def results_xlsx(mid):
-    m = load_meet(mid)
-    if not can_view_meet(m):
-        abort(403)
+def _results_workbook(mid, name_mode):
+    """Build the XC results workbook (Boys/Girls/Unspecified tabs). Returns bytes."""
     import openpyxl
     results = build_results(mid)
     wb = openpyxl.Workbook()
     wb.remove(wb.active)
-    tabs = [("Boys", "M"), ("Girls", "F"), ("Unspecified", "U")]
     any_tab = False
-    for title, key in tabs:
+    for title, key in (("Boys", "M"), ("Girls", "F"), ("Unspecified", "U")):
         g_ = results.get(key)
         if not g_:
             continue
         any_tab = True
         ws = wb.create_sheet(title[:31])
-        nm = demo.mode_for(g.principal)
         ws.append(["Place", "Time", "Bib", "Runner", "School", "Grade", "Gender"])
         for i in g_["individuals"]:
-            ws.append([i["place"], fmt_time(i["time"]), None if nm else i["bib"],
-                       demo.display(i["name"], nm), i["school"], i["grade"], i["gender"]])
+            ws.append([i["place"], fmt_time(i["time"]), None if name_mode else i["bib"],
+                       demo.display(i["name"], name_mode), i["school"], i["grade"], i["gender"]])
         ws.append([])
         ws.append(["Team Rank", "School", "Score", "Top-5 places"])
         for t in g_["teams"]:
@@ -767,7 +940,20 @@ def results_xlsx(mid):
         wb.create_sheet("Results").append(["No results yet"])
     buf = io.BytesIO()
     wb.save(buf)
-    fname = (m["name"] or "results").replace(" ", "_")
-    return Response(buf.getvalue(),
+    return buf.getvalue()
+
+
+def _xlsx_response(mid, name, name_mode):
+    fname = (name or "results").replace(" ", "_")
+    return Response(_results_workbook(mid, name_mode),
                     mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     headers={"Content-Disposition": f'attachment; filename="{fname}.xlsx"'})
+
+
+@bp.get("/meets/<int:mid>/results.xlsx")
+@login_required
+def results_xlsx(mid):
+    m = load_meet(mid)
+    if not can_view_meet(m):
+        abort(403)
+    return _xlsx_response(mid, m["name"], demo.mode_for(g.principal))
