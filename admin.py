@@ -69,6 +69,20 @@ def dashboard():
         }
         d = conn.execute("SELECT name FROM districts WHERE id=?", (did,)).fetchone()
         scope_note = d["name"] if d else "—"
+    # District-admin branding: upload/replace their district logo (shown top-left).
+    branding = ""
+    if p.role == "district_admin" and p.district_id:
+        drow = conn.execute("SELECT name, logo_path FROM districts WHERE id=?",
+                            (p.district_id,)).fetchone()
+        thumb = (f'<img src="{escape(drow["logo_path"])}" style="height:34px;background:#fff;'
+                 f'border-radius:6px;padding:3px;vertical-align:middle;margin-right:.6rem"> '
+                 if drow and drow["logo_path"] else '')
+        branding = (
+            f'<div class="card"><h2>District branding</h2>'
+            f'<p class="muted">Your district logo appears in the top-left header.</p>'
+            f'{thumb}<form class="inline" method="post" action="/districts/{p.district_id}/logo" '
+            f'enctype="multipart/form-data"><input type="file" name="logo" accept="image/*"> '
+            f'<button type="submit">Upload logo</button></form></div>')
     conn.close()
 
     cards = "".join(
@@ -80,7 +94,7 @@ def dashboard():
     body = (
         f"<h1>Dashboard</h1><p class='sub'>Signed in as "
         f"<b>{escape(p.name or p.email)}</b> · {escape(scope_note)}</p>"
-        f'<div class="row">{cards}</div>'
+        f'<div class="row">{cards}</div>{branding}'
     )
     return shell(p, body, active="dashboard",
                  active_district=did, districts=_districts_for_switcher())
@@ -109,9 +123,16 @@ def list_districts():
         mask_btn = (f'<form class="inline" method="post" action="/districts/{d["id"]}/mask">'
                     f'<button class="{"btn" if masked else "ghost"}" type="submit">'
                     f'{"Masked" if masked else "Full names"}</button></form>')
+        thumb = (f'<img src="{escape(d["logo_path"])}" style="height:26px;background:#fff;'
+                 f'border-radius:5px;padding:2px;vertical-align:middle;margin-right:.4rem"> '
+                 if d["logo_path"] else '')
+        logo_cell = (f'{thumb}<form class="inline" method="post" action="/districts/{d["id"]}/logo" '
+                     f'enctype="multipart/form-data"><input type="file" name="logo" accept="image/*" '
+                     f'style="width:140px;font-size:.72rem"> <button class="ghost" type="submit">Set</button></form>')
         body_rows.append(
             f'<tr><td><b>{escape(d["name"])}</b><br>'
             f'<span class="muted">{escape(d["slug"])}</span></td>'
+            f'<td>{logo_cell}</td>'
             f'<td>{sc} schools</td><td>{us} users</td>'
             f'<td>{mask_btn}</td>'
             f'<td style="text-align:right">'
@@ -119,7 +140,7 @@ def list_districts():
             f'onsubmit="return confirm(\'Delete {escape(d["name"])} and ALL its data?\')">'
             f'<button class="danger" type="submit">Delete</button></form></td></tr>'
         )
-    table = (f'<div class="card"><table><tr><th>District</th><th>Schools</th>'
+    table = (f'<div class="card"><table><tr><th>District</th><th>Logo</th><th>Schools</th>'
              f'<th>Users</th><th>Public results</th><th></th></tr>{"".join(body_rows)}</table></div>'
              if rows else '<div class="card muted">No districts yet.</div>')
 
@@ -179,6 +200,28 @@ def toggle_mask(did):
     conn.commit()
     conn.close()
     return redirect("/districts")
+
+
+@bp.post("/districts/<int:did>/logo")
+@login_required
+def district_logo(did):
+    """Set a district's logo. Super admin (any) or the district's own admin."""
+    p = g.principal
+    if not (p.is_super or (p.role == "district_admin" and p.district_id == did)):
+        abort(403)
+    from .schools import _save_logo
+    conn = db.connect()
+    d = conn.execute("SELECT name FROM districts WHERE id=?", (did,)).fetchone()
+    conn.close()
+    if not d:
+        abort(404)
+    lp = _save_logo(request.files.get("logo"), f"district-{d['name']}")
+    if lp:
+        conn = db.connect()
+        conn.execute("UPDATE districts SET logo_path=? WHERE id=?", (lp, did))
+        conn.commit()
+        conn.close()
+    return redirect(request.referrer or "/districts")
 
 
 @bp.post("/districts/<int:did>/delete")

@@ -23,7 +23,9 @@ a{color:var(--link);text-decoration:none}a:hover{text-decoration:underline}
 .bx{color:var(--acc)}.bt{color:var(--fg)}
 header.top{display:flex;align-items:center;gap:1rem;padding:.6rem 1rem;
 background:var(--panel);border-bottom:1px solid var(--line);position:sticky;top:0;z-index:5}
-header.top .brand{font-weight:800;font-size:1.2rem;letter-spacing:-.02em}
+header.top .brand{font-weight:800;font-size:1.2rem;letter-spacing:-.02em;display:inline-flex;align-items:center}
+header.top .brand .brandchip{display:inline-flex;align-items:center;background:#f4f6f8;border-radius:8px;padding:3px 8px}
+header.top .brand .brandchip img{height:26px;width:auto;max-width:160px;object-fit:contain;display:block}
 header.top nav{display:flex;gap:.25rem;flex-wrap:wrap}
 header.top nav a{padding:.35rem .7rem;border-radius:8px;color:var(--mut)}
 header.top nav a:hover{background:var(--panel2);color:var(--fg);text-decoration:none}
@@ -108,6 +110,35 @@ def _flashes(msg=None, err=None):
     return out
 
 
+def _brand(principal):
+    """Top-left brand: super admin -> XCTimer; district admin -> district logo;
+    coach -> their school logo. Falls back to the XCTimer wordmark."""
+    role = getattr(principal, "role", None)
+    logo = None
+    if getattr(principal, "meet_scope", None) or role == "super_admin":
+        logo = LOGO_URL
+    elif role == "district_admin" and getattr(principal, "district_id", None):
+        from . import db
+        conn = db.connect()
+        r = conn.execute("SELECT logo_path FROM districts WHERE id=?",
+                         (principal.district_id,)).fetchone()
+        conn.close()
+        logo = r["logo_path"] if r and r["logo_path"] else None
+    elif role == "coach":
+        from . import db
+        ids = principal.school_ids()
+        if ids:
+            conn = db.connect()
+            r = conn.execute(
+                f"SELECT logo_path FROM schools WHERE id IN ({','.join('?' * len(ids))}) "
+                f"AND logo_path IS NOT NULL ORDER BY id LIMIT 1", tuple(ids)).fetchone()
+            conn.close()
+            logo = r["logo_path"] if r else None
+    inner = (f'<span class="brandchip"><img src="{logo}" alt="XCTimer"></span>'
+             if logo else BRAND_HTML)
+    return f'<a class="brand" href="/dashboard" style="text-decoration:none">{inner}</a>'
+
+
 def shell(principal, body, *, active="", active_district=None, districts=None,
           msg=None, err=None, title=None):
     """Full authenticated page with header, nav, and district switcher."""
@@ -163,7 +194,7 @@ def shell(principal, body, *, active="", active_district=None, districts=None,
 <meta name=viewport content="width=device-width, initial-scale=1">
 <title>{escape(head)} · {BRAND}</title><style>{CSS}</style></head><body>
 <header class="top">
-  <a class="brand" href="/dashboard" style="text-decoration:none">{BRAND_HTML}</a>
+  {_brand(principal)}
   <nav>{''.join(nav)}</nav>
   <div class="sp"></div>
   {switch}{who}{logout}
