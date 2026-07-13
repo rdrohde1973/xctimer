@@ -22,7 +22,7 @@ from .insights import bp as insights_bp
 from .phone import bp as phone_bp
 from .waivers import bp as waivers_bp
 
-APP_VERSION = "0.23.1-contact"
+APP_VERSION = "0.23.2-coachcopy"
 
 LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width, initial-scale=1">
@@ -150,10 +150,12 @@ LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
 <section class="band"><div class="wrap">
   <h2>Built by a coach who's been on the track.</h2>
   <p class="lead">XCTimer was built by a former junior high coach who's personally timed meets
-  for seven years. Every feature comes from real meet-day experience — the bib stickers, the tap
+  for seven years — with one goal: make something simple enough that <b style="color:#fff">any
+  junior high coach could run it themselves</b>, without a timing company, special training, or a
+  big budget. Every feature comes from real meet-day experience — the bib stickers, the tap
   timer, the make/miss high jump grid, scanning a marked-up sheet. It works the way a meet
   actually runs, because it was built by someone running them.</p>
-  <div class="quote">"I built the tool I always wished I had at the finish line."</div>
+  <div class="quote">"I wanted a tool any coach could pick up and run their own meet with."</div>
   <div class="stat">
     <div><b>7 yrs</b><span>timing meets</span></div>
     <div><b>XC + Track</b><span>one platform</span></div>
