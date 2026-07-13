@@ -154,6 +154,7 @@ def shell(principal, body, *, active="", active_district=None, districts=None,
     else:
         nav.append(link("/dashboard", "Dashboard", "dashboard"))
         nav.append(link("/meets", "Meets", "meets"))
+        nav.append(link("/phone", "📱 Timer", "phone"))
         if role in ("super_admin", "district_admin"):
             nav.append(link("/schools", "Schools", "schools"))
             nav.append(link("/users", "Users", "users"))

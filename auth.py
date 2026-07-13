@@ -13,11 +13,29 @@ from datetime import datetime, timedelta, timezone
 from email.mime.text import MIMEText
 
 import requests
+from markupsafe import escape
 from flask import (Blueprint, request, redirect, make_response, g, abort, url_for)
 from werkzeug.security import generate_password_hash, check_password_hash
 
 from . import db
 from .ui import auth_page
+
+
+def _safe_next(nxt):
+    """Only allow same-site relative redirects."""
+    return nxt if nxt and nxt.startswith("/") and not nxt.startswith("//") else None
+
+
+def _login_body(email="", nxt=""):
+    hidden = f'<input type="hidden" name="next" value="{escape(nxt)}">' if nxt else ""
+    return f"""
+<form method="post" action="/login">
+  {hidden}
+  <label>Email</label><input name="email" type="email" value="{escape(email)}" autofocus required>
+  <label>Password</label><input name="password" type="password" required>
+  <button type="submit">Sign in</button>
+</form>
+<p class="center muted"><a href="/forgot">Forgot password?</a></p>"""
 
 bp = Blueprint("auth", __name__)
 
@@ -195,10 +213,7 @@ def load_principal():
         conn.close()
         if not meet:
             return
-        # Expire the QR session once the meet day passes (belt-and-suspenders).
-        if meet["date"] and meet["date"] != _now().astimezone().strftime("%Y-%m-%d"):
-            destroy_session(tok)
-            return
+        # Meet-scoped, no-login session — valid anytime, only for this one meet.
         g.principal = Principal(session_token=tok, meet_scope=s["meet_id"],
                                 role="timer", district_id=meet["district_id"])
         return
@@ -338,42 +353,24 @@ def send_setup_email(email, token, *, reset=False):
 # ============================ routes ============================
 @bp.get("/login")
 def login_form():
+    nxt = _safe_next(request.args.get("next")) or ""
     if getattr(g, "principal", None):
-        return redirect("/dashboard")
-    body = """
-<form method="post" action="/login">
-  <label>Email</label><input name="email" type="email" autofocus required>
-  <label>Password</label><input name="password" type="password" required>
-  <button type="submit">Sign in</button>
-</form>
-<p class="center muted"><a href="/forgot">Forgot password?</a></p>"""
-    return auth_page("Sign in", "Cross-country & track timing", body)
+        return redirect(nxt or "/dashboard")
+    return auth_page("Sign in", "Cross-country & track timing", _login_body(nxt=nxt))
 
 
 @bp.post("/login")
 def login_submit():
     email = (request.form.get("email") or "").strip().lower()
     pw = request.form.get("password") or ""
+    nxt = _safe_next(request.form.get("next")) or ""
     if _login_throttled(email):
-        body = """
-<form method="post" action="/login">
-  <label>Email</label><input name="email" type="email" autofocus required>
-  <label>Password</label><input name="password" type="password" required>
-  <button type="submit">Sign in</button>
-</form>"""
-        return auth_page("Sign in", "Cross-country & track timing", body,
+        return auth_page("Sign in", "Cross-country & track timing", _login_body(nxt=nxt),
                          err="Too many attempts. Please wait a few minutes and try again."), 429
     u = find_user_by_email(email)
     if not u or not verify_password(pw, u["password_hash"]):
         _record_login_fail(email)
-        body = """
-<form method="post" action="/login">
-  <label>Email</label><input name="email" type="email" value="%s" autofocus required>
-  <label>Password</label><input name="password" type="password" required>
-  <button type="submit">Sign in</button>
-</form>
-<p class="center muted"><a href="/forgot">Forgot password?</a></p>""" % email.replace('"', "")
-        return auth_page("Sign in", "Cross-country & track timing", body,
+        return auth_page("Sign in", "Cross-country & track timing", _login_body(email, nxt),
                          err="Invalid email or password."), 401
     _LOGIN_FAILS.pop(email, None)
     conn = db.connect()
@@ -381,7 +378,7 @@ def login_submit():
     conn.commit()
     conn.close()
     token = create_session(u["id"])
-    return _set_session_cookie(make_response(redirect("/dashboard")), token)
+    return _set_session_cookie(make_response(redirect(nxt or "/dashboard")), token)
 
 
 @bp.post("/logout")
@@ -471,19 +468,17 @@ def forgot_submit():
                      msg="Reset link sent if the account exists.")
 
 
-# --- meet-day no-login QR (handoff §11) ---
+# --- no-login QR: opens ONE meet's phone timing, anytime (handoff §11) ---
 @bp.get("/t/<token>")
 def meet_timer_link(token):
     conn = db.connect()
     meet = conn.execute("SELECT * FROM meets WHERE timer_token=?", (token,)).fetchone()
     conn.close()
-    today = _now().astimezone().strftime("%Y-%m-%d")
-    if (not meet or not meet["timer_token"] or _expired(meet["timer_token_expires"])
-            or (meet["date"] and meet["date"] != today)):
+    if not meet or not meet["timer_token"] or _expired(meet["timer_token_expires"]):
         return auth_page("Not available",
-                         "This meet-day timer link isn't active.",
+                         "This timer link isn't active.",
                          "<p class=center>Ask the meet host for a current link.</p>",
-                         err="Link invalid, expired, or not for today."), 403
+                         err="Link invalid or revoked."), 403
     token = create_session(None, kind="meet_timer", meet_id=meet["id"], ttl_days=1)
-    # Meet-day recording UI lands in Phase 3/4; for now confirm the scoped session.
-    return _set_session_cookie(make_response(redirect("/dashboard")), token)
+    # Lands on the phone timing app, scoped to this one meet.
+    return _set_session_cookie(make_response(redirect("/phone")), token)

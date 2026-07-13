@@ -261,11 +261,10 @@ def gen_timer_qr(mid):
     if not can_setup_meet(m):
         abort(403)
     token = secrets.token_urlsafe(10)
-    # Expire at the end of the meet's calendar day.
-    expires = f'{m["date"]}T23:59:59+00:00' if m["date"] else None
+    # No date expiry — the link opens this one meet's timing anytime (revoke by rotating).
     conn = db.connect()
-    conn.execute("UPDATE meets SET timer_token=?, timer_token_expires=? WHERE id=?",
-                 (token, expires, mid))
+    conn.execute("UPDATE meets SET timer_token=?, timer_token_expires=NULL WHERE id=?",
+                 (token, mid))
     conn.commit()
     conn.close()
     return redirect(f"/meets/{mid}")
@@ -377,7 +376,7 @@ def meet_detail(mid):
     if setup:
         qr_block += (f'<form method="post" action="/meets/{mid}/timer-qr">'
                      f'<button class="ghost" type="submit" style="margin-top:.6rem">'
-                     f'{"Rotate" if m["timer_token"] else "Generate"} meet-day QR</button></form>')
+                     f'{"Rotate" if m["timer_token"] else "Generate"} timer QR</button></form>')
 
     section = _sport.setup_section(m, setup)
     tabs = "" if is_xc else _sport._track_tabs(mid, "setup")
@@ -392,8 +391,9 @@ def meet_detail(mid):
 {print_bar}
 {setup_card}
 {section}
-<div class="card"><h2>Meet-day timer QR</h2>
-<p class="muted">A no-login link that opens the timing console for this meet, today only.</p>
+<div class="card"><h2>No-login timer QR</h2>
+<p class="muted">Share this QR/link with helpers — it opens the phone timing app for
+<b>this meet only</b>, no login, anytime. Rotate to revoke.</p>
 {qr_block}</div>
 """
     return shell(g.principal, body, active="meets",

@@ -19,8 +19,9 @@ from .xc import bp as xc_bp
 from .track import bp as track_bp
 from .admin import bp as admin_bp
 from .insights import bp as insights_bp
+from .phone import bp as phone_bp
 
-APP_VERSION = "0.12.0-brand"
+APP_VERSION = "0.13.0-phone"
 
 LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width, initial-scale=1">
@@ -76,7 +77,7 @@ def create_app():
     app.before_request(auth.demo_readonly_guard)
 
     for bp in (auth_bp, tenancy_bp, schools_bp, meets_bp, xc_bp, track_bp,
-               admin_bp, insights_bp):
+               admin_bp, insights_bp, phone_bp):
         app.register_blueprint(bp)
 
     @app.get("/")

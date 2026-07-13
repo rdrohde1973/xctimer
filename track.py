@@ -223,12 +223,17 @@ def settings_fields(m, setup):
     """Scoring / event-limit / lanes fields (no <form> — hosted by the combined
     Save meet setup form in meet_detail). Returns a read-only summary otherwise."""
     tables = _points_tables()
+    default_id = next((t["id"] for t in tables if t["name"] == DEFAULT_PT), None)
+    sel = m["points_table_id"] or default_id  # default: Invitational 10-8-6-4-2-1
     if not setup:
-        tname = next((t["name"] for t in tables if t["id"] == m["points_table_id"]), "—")
+        tname = next((t["name"] for t in tables if t["id"] == sel), "—")
         return (f'<p class="muted">Scoring: {escape(tname)} · event limit {event_limit(m)} '
                 f'· {m["lanes"] or 8} lanes</p>')
+    # Hide the legacy seed tables from the picker (unless a meet already uses one).
+    legacy = {"Individual (1-8)", "Relay (1-8)"}
+    tables = [t for t in tables if t["name"] not in legacy or t["id"] == sel]
     topts = "".join(
-        f'<option value="{t["id"]}" {"selected" if t["id"]==m["points_table_id"] else ""}>'
+        f'<option value="{t["id"]}" {"selected" if t["id"]==sel else ""}>'
         f'{escape(t["name"])}</option>' for t in tables)
     return f"""
 <label style="margin-top:.8rem">Scoring <span class="muted">— points table for team scores</span></label>
