@@ -264,6 +264,9 @@ def migrate(conn):
     if "team_scoring" not in mcols:     # xc: team-score tab on/off
         conn.execute("ALTER TABLE meets ADD COLUMN team_scoring INTEGER DEFAULT 1")
 
+    if "combine_id" not in _column_names(conn, "meet_events"):
+        conn.execute("ALTER TABLE meet_events ADD COLUMN combine_id INTEGER")
+
     ptcols = _column_names(conn, "points_tables")
     if "relay_multiplier" not in ptcols:
         conn.execute("ALTER TABLE points_tables ADD COLUMN relay_multiplier REAL DEFAULT 1.0")

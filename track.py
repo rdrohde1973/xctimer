@@ -135,6 +135,15 @@ def _is_hj(ev):
     return ev["ename"] == "High Jump"
 
 
+def _combine_meids(conn, me):
+    """Meet-event ids sharing this one's combine group (just itself if not combined)."""
+    cid = me["combine_id"] if "combine_id" in me.keys() else None
+    if cid:
+        return [r[0] for r in conn.execute(
+            "SELECT id FROM meet_events WHERE combine_id=?", (cid,)).fetchall()]
+    return [me["id"]]
+
+
 def load_meet_event(meid):
     conn = db.connect()
     row = conn.execute(
@@ -394,10 +403,11 @@ def _track_tabs(mid, active):
         return (f'<a href="{href}" style="padding:.4rem .9rem;border-radius:8px;'
                 f'text-decoration:none;{on}">{label}</a>')
     return ('<div style="display:flex;gap:.3rem;margin:.4rem 0 1rem;border-bottom:1px solid var(--line);'
-            'padding-bottom:.5rem">'
+            'padding-bottom:.5rem;flex-wrap:wrap">'
             + tab(f"/meets/{mid}", "⚙️ Setup", "setup")
             + tab(f"/meets/{mid}/assign", "👤 Assign athletes", "assign")
-            + tab(f"/meets/{mid}/track-results", "🏁 Results", "results")
+            + tab(f"/meets/{mid}/meet-day", "🏁 Meet day", "meetday")
+            + tab(f"/meets/{mid}/track-results", "📊 Results", "results")
             + '</div>')
 
 
@@ -629,6 +639,53 @@ def carryover(mid):
 
 
 # ------------------------------- seeding -------------------------------
+def _season_seed_value(conn, entry, event_id, exclude_meet_id):
+    """Seed value: best (fastest) time in this event at OTHER meets; falls back to
+    the entry's manual seed. Lower = faster. None if no prior mark and no seed."""
+    if entry["runner_id"]:
+        row = conn.execute(
+            "SELECT MIN(r.mark_seconds) FROM results r JOIN entries en ON en.id=r.entry_id "
+            "JOIN meet_events me ON me.id=en.meet_event_id "
+            "WHERE en.runner_id=? AND me.event_id=? AND me.meet_id!=? AND r.dq=0 "
+            "AND r.mark_seconds IS NOT NULL", (entry["runner_id"], event_id, exclude_meet_id)).fetchone()
+    else:  # relay: school's best time in this event
+        row = conn.execute(
+            "SELECT MIN(r.mark_seconds) FROM results r JOIN entries en ON en.id=r.entry_id "
+            "JOIN meet_events me ON me.id=en.meet_event_id "
+            "WHERE en.school_id=? AND en.runner_id IS NULL AND me.event_id=? AND me.meet_id!=? "
+            "AND r.dq=0 AND r.mark_seconds IS NOT NULL",
+            (entry["school_id"], event_id, exclude_meet_id)).fetchone()
+    best = row[0] if row else None
+    return best if best is not None else entry["seed"]
+
+
+def _draw(conn, me, m, mode, entries=None, laned_override=None):
+    """Assign heat + lane to a set of entries. Seeded = fastest heat last, center-out lanes."""
+    laned = bool(me["laned"]) if laned_override is None else laned_override
+    size = (m["lanes"] or DEFAULT_LANES) if laned else DEFAULT_SECTION
+    if entries is None:
+        entries = conn.execute("SELECT * FROM entries WHERE meet_event_id=?", (me["id"],)).fetchall()
+    entries = list(entries)
+    if mode == "random":
+        random.shuffle(entries)
+    else:  # seeded by season best (fastest first)
+        vals = {e["id"]: _season_seed_value(conn, e, me["event_id"], m["id"]) for e in entries}
+        seeded = sorted([e for e in entries if vals[e["id"]] is not None], key=lambda e: vals[e["id"]])
+        unseeded = [e for e in entries if vals[e["id"]] is None]
+        random.shuffle(unseeded)
+        entries = seeded + unseeded
+    n = len(entries)
+    groups = [entries[i:i + size] for i in range(0, n, size)] or []
+    H = len(groups)
+    for gi, grp in enumerate(groups):
+        heat_no = H - gi  # fastest group runs last
+        # Laned: center-out lanes. Distance/section: running order (pole = 1).
+        lanes = lane_order(size)[:len(grp)] if laned else list(range(1, len(grp) + 1))
+        for idx, e in enumerate(grp):
+            conn.execute("UPDATE entries SET heat=?, lane=? WHERE id=?",
+                         (heat_no, lanes[idx], e["id"]))
+
+
 @bp.post("/meet-events/<int:meid>/seed")
 @login_required
 def seed_event(meid):
@@ -636,34 +693,151 @@ def seed_event(meid):
     m = load_meet(me["meet_id"])
     if not can_setup_meet(m):
         abort(403)
-    mode = request.form.get("mode", "seeded")
-    laned = bool(me["laned"])
-    lanes = m["lanes"] or DEFAULT_LANES
-    size = lanes if laned else DEFAULT_SECTION
     conn = db.connect()
-    entries = conn.execute("SELECT * FROM entries WHERE meet_event_id=?", (meid,)).fetchall()
-    entries = list(entries)
-    if mode == "random":
-        random.shuffle(entries)
-    else:  # seeded: fastest/best first (times asc; field marks desc)
-        INF = float("inf")
-        if me["scoring_order"] == "asc":
-            entries.sort(key=lambda e: e["seed"] if e["seed"] is not None else INF)
-        else:
-            entries.sort(key=lambda e: -(e["seed"] if e["seed"] is not None else -INF))
-    n = len(entries)
-    groups = [entries[i:i + size] for i in range(0, n, size)] or []
-    H = len(groups)
-    for gi, grp in enumerate(groups):
-        heat_no = H - gi  # fastest group in the last (highest) heat/section
-        # Center-out within the full lane count (e.g. 4 runners -> lanes 4,5,3,6).
-        lanes = lane_order(size)[:len(grp)] if laned else [None] * len(grp)
-        for idx, e in enumerate(grp):
-            conn.execute("UPDATE entries SET heat=?, lane=? WHERE id=?",
-                         (heat_no, lanes[idx], e["id"]))
+    _draw(conn, me, m, request.form.get("mode", "seeded"))
     conn.commit()
     conn.close()
     return redirect(f"/meet-events/{meid}")
+
+
+@bp.get("/meets/<int:mid>/meet-day")
+@login_required
+def meet_day_page(mid):
+    m = load_meet(mid)
+    if not can_view_meet(m) or m["sport"] != "track":
+        abort(403)
+    setup = can_setup_meet(m)
+    conn = db.connect()
+    mes = conn.execute(
+        "SELECT me.*, e.name AS ename, e.kind, e.laned FROM meet_events me JOIN events e ON e.id=me.event_id "
+        "WHERE me.meet_id=? ORDER BY e.sort, me.gender, me.grade", (mid,)).fetchall()
+    counts = {r[0]: r[1] for r in conn.execute(
+        "SELECT me.id, COUNT(en.id) FROM meet_events me LEFT JOIN entries en ON en.meet_event_id=me.id "
+        "WHERE me.meet_id=? GROUP BY me.id", (mid,)).fetchall()}
+    conn.close()
+
+    def div(me):
+        return {"M": "Boys", "F": "Girls"}.get(me["gender"], "Open") + (f" G{me['grade']}" if me["grade"] else "")
+
+    draw = ""
+    if setup:
+        draw = f"""
+<div class="card"><h2>Draw heats &amp; lanes — whole meet</h2>
+<p class="muted">Assigns heats/lanes for every track &amp; relay event at once.</p>
+<form method="post" action="/meets/{mid}/draw-all" style="display:inline">
+  <input type="hidden" name="mode" value="seeded"><button type="submit">Seed by season best</button></form>
+<form method="post" action="/meets/{mid}/draw-all" style="display:inline">
+  <input type="hidden" name="mode" value="random"><button class="ghost" type="submit">Random draw</button></form>
+</div>"""
+
+    combinable = [me for me in mes if me["kind"] == "relay" or (me["kind"] == "track" and not me["laned"])]
+    combine = ""
+    if setup and combinable:
+        by_cid = {}
+        for me in combinable:
+            cid = me["combine_id"] if "combine_id" in me.keys() else None
+            if cid:
+                by_cid.setdefault(cid, []).append(me)
+        existing = ""
+        for cid, grp in by_cid.items():
+            names = ", ".join(f'{g["ename"]} {div(g)}' for g in grp)
+            existing += (f'<div style="margin:.3rem 0">🔗 {escape(names)} '
+                         f'<form class="inline" method="post" action="/meets/{mid}/uncombine">'
+                         f'<input type="hidden" name="combine_id" value="{cid}">'
+                         f'<button class="ghost">split</button></form></div>')
+        opts = "".join(f'<label style="display:block"><input type="checkbox" name="meids" value="{me["id"]}" '
+                       f'style="width:auto"> {escape(me["ename"])} {div(me)}</label>' for me in combinable)
+        combine = f"""
+<div class="card"><h2>Combine races</h2>
+<p class="muted">Run several grade × gender groups of the SAME distance/relay event as one
+physical race. Results still score by grade.</p>{existing}
+<form method="post" action="/meets/{mid}/combine">
+  <div class="card" style="background:var(--panel2)">{opts}</div>
+  <button type="submit" style="margin-top:.5rem">🔗 Combine selected</button>
+</form></div>"""
+
+    rows = []
+    for me in mes:
+        drawn = "drawn" if counts.get(me["id"]) else ""
+        cid = me["combine_id"] if "combine_id" in me.keys() else None
+        rows.append(f'<tr><td><a href="/meet-events/{me["id"]}"><b>{escape(me["ename"])}</b></a> '
+                    f'<span class="muted">{div(me)}{" 🔗" if cid else ""}</span></td>'
+                    f'<td>{counts.get(me["id"], 0)} entries</td><td>{drawn}</td></tr>')
+    ev_tbl = (f'<div class="card"><h2>Events</h2><table><tr><th>Event</th><th></th><th></th></tr>'
+              f'{"".join(rows)}</table></div>' if mes else '<div class="card muted">No events yet.</div>')
+
+    body = (f'<p class="muted"><a href="/meets">← Meets</a></p><h1>{escape(m["name"])}</h1>'
+            f'{_track_tabs(mid, "meetday")}{draw}{combine}{ev_tbl}')
+    return shell(g.principal, body, active="meets")
+
+
+@bp.post("/meets/<int:mid>/combine")
+@login_required
+def combine_races(mid):
+    m = load_meet(mid)
+    if not can_setup_meet(m):
+        abort(403)
+    meids = [int(x) for x in request.form.getlist("meids") if x.isdigit()]
+    if len(meids) < 2:
+        return redirect(f"/meets/{mid}/meet-day")
+    conn = db.connect()
+    rows = conn.execute(
+        f"SELECT me.id, me.event_id, e.kind, e.laned FROM meet_events me JOIN events e ON e.id=me.event_id "
+        f"WHERE me.meet_id=? AND me.id IN ({','.join('?' * len(meids))})", (mid, *meids)).fetchall()
+    if rows and len({r["event_id"] for r in rows}) == 1 and all(
+            r["kind"] == "relay" or not r["laned"] for r in rows):
+        nxt = (conn.execute("SELECT COALESCE(MAX(combine_id), 0) FROM meet_events").fetchone()[0]) + 1
+        for r in rows:
+            conn.execute("UPDATE meet_events SET combine_id=? WHERE id=?", (nxt, r["id"]))
+        conn.commit()
+    conn.close()
+    return redirect(f"/meets/{mid}/meet-day")
+
+
+@bp.post("/meets/<int:mid>/uncombine")
+@login_required
+def uncombine_races(mid):
+    m = load_meet(mid)
+    if not can_setup_meet(m):
+        abort(403)
+    cid = request.form.get("combine_id")
+    if (cid or "").isdigit():
+        conn = db.connect()
+        conn.execute("UPDATE meet_events SET combine_id=NULL WHERE meet_id=? AND combine_id=?",
+                     (mid, int(cid)))
+        conn.commit()
+        conn.close()
+    return redirect(f"/meets/{mid}/meet-day")
+
+
+@bp.post("/meets/<int:mid>/draw-all")
+@login_required
+def draw_all(mid):
+    m = load_meet(mid)
+    if not can_setup_meet(m):
+        abort(403)
+    mode = request.form.get("mode", "seeded")
+    conn = db.connect()
+    mes = conn.execute(
+        "SELECT me.*, e.name AS ename, e.kind, e.laned, e.scoring_order, e.sort "
+        "FROM meet_events me JOIN events e ON e.id=me.event_id "
+        "WHERE me.meet_id=? AND e.kind != 'field'", (mid,)).fetchall()
+    done_combines = set()
+    for me in mes:
+        cid = me["combine_id"] if "combine_id" in me.keys() else None
+        if cid:
+            if cid in done_combines:
+                continue
+            done_combines.add(cid)
+            ent = conn.execute(
+                "SELECT en.* FROM entries en JOIN meet_events me2 ON me2.id=en.meet_event_id "
+                "WHERE me2.combine_id=?", (cid,)).fetchall()
+            _draw(conn, me, m, mode, entries=ent, laned_override=False)
+        else:
+            _draw(conn, me, m, mode)
+    conn.commit()
+    conn.close()
+    return redirect(f"/meets/{mid}/meet-day")
 
 
 # ------------------------------- marks + placing -------------------------------
@@ -710,7 +884,9 @@ def save_marks(meid):
     if not can_record_meet(m):
         abort(403)
     conn = db.connect()
-    entries = conn.execute("SELECT * FROM entries WHERE meet_event_id=?", (meid,)).fetchall()
+    meids = _combine_meids(conn, me)
+    q = ",".join("?" * len(meids))
+    entries = conn.execute(f"SELECT * FROM entries WHERE meet_event_id IN ({q})", tuple(meids)).fetchall()
     hj = _is_hj(me)
     for e in entries:
         eid = e["id"]
@@ -733,7 +909,9 @@ def save_marks(meid):
             "snap_name, snap_bib, snap_school) VALUES (?,?,?,?,?,?,?,?)",
             (eid, mark_seconds, mark_metric, json.dumps(attempts) if attempts else None,
              dq, name, bib, school))
-    _recompute_places(conn, me)
+    # Rank within each meet-event so combined races still score by grade/gender.
+    for m2 in meids:
+        _recompute_places(conn, load_meet_event(m2))
     conn.commit()
     conn.close()
     return redirect(f"/meet-events/{meid}")
@@ -751,12 +929,20 @@ def event_page(meid):
     setup = can_setup_meet(m)
     hj = _is_hj(me)
     conn = db.connect()
+    meids = _combine_meids(conn, me)
+    combined = len(meids) > 1
+    qm = ",".join("?" * len(meids))
     entries = conn.execute(
-        "SELECT * FROM entries WHERE meet_event_id=? ORDER BY heat, lane, id", (meid,)).fetchall()
+        f"SELECT * FROM entries WHERE meet_event_id IN ({qm}) ORDER BY heat, lane, id",
+        tuple(meids)).fetchall()
     res = {r["entry_id"]: r for r in conn.execute(
-        "SELECT r.* FROM results r JOIN entries e ON e.id=r.entry_id WHERE e.meet_event_id=?",
-        (meid,)).fetchall()}
+        f"SELECT r.* FROM results r JOIN entries e ON e.id=r.entry_id WHERE e.meet_event_id IN ({qm})",
+        tuple(meids)).fetchall()}
     labels = {e["id"]: _entry_label(conn, e) for e in entries}
+    # division label per meet-event (for combined display)
+    me_div = {r["id"]: ({"M": "B", "F": "G"}.get(r["gender"], "") + (str(r["grade"]) if r["grade"] else ""))
+              for r in conn.execute(f"SELECT id, gender, grade FROM meet_events WHERE id IN ({qm})",
+                                    tuple(meids)).fetchall()}
     athletes = _attending_athletes(conn, me["meet_id"], me["gender"], me["grade"]) \
         if me["kind"] != "relay" else []
     schools = _attending_schools(conn, me["meet_id"]) if me["kind"] == "relay" else []
@@ -764,6 +950,8 @@ def event_page(meid):
 
     div = {"M": "Boys", "F": "Girls"}.get(me["gender"], "Open")
     ename = f'{me["ename"]} — {div}' + (f' (G{me["grade"]})' if me["grade"] else "")
+    if combined:
+        ename += " · 🔗 combined"
     err = '<div class="msg err">That athlete has hit the meet event limit.</div>' \
         if request.args.get("err") == "limit" else ""
 
@@ -789,11 +977,13 @@ def event_page(meid):
         place = r["place"] if r and r["place"] else ""
         dqc = f'<input type="checkbox" name="dq_{e["id"]}" style="width:auto" {"checked" if r and r["dq"] else ""}>'
         hl = f'{e["heat"] or ""}' + (f'/{e["lane"]}' if e["lane"] else "")
+        dtag = (f' <span class="pill">{me_div.get(e["meet_event_id"], "")}</span>'
+                if combined else "")
         delc = (f'<form class="inline" method="post" action="/entries/{e["id"]}/delete">'
                 f'<button class="danger">✕</button></form>' if setup else "")
         rows.append(
             f'<tr><td>{place}</td><td class="muted">{hl}</td>'
-            f'<td><b>{escape(name)}</b>{f" #{bib}" if bib else ""}<br>'
+            f'<td><b>{escape(name)}</b>{f" #{bib}" if bib else ""}{dtag}<br>'
             f'<span class="muted">{escape(school or "")}</span></td>'
             f'<td>{mark_cell(e)}</td><td>{dqc}</td><td>{delc}</td></tr>')
     marks_form = ""
