@@ -459,7 +459,11 @@ def public_results(token):
     conn.close()
     if not m:
         abort(404)
-    inner = _results_inner(m, build_results(m["id"]))
+    if m["sport"] == "track":
+        from . import track  # lazy import avoids a circular import at module load
+        inner = track.results_inner(m["id"])
+    else:
+        inner = _results_inner(m, build_results(m["id"]))
     return f"""<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width, initial-scale=1">
 <title>{escape(m['name'])} — Results · XCTimer</title><style>{CSS}

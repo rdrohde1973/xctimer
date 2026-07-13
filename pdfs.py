@@ -75,6 +75,64 @@ def bib_stickers_pdf(school_name, athletes, *, template="5160", qr_prefix=""):
     return buf.read()
 
 
+def heat_sheet_pdf(title, rows, *, laned=True):
+    """Meet-day packet: entries grouped by heat/section with a blank mark column.
+
+    `rows` = dicts with heat, lane, bib, name, school. One heat/section per page.
+    """
+    from collections import OrderedDict
+    buf = io.BytesIO()
+    c = pdfcanvas.Canvas(buf, pagesize=letter)
+    pw, ph = letter
+    left = 0.75 * inch
+
+    groups = OrderedDict()
+    for r in rows:
+        groups.setdefault(r["heat"] or 1, []).append(r)
+    if not groups:
+        groups[1] = []
+
+    unit = "Heat" if laned else "Section"
+    for heat, items in groups.items():
+        y = ph - 0.9 * inch
+        c.setFont("Helvetica-Bold", 16)
+        c.drawString(left, y, title[:70])
+        y -= 0.3 * inch
+        c.setFont("Helvetica-Bold", 13)
+        c.drawString(left, y, f"{unit} {heat}")
+        y -= 0.32 * inch
+        c.setFont("Helvetica-Bold", 9)
+        c.setFillGray(0.35)
+        cols = ([("LANE", 0)] if laned else [("", 0)]) + \
+               [("BIB", 0.7 * inch), ("NAME", 1.4 * inch), ("SCHOOL", 3.7 * inch),
+                ("MARK / TIME", 5.6 * inch)]
+        for label, dx in cols:
+            c.drawString(left + dx, y, label)
+        c.setFillGray(0)
+        y -= 0.06 * inch
+        c.line(left, y, pw - 0.6 * inch, y)
+        y -= 0.26 * inch
+        c.setFont("Helvetica", 11)
+        items = sorted(items, key=lambda r: (r["lane"] or 0))
+        for r in items:
+            if y < 0.9 * inch:
+                c.showPage()
+                y = ph - 0.9 * inch
+                c.setFont("Helvetica", 11)
+            if laned:
+                c.drawString(left, y, str(r["lane"] or ""))
+            c.drawString(left + 0.7 * inch, y, "" if r["bib"] is None else str(r["bib"]))
+            c.drawString(left + 1.4 * inch, y, (r["name"] or "")[:26])
+            c.drawString(left + 3.7 * inch, y, (r["school"] or "")[:22])
+            c.line(left + 5.6 * inch, y - 0.02 * inch, pw - 0.6 * inch, y - 0.02 * inch)
+            y -= 0.34 * inch
+        c.showPage()
+
+    c.save()
+    buf.seek(0)
+    return buf.read()
+
+
 def bib_list_pdf(school_name, athletes):
     """Simple printable roster: bib, name, grade, gender."""
     buf = io.BytesIO()

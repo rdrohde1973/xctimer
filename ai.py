@@ -34,6 +34,50 @@ def claude_chat(system, user, *, max_tokens=4000, model=None):
     return "".join(b.text for b in msg.content if getattr(b, "type", None) == "text")
 
 
+def claude_vision(system, prompt, image_bytes, media_type="image/jpeg",
+                  *, max_tokens=4000, model=None):
+    """Vision helper: send an image + prompt, return the text response."""
+    import base64
+    b64 = base64.standard_b64encode(image_bytes).decode()
+    content = [
+        {"type": "image", "source": {"type": "base64", "media_type": media_type, "data": b64}},
+        {"type": "text", "text": prompt},
+    ]
+    msg = _client().messages.create(
+        model=model or CLAUDE_MODEL,
+        max_tokens=max_tokens,
+        system=system,
+        messages=[{"role": "user", "content": content}],
+    )
+    return "".join(b.text for b in msg.content if getattr(b, "type", None) == "text")
+
+
+_HEATSHEET_SYS = (
+    "You read a photographed track & field heat sheet. Each row has a lane/section, "
+    "a competitor name and/or bib, and a handwritten MARK (a time like 12.34 or "
+    "2:05.4 for running events, or a distance/height like 5.42 for field events). "
+    "Return ONLY a JSON array, no prose: "
+    '[{"bib": <int or null>, "name": "<string or null>", "mark": "<string as written>"}]. '
+    "Skip empty/illegible rows. Preserve marks exactly as written."
+)
+
+
+def vision_read_marks(image_bytes, media_type="image/jpeg"):
+    """Read handwritten marks off a heat-sheet photo. Returns [{bib,name,mark}]."""
+    out = claude_vision(_HEATSHEET_SYS, "Read this heat sheet.", image_bytes,
+                        media_type=media_type, max_tokens=4000)
+    rows = _find_json_array(out)
+    clean = []
+    for r in rows:
+        if not isinstance(r, dict):
+            continue
+        mark = r.get("mark")
+        if mark in (None, ""):
+            continue
+        clean.append({"bib": r.get("bib"), "name": r.get("name"), "mark": str(mark)})
+    return clean
+
+
 # ------------------------- document text extraction -------------------------
 def extract_text(filename, data):
     """Best-effort raw-text extraction from an uploaded roster file."""
@@ -119,7 +163,8 @@ def normalize_roster(raw_text, *, max_chars=20000):
     return _parse_json_array(out)
 
 
-def _parse_json_array(s):
+def _find_json_array(s):
+    """Locate and parse a JSON array from a model response (handles ``` fences)."""
     s = (s or "").strip()
     if s.startswith("```"):
         s = s.split("```", 2)[1]
@@ -132,6 +177,11 @@ def _parse_json_array(s):
         rows = json.loads(s[a:b + 1])
     except json.JSONDecodeError:
         return []
+    return rows if isinstance(rows, list) else []
+
+
+def _parse_json_array(s):
+    rows = _find_json_array(s)
     clean = []
     for r in rows:
         if not isinstance(r, dict):

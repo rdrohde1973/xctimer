@@ -343,22 +343,30 @@ def meet_detail(mid):
                      f'<button class="ghost" type="submit" style="margin-top:.6rem">'
                      f'{"Rotate" if m["timer_token"] else "Generate"} meet-day QR</button></form>')
 
-    sport_note = "" if m["sport"] == "xc" else \
-        '<div class="msg err">Track engine arrives in Phase 4 — this XC console is XC-only.</div>'
+    if m["sport"] == "xc":
+        results_url = f"/meets/{mid}/results"
+        xlsx = f'<a class="btn ghost" href="/meets/{mid}/results.xlsx">Export xlsx</a>'
+        engine_card = f'<div class="card"><h2>Races</h2>{races_tbl}{add_race}</div>'
+    else:
+        results_url = f"/meets/{mid}/track-results"
+        xlsx = ""
+        n_ev = len(races)  # races list is empty for track; show event manager entry point
+        engine_card = (f'<div class="card"><h2>Events</h2>'
+                       f'<p class="muted">Add events, enter athletes/relays, seed heats, and record marks.</p>'
+                       f'<a class="btn" href="/meets/{mid}/events">Manage events &amp; entries</a></div>')
 
     body = f"""
 <p class="muted"><a href="/meets">← Meets</a></p>
 <h1>{escape(m['name'])}</h1>
 <p class="sub">{"🏃 Cross-country" if m['sport']=='xc' else "🏟️ Track & Field"} · {escape(m['date'] or '')}
  · host: {escape(host['name']) if host else '—'}</p>
-{sport_note}
 <div class="row">
-  <a class="btn" href="/meets/{mid}/results">Results &amp; scoring</a>
+  <a class="btn" href="{results_url}">Results &amp; scoring</a>
   <a class="btn ghost" href="/r/{m['public_token']}" target="_blank">Public results ↗</a>
-  <a class="btn ghost" href="/meets/{mid}/results.xlsx">Export xlsx</a>
+  {xlsx}
 </div>
 
-<div class="card"><h2>Races</h2>{races_tbl}{add_race}</div>
+{engine_card}
 <div class="card"><h2>Attending schools</h2>{att_block}</div>
 <div class="card"><h2>Meet-day timer QR</h2>
 <p class="muted">A no-login link that opens the timing console for this meet, today only.</p>
