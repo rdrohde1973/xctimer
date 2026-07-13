@@ -123,9 +123,7 @@ def phone_home():
     conn.close()
     meets = [m for m in rows if can_record_meet(m)]
     body = ['<h1>📱 Phone timing</h1>',
-            '<p class="sub">Pick a meet, then a heat/event to time or record.</p>',
-            _install_card(),
-            '<h2>Your meets</h2>']
+            '<p class="sub">Pick a meet, then a heat or event to time.</p>']
     for m in meets:
         icon = "🏃" if m["sport"] == "xc" else "🎽"
         body.append(f'<a class="btn" style="{BTN}" href="/phone/meet/{m["id"]}">'

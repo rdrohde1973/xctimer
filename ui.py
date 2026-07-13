@@ -8,6 +8,16 @@ BRAND = "XCTimer"
 # Styled wordmark echoing the logo: orange "xc", light "timer".
 BRAND_HTML = '<span class="bx">xc</span><span class="bt">timer</span>'
 LOGO_URL = "/static/branding/xctimer.png"
+# PWA / home-screen install (clean standalone app on Add to Home Screen).
+HEAD_EXTRA = (
+    '<link rel="manifest" href="/manifest.webmanifest">'
+    '<meta name="theme-color" content="#0a1728">'
+    '<meta name="apple-mobile-web-app-capable" content="yes">'
+    '<meta name="mobile-web-app-capable" content="yes">'
+    '<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">'
+    '<meta name="apple-mobile-web-app-title" content="XCTimer">'
+    '<link rel="apple-touch-icon" href="/static/branding/icon-192.png">'
+)
 
 # Brand palette sampled from the logo (handoff §11 neutral platform identity):
 #   navy #164271 · orange #ea6a2d · gray #868686
@@ -190,7 +200,7 @@ def shell(principal, body, *, active="", active_district=None, districts=None,
     head = title or BRAND
     return f"""<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width, initial-scale=1">
-<title>{escape(head)} · {BRAND}</title><style>{CSS}</style></head><body>
+<title>{escape(head)} · {BRAND}</title>{HEAD_EXTRA}<style>{CSS}</style></head><body>
 <header class="top">
   {_brand(principal)}
   <nav>{''.join(nav)}</nav>
@@ -206,7 +216,7 @@ def error_page(code, title, msg):
     """Standalone friendly error page."""
     return f"""<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width, initial-scale=1">
-<title>{code} · {BRAND}</title><style>{CSS}</style></head><body>
+<title>{code} · {BRAND}</title>{HEAD_EXTRA}<style>{CSS}</style></head><body>
 <div class="authwrap"><div class="authcard" style="text-align:center">
   <h1>{BRAND_HTML}</h1>
   <p style="font-size:3rem;font-weight:800;margin:.2em 0;color:var(--acc)">{code}</p>
@@ -220,7 +230,7 @@ def auth_page(title, sub, body, *, msg=None, err=None):
     """Standalone (no-shell) page for login / setup / reset."""
     return f"""<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width, initial-scale=1">
-<title>{escape(title)} · {BRAND}</title><style>{CSS}</style></head><body>
+<title>{escape(title)} · {BRAND}</title>{HEAD_EXTRA}<style>{CSS}</style></head><body>
 <div class="authwrap"><div class="authcard">
   <div class="authlogo"><img src="{LOGO_URL}" alt="XCTimer"></div>
   <p class="sub">{escape(sub)}</p>

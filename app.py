@@ -21,7 +21,7 @@ from .admin import bp as admin_bp
 from .insights import bp as insights_bp
 from .phone import bp as phone_bp
 
-APP_VERSION = "0.13.6-demousers"
+APP_VERSION = "0.13.7-pwa"
 
 LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width, initial-scale=1">
@@ -89,6 +89,21 @@ def create_app():
     @app.get("/healthz")
     def healthz():
         return jsonify(status="ok", version=APP_VERSION)
+
+    @app.get("/manifest.webmanifest")
+    def manifest():
+        # PWA manifest so "Add to Home Screen" installs a clean standalone app.
+        return jsonify({
+            "name": "XCTimer", "short_name": "XCTimer",
+            "start_url": "/phone", "scope": "/",
+            "display": "standalone", "orientation": "portrait",
+            "background_color": "#0a1728", "theme_color": "#0a1728",
+            "icons": [
+                {"src": "/static/branding/icon-192.png", "sizes": "192x192", "type": "image/png"},
+                {"src": "/static/branding/icon-512.png", "sizes": "512x512", "type": "image/png",
+                 "purpose": "any maskable"},
+            ],
+        })
 
     @app.get("/.well-known/security.txt")
     def security_txt():
