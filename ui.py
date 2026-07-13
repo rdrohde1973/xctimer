@@ -96,6 +96,12 @@ border-radius:16px;padding:2rem}
   th,td{padding:.4rem .45rem}
   .row>div{min-width:120px}
 }
+/* Installed home-screen app: lock the chrome to just the brand icon — no way out
+   to the rest of the UI, on any page reached inside the app. */
+@media all and (display-mode: standalone){
+  header.top nav, header.top .who, header.top .dsw, header.top .pill,
+  header.top form, header.top .sp{display:none !important}
+}
 """
 
 JS = """
@@ -120,7 +126,7 @@ def _flashes(msg=None, err=None):
     return out
 
 
-def _brand(principal):
+def _brand(principal, href="/dashboard"):
     """Top-left brand: super admin -> XCTimer wordmark; district admin -> district
     logo; coach -> their school logo. Falls back to the XCTimer wordmark."""
     role = getattr(principal, "role", None)
@@ -144,13 +150,26 @@ def _brand(principal):
             logo = r["logo_path"] if r else None
     inner = (f'<span class="brandchip"><img src="{logo}" alt="XCTimer"></span>'
              if logo else BRAND_HTML)
-    return f'<a class="brand" href="/dashboard" style="text-decoration:none">{inner}</a>'
+    return f'<a class="brand" href="{href}" style="text-decoration:none">{inner}</a>'
 
 
 def shell(principal, body, *, active="", active_district=None, districts=None,
-          msg=None, err=None, title=None):
-    """Full authenticated page with header, nav, and district switcher."""
+          msg=None, err=None, title=None, bare=False):
+    """Full authenticated page with header, nav, and district switcher.
+
+    bare=True renders only the brand icon in the header (no nav / switcher /
+    account / sign-out) — used by the phone timing app so there's no way out to
+    the rest of the UI.
+    """
     role = principal.role
+    if bare:
+        return f"""<!doctype html><html lang=en><head><meta charset=utf-8>
+<meta name=viewport content="width=device-width, initial-scale=1">
+<title>{escape(title or BRAND)} · {BRAND}</title>{HEAD_EXTRA}<style>{CSS}</style></head><body>
+<header class="top">{_brand(principal, "/phone")}</header>
+<main>{_flashes(msg, err)}{body}</main>
+<script>{JS}</script>
+</body></html>"""
     nav = []
 
     def link(href, label, key):

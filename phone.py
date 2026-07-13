@@ -30,7 +30,7 @@ def _phone_url():
 
 
 def _phone_shell(principal, body):
-    return shell(principal, body, active="phone")
+    return shell(principal, body, active="phone", bare=True)
 
 
 def _meet_card(m):
