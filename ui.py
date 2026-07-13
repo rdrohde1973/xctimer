@@ -8,7 +8,8 @@ BRAND = "XCTimer"
 # Styled wordmark echoing the logo: orange "xc", light "timer".
 BRAND_HTML = '<span class="bx">xc</span><span class="bt">timer</span>'
 LOGO_URL = "/static/branding/xctimer.png"        # light bg — landing / login card
-LOGO_DARK_URL = "/static/branding/xctimerdark.png?v=3"  # dark bg — header / phone app (v= busts Cloudflare cache)
+LOGO_DARK_URL = "/static/branding/xctimerdark.png?v=4"      # UI header (v= busts Cloudflare cache)
+LOGO_APP_URL = "/static/branding/xctimerdarkdark.png?v=1"   # phone app
 # PWA / home-screen install (clean standalone app on Add to Home Screen).
 HEAD_EXTRA = (
     '<link rel="manifest" href="/manifest.webmanifest">'
@@ -136,9 +137,10 @@ def home_url(principal):
     return "/meets" if getattr(principal, "role", None) in ("coach", "timer") else "/dashboard"
 
 
-def _brand(principal, href=None):
-    """Top-left brand: super admin -> XCTimer wordmark; district admin -> district
-    logo; coach -> their school logo. Falls back to the XCTimer wordmark."""
+def _brand(principal, href=None, app=False):
+    """Top-left brand: district admin -> district logo; coach -> their school logo;
+    otherwise the XCTimer mark — xctimerdark on the UI header, xctimerdarkdark in
+    the phone app (app=True)."""
     if href is None:
         href = home_url(principal)
     role = getattr(principal, "role", None)
@@ -163,7 +165,7 @@ def _brand(principal, href=None):
     if logo:
         inner = f'<span class="brandchip"><img src="{logo}" alt="XCTimer"></span>'
     else:
-        inner = f'<img class="xclogo" src="{LOGO_DARK_URL}" alt="XCTimer">'
+        inner = f'<img class="xclogo" src="{LOGO_APP_URL if app else LOGO_DARK_URL}" alt="XCTimer">'
     return f'<a class="brand" href="{href}" style="text-decoration:none">{inner}</a>'
 
 
@@ -180,7 +182,7 @@ def shell(principal, body, *, active="", active_district=None, districts=None,
         return f"""<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width, initial-scale=1">
 <title>{escape(title or BRAND)} · {BRAND}</title>{HEAD_EXTRA}<style>{CSS}</style></head><body>
-<header class="top">{_brand(principal, "/phone")}</header>
+<header class="top">{_brand(principal, "/phone", app=True)}</header>
 <main>{_flashes(msg, err)}{body}</main>
 <script>{JS}</script>
 </body></html>"""
