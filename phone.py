@@ -16,7 +16,7 @@ from flask import Blueprint, g, redirect, request, Response, abort
 
 from . import db
 from .meets import load_meet, can_record_meet
-from .ui import shell, HEAD_EXTRA, CSS, JS, BRAND_HTML
+from .ui import shell, HEAD_EXTRA, CSS, JS, BRAND_HTML, LOGO_DARK_URL
 
 bp = Blueprint("phone", __name__)
 
@@ -48,7 +48,7 @@ def _district_brand(p):
         conn.close()
         if r and r["logo_path"]:
             return f'<span class="dchip"><img src="{r["logo_path"]}" alt=""></span>'
-    return f'<div class="wordmark">{BRAND_HTML}</div>'
+    return f'<img class="xclogo" src="{LOGO_DARK_URL}" alt="XCTimer">'
 
 
 PICK_CSS = """
@@ -57,6 +57,7 @@ body.phone{background:var(--bg);min-height:100vh;margin:0}
 .pickhdr .dchip{display:inline-flex;background:#f4f6f8;border-radius:14px;padding:.5rem .9rem}
 .pickhdr .dchip img{max-width:280px;max-height:84px;object-fit:contain;display:block}
 .pickhdr .wordmark{font-size:2rem;font-weight:800}
+.pickhdr .xclogo{max-width:300px;max-height:120px;width:auto;border-radius:12px}
 .pickhdr h1{font-size:1.4rem;margin:1rem 0 .2rem}
 .pickhdr .who{color:var(--mut);font-size:.92rem}
 .meet{margin:0 .8rem 1rem;border:1px solid var(--line);border-radius:14px;overflow:hidden}

@@ -7,7 +7,8 @@ from markupsafe import escape
 BRAND = "XCTimer"
 # Styled wordmark echoing the logo: orange "xc", light "timer".
 BRAND_HTML = '<span class="bx">xc</span><span class="bt">timer</span>'
-LOGO_URL = "/static/branding/xctimer.png"
+LOGO_URL = "/static/branding/xctimer.png"        # light bg — landing / login card
+LOGO_DARK_URL = "/static/branding/xctimerdark.png"  # dark bg — header / phone app
 # PWA / home-screen install (clean standalone app on Add to Home Screen).
 HEAD_EXTRA = (
     '<link rel="manifest" href="/manifest.webmanifest">'
@@ -36,6 +37,7 @@ background:var(--panel);border-bottom:1px solid var(--line);position:sticky;top:
 header.top .brand{font-weight:800;font-size:1.2rem;letter-spacing:-.02em;display:inline-flex;align-items:center}
 header.top .brand .brandchip{display:inline-flex;align-items:center;background:#f4f6f8;border-radius:8px;padding:3px 8px}
 header.top .brand .brandchip img{height:26px;width:auto;max-width:160px;object-fit:contain;display:block}
+header.top .brand .xclogo{height:32px;width:auto;display:block;border-radius:6px}
 header.top nav{display:flex;gap:.25rem;flex-wrap:wrap}
 header.top nav a{padding:.35rem .7rem;border-radius:8px;color:var(--mut)}
 header.top nav a:hover{background:var(--panel2);color:var(--fg);text-decoration:none}
@@ -158,8 +160,10 @@ def _brand(principal, href=None):
                 f"AND logo_path IS NOT NULL ORDER BY id LIMIT 1", tuple(ids)).fetchone()
             conn.close()
             logo = r["logo_path"] if r else None
-    inner = (f'<span class="brandchip"><img src="{logo}" alt="XCTimer"></span>'
-             if logo else BRAND_HTML)
+    if logo:
+        inner = f'<span class="brandchip"><img src="{logo}" alt="XCTimer"></span>'
+    else:
+        inner = f'<img class="xclogo" src="{LOGO_DARK_URL}" alt="XCTimer">'
     return f'<a class="brand" href="{href}" style="text-decoration:none">{inner}</a>'
 
 
