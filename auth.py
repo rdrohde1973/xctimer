@@ -223,8 +223,36 @@ def demo_readonly_guard():
 
 def _set_session_cookie(resp, token):
     resp.set_cookie(SESSION_COOKIE, token, httponly=True, samesite="Lax",
+                    secure=bool(os.environ.get("XC_SECURE_COOKIES")),
                     max_age=SESSION_TTL_DAYS * 86400)
     return resp
+
+
+# --- login throttle (audit MEDIUM-3): backoff after repeated failures ---
+import time as _time  # noqa: E402
+
+_LOGIN_FAILS = {}          # email -> [count, window_start_ts]
+_MAX_FAILS = 5
+_WINDOW = 900              # 15 minutes
+
+
+def _login_throttled(email):
+    rec = _LOGIN_FAILS.get(email)
+    if not rec:
+        return False
+    if _time.time() - rec[1] > _WINDOW:
+        _LOGIN_FAILS.pop(email, None)
+        return False
+    return rec[0] >= _MAX_FAILS
+
+
+def _record_login_fail(email):
+    now = _time.time()
+    rec = _LOGIN_FAILS.get(email)
+    if not rec or now - rec[1] > _WINDOW:
+        _LOGIN_FAILS[email] = [1, now]
+    else:
+        rec[0] += 1
 
 
 # --- decorators ---
@@ -326,8 +354,18 @@ def login_form():
 def login_submit():
     email = (request.form.get("email") or "").strip().lower()
     pw = request.form.get("password") or ""
+    if _login_throttled(email):
+        body = """
+<form method="post" action="/login">
+  <label>Email</label><input name="email" type="email" autofocus required>
+  <label>Password</label><input name="password" type="password" required>
+  <button type="submit">Sign in</button>
+</form>"""
+        return auth_page("Sign in", "Cross-country & track timing", body,
+                         err="Too many attempts. Please wait a few minutes and try again."), 429
     u = find_user_by_email(email)
     if not u or not verify_password(pw, u["password_hash"]):
+        _record_login_fail(email)
         body = """
 <form method="post" action="/login">
   <label>Email</label><input name="email" type="email" value="%s" autofocus required>
@@ -337,6 +375,7 @@ def login_submit():
 <p class="center muted"><a href="/forgot">Forgot password?</a></p>""" % email.replace('"', "")
         return auth_page("Sign in", "Cross-country & track timing", body,
                          err="Invalid email or password."), 401
+    _LOGIN_FAILS.pop(email, None)
     conn = db.connect()
     conn.execute("UPDATE users SET last_login=? WHERE id=?", (_iso(_now()), u["id"]))
     conn.commit()

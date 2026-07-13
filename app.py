@@ -20,7 +20,7 @@ from .track import bp as track_bp
 from .admin import bp as admin_bp
 from .insights import bp as insights_bp
 
-APP_VERSION = "0.6.0-phase6"
+APP_VERSION = "0.6.1-hardening"
 
 LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width, initial-scale=1">
@@ -61,6 +61,14 @@ LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
 def create_app():
     app = Flask(__name__)
     app.config["SECRET_KEY"] = os.environ.get("XCTIMER_SECRET", "dev-insecure-change-me")
+    # Cookie hardening (security audit MEDIUM-2). SECURE only in prod (behind
+    # HTTPS at Cloudflare) — XC_SECURE_COOKIES=1 there; unset on LAN http dev.
+    _secure = bool(os.environ.get("XC_SECURE_COOKIES"))
+    app.config.update(
+        SESSION_COOKIE_HTTPONLY=True,
+        SESSION_COOKIE_SAMESITE="Lax",
+        SESSION_COOKIE_SECURE=_secure,
+    )
 
     db.init_db()
 
@@ -80,6 +88,40 @@ def create_app():
     @app.get("/healthz")
     def healthz():
         return jsonify(status="ok", version=APP_VERSION)
+
+    @app.get("/.well-known/security.txt")
+    def security_txt():
+        from datetime import datetime, timedelta, timezone
+        from flask import Response
+        exp = (datetime.now(timezone.utc) + timedelta(days=365)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        base = os.environ.get("XC_PUBLIC_URL", "https://xctimer.com")
+        body = (f"Contact: mailto:rob@shasta.cloud\n"
+                f"Expires: {exp}\n"
+                f"Preferred-Languages: en\n"
+                f"Canonical: {base}/.well-known/security.txt\n")
+        return Response(body, mimetype="text/plain")
+
+    @app.after_request
+    def _security_headers(resp):
+        # HTTP security headers (audit HIGH-1). Belt-and-suspenders with Cloudflare.
+        resp.headers.setdefault("X-Frame-Options", "DENY")
+        resp.headers.setdefault("X-Content-Type-Options", "nosniff")
+        resp.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+        resp.headers.setdefault("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
+        # Inline <style>/<script> are used throughout, so 'unsafe-inline' is required;
+        # frame-ancestors 'none' is the key clickjacking win.
+        resp.headers.setdefault("Content-Security-Policy",
+            "default-src 'self'; script-src 'self' 'unsafe-inline'; "
+            "style-src 'self' 'unsafe-inline'; img-src 'self' data:; "
+            "base-uri 'self'; form-action 'self'; frame-ancestors 'none'")
+        if _secure:
+            resp.headers.setdefault("Strict-Transport-Security",
+                                    "max-age=31536000; includeSubDomains")
+        # Don't let authenticated pages sit in caches (audit LOW-1).
+        if getattr(g, "principal", None):
+            resp.headers["Cache-Control"] = "no-store"
+            resp.headers["Pragma"] = "no-cache"
+        return resp
 
     from .ui import error_page
 
