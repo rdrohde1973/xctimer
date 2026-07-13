@@ -524,9 +524,6 @@ def assign_page(mid):
         f'{escape(s["name"])}</a> ' for s in pickable)
 
     # per-athlete rows — individual/field AND relay events are all just checkboxes
-    def div(me):
-        return {"M": "B", "F": "G"}.get(me["gender"], "") + (str(me["grade"]) if me["grade"] else "")
-
     # which relays (this school) each athlete is already on
     relay_member = {}  # aid -> set(meid)
     for meid, members in relay_squads.items():
@@ -537,10 +534,11 @@ def assign_page(mid):
     def box(me, aid, checked, relay):
         rel = ' data-relay="1"' if relay else f' onchange="cnt({aid})"'
         tag = "🔗 " if relay else ""
+        # No grade/gender tag — eligibility already scopes each athlete to their events.
         return (f'<label style="display:inline-flex;gap:.3rem;align-items:center;margin:0 .8rem .3rem 0">'
                 f'<input type="checkbox" name="me_{aid}" value="{me["id"]}" style="width:auto" '
                 f'data-ath="{aid}"{rel} {"checked" if checked else ""}>'
-                f'{tag}{escape(me["ename"])} <span class="muted">{div(me)}</span></label>')
+                f'{tag}{escape(me["ename"])}</label>')
 
     rows = []
     for a in athletes:
