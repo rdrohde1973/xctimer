@@ -1693,7 +1693,8 @@ def build_results(mid):
                 key = (r["snap_school"], me["gender"] or "U")
                 team_pts[key] = team_pts.get(key, 0) + pts
         div = {"M": "Boys", "F": "Girls"}.get(me["gender"], "Open")
-        events_out.append({"name": f'{me["ename"]} — {div}', "items": items,
+        grd = f' G{me["grade"]}' if me["grade"] else ""
+        events_out.append({"name": f'{me["ename"]} — {div}{grd}', "items": items,
                            "gkey": me["gender"] or "U"})
     conn.close()
     # Team totals by gender
