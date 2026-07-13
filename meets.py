@@ -13,7 +13,9 @@ from datetime import datetime, timezone
 from markupsafe import escape
 from flask import Blueprint, request, redirect, g, abort, Response
 
-from . import db
+import os
+
+from . import db, pdfs
 from .auth import login_required
 from .tenancy import active_district_id, all_districts
 from .ui import shell
@@ -201,6 +203,16 @@ def create_meet():
     mid = cur.lastrowid
     for s in set(school_ids) | ({host} if host else set()):
         conn.execute("INSERT OR IGNORE INTO meet_schools (meet_id, school_id) VALUES (?,?)", (mid, s))
+    if sport == "xc":
+        # Auto-create the two standard heats (like the reference XC app).
+        for hn in ("Boys", "Girls"):
+            conn.execute("INSERT INTO races (meet_id, name, capture_mode) VALUES (?,?,?)",
+                         (mid, hn, "tap"))
+    else:
+        pt = conn.execute("SELECT id FROM points_tables WHERE name=?",
+                          ("Invitational 10-8-6-4-2-1",)).fetchone()
+        if pt:
+            conn.execute("UPDATE meets SET points_table_id=? WHERE id=?", (pt[0], mid))
     conn.commit()
     conn.close()
     return redirect(f"/meets/{mid}")
@@ -275,21 +287,19 @@ def timer_qr_png(mid):
     return Response(buf.getvalue(), mimetype="image/png")
 
 
-# ------------------------------- detail -------------------------------
+# ------------------------------- detail (setup shell) -------------------------------
 @bp.get("/meets/<int:mid>")
 @login_required
 def meet_detail(mid):
     m = load_meet(mid)
     if not can_view_meet(m):
         abort(403)
-    import os
     conn = db.connect()
     att = conn.execute(
         "SELECT s.* FROM schools s JOIN meet_schools ms ON ms.school_id=s.id "
         "WHERE ms.meet_id=? ORDER BY s.name", (mid,)).fetchall()
     all_sch = conn.execute("SELECT * FROM schools WHERE district_id=? ORDER BY name",
                            (m["district_id"],)).fetchall()
-    races = conn.execute("SELECT * FROM races WHERE meet_id=? ORDER BY id", (mid,)).fetchall()
     host = conn.execute("SELECT name FROM schools WHERE id=?", (m["host_school_id"],)).fetchone() \
         if m["host_school_id"] else None
     conn.close()
@@ -297,42 +307,43 @@ def meet_detail(mid):
     att_ids = {s["id"] for s in att}
     setup = can_setup_meet(m)
     base = os.environ.get("XC_PUBLIC_URL", request.host_url.rstrip("/"))
+    is_xc = m["sport"] == "xc"
+    results_url = f"/meets/{mid}/results" if is_xc else f"/meets/{mid}/track-results"
 
-    # Races block
-    rrows = []
-    for r in races:
-        rrows.append(
-            f'<tr><td><b>{escape(r["name"])}</b></td>'
-            f'<td>{"started" if r["start_time"] else "not started"}'
-            f'{" · stopped" if r["stop_time"] else ""}</td>'
-            f'<td style="text-align:right"><a class="btn ghost" href="/races/{r["id"]}/console">Timing console</a></td></tr>')
-    races_tbl = (f'<table>{"".join(rrows)}</table>' if races
-                 else '<p class="muted">No races yet.</p>')
-    add_race = ""
-    if setup and m["sport"] == "xc":
-        add_race = f"""
-<form method="post" action="/meets/{mid}/races" class="row" style="margin-top:.8rem">
-  <div><input name="name" placeholder="e.g. Varsity Boys" required></div>
-  <div style="max-width:130px"><select name="gender">
-    <option value="">All</option><option value="M">Boys</option><option value="F">Girls</option></select></div>
-  <div style="max-width:120px"><button type="submit">Add race</button></div>
-</form>"""
+    actions = [f'<a class="btn" href="{results_url}">📊 Results</a>',
+               f'<a class="btn ghost" href="/r/{m["public_token"]}" target="_blank">Public ↗</a>']
+    if is_xc:
+        actions.append(f'<a class="btn ghost" href="/meets/{mid}/results.xlsx">Export xlsx</a>')
 
-    # Attending schools editor
+    hs = (f' <a class="btn ghost" href="/meets/{mid}/heatsheets.pdf">Heat sheets</a>'
+          if not is_xc else "")
+    print_bar = (
+        f'<div class="card"><b>Print — all attending schools:</b> '
+        f'<a class="btn ghost" href="/meets/{mid}/stickers.pdf?template=5160">Stickers 5160</a> '
+        f'<a class="btn ghost" href="/meets/{mid}/stickers.pdf?template=5163">Stickers 5163</a> '
+        f'<a class="btn ghost" href="/meets/{mid}/biblist.pdf">Bib lists</a>{hs}</div>')
+
     if setup:
         boxes = "".join(
             f'<label style="display:flex;gap:.5rem;align-items:center;font-size:.95rem">'
             f'<input type="checkbox" name="school_ids" value="{s["id"]}" style="width:auto" '
-            f'{"checked" if s["id"] in att_ids else ""}>{escape(s["name"])}</label>'
-            for s in all_sch)
-        att_block = (f'<form method="post" action="/meets/{mid}/schools">'
-                     f'<div class="card" style="background:var(--panel2)">{boxes}</div>'
-                     f'<button type="submit" style="margin-top:.6rem">Save attending</button></form>')
+            f'{"checked" if s["id"] in att_ids else ""}>{escape(s["name"])}</label>' for s in all_sch)
+        hopts = '<option value="">— none —</option>' + "".join(
+            f'<option value="{s["id"]}" {"selected" if s["id"]==m["host_school_id"] else ""}>'
+            f'{escape(s["name"])}</option>' for s in all_sch)
+        att_block = (
+            f'<form method="post" action="/meets/{mid}/schools">'
+            f'<div class="card" style="background:var(--panel2)">{boxes}</div>'
+            f'<button type="submit" style="margin-top:.6rem">Save attending</button></form>'
+            f'<form method="post" action="/meets/{mid}/host" style="margin-top:.9rem">'
+            f'<label>Host school <span class="muted">— only the host school\'s coaches can run this meet</span></label>'
+            f'<div class="row"><div style="max-width:260px"><select name="host_school_id">{hopts}</select></div>'
+            f'<div style="display:flex;align-items:flex-end"><button type="submit">Set host</button></div></div></form>')
     else:
-        att_block = "".join(f'<span class="pill">{escape(s["name"])}</span> ' for s in att) or \
-            '<span class="muted">None</span>'
+        att_block = ("".join(f'<span class="pill">{escape(s["name"])}</span> ' for s in att) or
+                     '<span class="muted">None</span>') + \
+                    f'<p class="muted">Host: {escape(host["name"]) if host else "—"}</p>'
 
-    # Meet-day QR
     qr_block = ""
     if m["timer_token"]:
         qr_block = (f'<p><a href="{base}/t/{m["timer_token"]}">{base}/t/{m["timer_token"]}</a></p>'
@@ -343,34 +354,98 @@ def meet_detail(mid):
                      f'<button class="ghost" type="submit" style="margin-top:.6rem">'
                      f'{"Rotate" if m["timer_token"] else "Generate"} meet-day QR</button></form>')
 
-    if m["sport"] == "xc":
-        results_url = f"/meets/{mid}/results"
-        xlsx = f'<a class="btn ghost" href="/meets/{mid}/results.xlsx">Export xlsx</a>'
-        engine_card = f'<div class="card"><h2>Races</h2>{races_tbl}{add_race}</div>'
+    if is_xc:
+        from . import xc as _sport
     else:
-        results_url = f"/meets/{mid}/track-results"
-        xlsx = ""
-        n_ev = len(races)  # races list is empty for track; show event manager entry point
-        engine_card = (f'<div class="card"><h2>Events</h2>'
-                       f'<p class="muted">Add events, enter athletes/relays, seed heats, and record marks.</p>'
-                       f'<a class="btn" href="/meets/{mid}/events">Manage events &amp; entries</a></div>')
+        from . import track as _sport
+    section = _sport.setup_section(m, setup)
 
     body = f"""
 <p class="muted"><a href="/meets">← Meets</a></p>
 <h1>{escape(m['name'])}</h1>
-<p class="sub">{"🏃 Cross-country" if m['sport']=='xc' else "🏟️ Track & Field"} · {escape(m['date'] or '')}
+<p class="sub">{"🏃 Cross-country" if is_xc else "🏟️ Track & Field"} · {escape(m['date'] or '')}
  · host: {escape(host['name']) if host else '—'}</p>
-<div class="row">
-  <a class="btn" href="{results_url}">Results &amp; scoring</a>
-  <a class="btn ghost" href="/r/{m['public_token']}" target="_blank">Public results ↗</a>
-  {xlsx}
-</div>
-
-{engine_card}
-<div class="card"><h2>Attending schools</h2>{att_block}</div>
+<div class="row">{''.join(actions)}</div>
+{print_bar}
+<div class="card"><h2>Schools at this meet</h2>{att_block}</div>
+{section}
 <div class="card"><h2>Meet-day timer QR</h2>
 <p class="muted">A no-login link that opens the timing console for this meet, today only.</p>
 {qr_block}</div>
 """
     return shell(g.principal, body, active="meets",
                  active_district=active_district_id(), districts=_districts_for_switcher())
+
+
+@bp.post("/meets/<int:mid>/scoring")
+@login_required
+def set_scoring(mid):
+    m = load_meet(mid)
+    if not can_setup_meet(m):
+        abort(403)
+    ts = 1 if request.form.get("team_scoring") else 0
+    conn = db.connect()
+    conn.execute("UPDATE meets SET team_scoring=? WHERE id=?", (ts, mid))
+    conn.commit()
+    conn.close()
+    return redirect(f"/meets/{mid}")
+
+
+@bp.post("/meets/<int:mid>/host")
+@login_required
+def set_host(mid):
+    m = load_meet(mid)
+    if not can_setup_meet(m):
+        abort(403)
+    h = (request.form.get("host_school_id") or "").strip()
+    host = int(h) if h.isdigit() else None
+    if host is not None:
+        conn = db.connect()
+        ok = conn.execute("SELECT 1 FROM schools WHERE id=? AND district_id=?",
+                          (host, m["district_id"])).fetchone()
+        conn.close()
+        if not ok:
+            host = None
+    conn = db.connect()
+    conn.execute("UPDATE meets SET host_school_id=? WHERE id=?", (host, mid))
+    conn.commit()
+    conn.close()
+    return redirect(f"/meets/{mid}")
+
+
+def _attending_groups(mid):
+    conn = db.connect()
+    schools = conn.execute(
+        "SELECT s.* FROM schools s JOIN meet_schools ms ON ms.school_id=s.id "
+        "WHERE ms.meet_id=? ORDER BY s.name", (mid,)).fetchall()
+    groups = []
+    for s in schools:
+        ath = conn.execute("SELECT bib,name,grade,gender FROM athletes WHERE school_id=? "
+                           "ORDER BY bib IS NULL, bib, name", (s["id"],)).fetchall()
+        groups.append((s["name"], [dict(a) for a in ath]))
+    conn.close()
+    return groups
+
+
+@bp.get("/meets/<int:mid>/stickers.pdf")
+@login_required
+def meet_stickers(mid):
+    m = load_meet(mid)
+    if not can_view_meet(m):
+        abort(403)
+    prefix = f'{os.environ.get("XC_PUBLIC_URL", "")}/bibcheck?bib='
+    pdf = pdfs.meet_stickers_pdf(_attending_groups(mid),
+                                 template=request.args.get("template", "5160"), qr_prefix=prefix)
+    return Response(pdf, mimetype="application/pdf",
+                    headers={"Content-Disposition": 'inline; filename="meet-stickers.pdf"'})
+
+
+@bp.get("/meets/<int:mid>/biblist.pdf")
+@login_required
+def meet_biblist(mid):
+    m = load_meet(mid)
+    if not can_view_meet(m):
+        abort(403)
+    pdf = pdfs.meet_biblist_pdf(f'{m["name"]} — bib lists', _attending_groups(mid))
+    return Response(pdf, mimetype="application/pdf",
+                    headers={"Content-Disposition": 'inline; filename="meet-biblist.pdf"'})

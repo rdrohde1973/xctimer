@@ -75,23 +75,14 @@ def bib_stickers_pdf(school_name, athletes, *, template="5160", qr_prefix=""):
     return buf.read()
 
 
-def heat_sheet_pdf(title, rows, *, laned=True):
-    """Meet-day packet: entries grouped by heat/section with a blank mark column.
-
-    `rows` = dicts with heat, lane, bib, name, school. One heat/section per page.
-    """
+def _draw_heat_section(c, ph, pw, left, title, rows, laned):
+    """Draw one event's heats (one heat/section per page) onto canvas `c`."""
     from collections import OrderedDict
-    buf = io.BytesIO()
-    c = pdfcanvas.Canvas(buf, pagesize=letter)
-    pw, ph = letter
-    left = 0.75 * inch
-
     groups = OrderedDict()
     for r in rows:
         groups.setdefault(r["heat"] or 1, []).append(r)
     if not groups:
         groups[1] = []
-
     unit = "Heat" if laned else "Section"
     for heat, items in groups.items():
         y = ph - 0.9 * inch
@@ -128,6 +119,114 @@ def heat_sheet_pdf(title, rows, *, laned=True):
             y -= 0.34 * inch
         c.showPage()
 
+
+def heat_sheet_pdf(title, rows, *, laned=True):
+    """Meet-day packet for one event: entries grouped by heat/section, blank mark column."""
+    buf = io.BytesIO()
+    c = pdfcanvas.Canvas(buf, pagesize=letter)
+    pw, ph = letter
+    _draw_heat_section(c, ph, pw, 0.75 * inch, title, rows, laned)
+    c.save()
+    buf.seek(0)
+    return buf.read()
+
+
+def multi_heat_sheet_pdf(sections):
+    """Meet-wide heat sheets. `sections` = list of (title, rows, laned)."""
+    buf = io.BytesIO()
+    c = pdfcanvas.Canvas(buf, pagesize=letter)
+    pw, ph = letter
+    drew = False
+    for title, rows, laned in sections:
+        if not rows:
+            continue
+        _draw_heat_section(c, ph, pw, 0.75 * inch, title, rows, laned)
+        drew = True
+    if not drew:
+        c.showPage()
+    c.save()
+    buf.seek(0)
+    return buf.read()
+
+
+def _draw_label(c, t, slot, ph, a, school_name, qr_prefix):
+    col = slot % t["cols"]
+    row = slot // t["cols"]
+    x = t["side"] * inch + col * t["px"] * inch
+    y_top = ph - t["top"] * inch - row * t["py"] * inch
+    lw, lh = t["lw"] * inch, t["lh"] * inch
+    pad = 0.08 * inch
+    qr_sz = min(lh - 2 * pad, 0.8 * inch)
+    qr_text = f"{qr_prefix}{a['bib']}" if qr_prefix else str(a["bib"])
+    try:
+        c.drawImage(_qr_image(qr_text), x + lw - qr_sz - pad, y_top - qr_sz - pad,
+                    qr_sz, qr_sz, preserveAspectRatio=True, mask="auto")
+    except Exception:  # noqa: BLE001
+        pass
+    c.setFont("Helvetica-Bold", 20)
+    c.drawString(x + pad, y_top - 0.34 * inch, f"#{a['bib']}")
+    c.setFont("Helvetica", 10)
+    c.drawString(x + pad, y_top - 0.54 * inch, (a["name"] or "")[:26])
+    c.setFont("Helvetica", 7)
+    c.setFillGray(0.4)
+    c.drawString(x + pad, y_top - 0.70 * inch, (school_name or "")[:32])
+    c.setFillGray(0)
+
+
+def meet_stickers_pdf(groups, *, template="5160", qr_prefix=""):
+    """Meet-wide sticker sheets. `groups` = list of (school_name, athletes).
+    Each school starts on a fresh sheet (no two schools share one)."""
+    t = TEMPLATES.get(template, TEMPLATES["5160"])
+    per_page = t["cols"] * t["rows"]
+    buf = io.BytesIO()
+    c = pdfcanvas.Canvas(buf, pagesize=letter)
+    _pw, ph = letter
+    drew = False
+    for school_name, athletes in groups:
+        items = [a for a in athletes if a["bib"] is not None]
+        if not items:
+            continue
+        for i, a in enumerate(items):
+            slot = i % per_page
+            if i and slot == 0:
+                c.showPage()
+            _draw_label(c, t, slot, ph, a, school_name, qr_prefix)
+        c.showPage()  # next school on a clean sheet
+        drew = True
+    if not drew:
+        c.showPage()
+    c.save()
+    buf.seek(0)
+    return buf.read()
+
+
+def meet_biblist_pdf(title, groups):
+    """Meet-wide bib list: one titled section per school."""
+    buf = io.BytesIO()
+    c = pdfcanvas.Canvas(buf, pagesize=letter)
+    pw, ph = letter
+    left = 0.75 * inch
+    y = ph - 0.9 * inch
+    c.setFont("Helvetica-Bold", 16)
+    c.drawString(left, y, title[:70])
+    y -= 0.45 * inch
+    for school_name, athletes in groups:
+        if y < 1.4 * inch:
+            c.showPage(); y = ph - 0.9 * inch
+        c.setFont("Helvetica-Bold", 13)
+        c.drawString(left, y, school_name)
+        y -= 0.28 * inch
+        c.setFont("Helvetica", 10)
+        for a in athletes:
+            if y < 0.8 * inch:
+                c.showPage(); y = ph - 0.9 * inch
+                c.setFont("Helvetica", 10)
+            bib = "" if a["bib"] is None else str(a["bib"])
+            gr = "" if a["grade"] is None else f"  gr {a['grade']}"
+            c.drawString(left + 0.2 * inch, y, f"{bib:>6}  {(a['name'] or '')[:38]}{gr}  {a['gender'] or ''}")
+            y -= 0.22 * inch
+        y -= 0.2 * inch
+    c.showPage()
     c.save()
     buf.seek(0)
     return buf.read()

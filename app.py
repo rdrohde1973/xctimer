@@ -20,7 +20,7 @@ from .track import bp as track_bp
 from .admin import bp as admin_bp
 from .insights import bp as insights_bp
 
-APP_VERSION = "0.6.1-hardening"
+APP_VERSION = "0.7.0-meetsetup"
 
 LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width, initial-scale=1">

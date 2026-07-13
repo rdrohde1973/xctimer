@@ -93,11 +93,38 @@ def points_tables():
     return ind, rel
 
 
+DEFAULT_PT = "Invitational 10-8-6-4-2-1"
+
+
 def event_limit(meet):
+    try:
+        v = meet["event_limit"]
+        if v:
+            return int(v)
+    except (KeyError, IndexError, TypeError, ValueError):
+        pass
     try:
         return int(json.loads(meet["settings_json"] or "{}").get("event_limit", DEFAULT_EVENT_LIMIT))
     except (ValueError, TypeError):
         return DEFAULT_EVENT_LIMIT
+
+
+def _meet_points(meet):
+    """(point_values, relay_multiplier) for the meet's selected scoring table."""
+    conn = db.connect()
+    row = None
+    if meet and meet["points_table_id"]:
+        row = conn.execute("SELECT * FROM points_tables WHERE id=?",
+                           (meet["points_table_id"],)).fetchone()
+    if not row:
+        row = conn.execute("SELECT * FROM points_tables WHERE name=?", (DEFAULT_PT,)).fetchone()
+    conn.close()
+    vals = json.loads(row["point_values_json"]) if row else [10, 8, 6, 4, 2, 1]
+    try:
+        mult = row["relay_multiplier"] or 1.0
+    except (KeyError, IndexError, TypeError):
+        mult = 1.0
+    return vals, mult
 
 
 def _event_kind(ev):
@@ -119,100 +146,149 @@ def load_meet_event(meid):
     return row
 
 
-# ------------------------------- events management -------------------------------
-@bp.get("/meets/<int:mid>/events")
-@login_required
-def meet_events(mid):
-    m = load_meet(mid)
-    if not can_view_meet(m):
-        abort(403)
-    setup = can_setup_meet(m)
+# ------------------------------- setup section (meet detail) -------------------------------
+def _points_tables():
+    conn = db.connect()
+    rows = conn.execute("SELECT * FROM points_tables ORDER BY builtin DESC, name").fetchall()
+    conn.close()
+    return rows
+
+
+def setup_section(m, setup):
+    """Track setup (scoring / event limit / lanes) + events list + batch add-events."""
     conn = db.connect()
     catalog = conn.execute("SELECT * FROM events ORDER BY sort").fetchall()
     mes = conn.execute(
         "SELECT me.*, e.name AS ename, e.kind FROM meet_events me JOIN events e ON e.id=me.event_id "
-        "WHERE me.meet_id=? ORDER BY e.sort, me.gender", (mid,)).fetchall()
+        "WHERE me.meet_id=? ORDER BY e.sort, me.gender, me.grade", (m["id"],)).fetchall()
     counts = {r[0]: r[1] for r in conn.execute(
         "SELECT me.id, COUNT(en.id) FROM meet_events me LEFT JOIN entries en ON en.meet_event_id=me.id "
-        "WHERE me.meet_id=? GROUP BY me.id", (mid,)).fetchall()}
+        "WHERE me.meet_id=? GROUP BY me.id", (m["id"],)).fetchall()}
     conn.close()
+    tables = _points_tables()
 
-    trs = []
+    if setup:
+        topts = "".join(
+            f'<option value="{t["id"]}" {"selected" if t["id"]==m["points_table_id"] else ""}>'
+            f'{escape(t["name"])}</option>' for t in tables)
+        settings = f"""
+<form method="post" action="/meets/{m['id']}/track-settings">
+  <label>Scoring <span class="muted">— points table for team scores</span></label>
+  <select name="points_table_id" style="max-width:340px">{topts}</select>
+  <div class="row" style="margin-top:.6rem">
+    <div style="max-width:150px"><label>Event limit</label>
+      <input name="event_limit" type="number" value="{event_limit(m)}"></div>
+    <div style="max-width:150px"><label>Track lanes</label>
+      <input name="lanes" type="number" value="{m['lanes'] or 8}"></div>
+  </div>
+  <button type="submit" style="margin-top:.8rem">💾 Save meet setup</button>
+</form>"""
+    else:
+        tname = next((t["name"] for t in tables if t["id"] == m["points_table_id"]), "—")
+        settings = (f'<p class="muted">Scoring: {escape(tname)} · event limit {event_limit(m)} '
+                    f'· {m["lanes"] or 8} lanes</p>')
+
+    erows = []
     for me in mes:
         g_ = {"M": "Boys", "F": "Girls"}.get(me["gender"], "Open")
         gr = f' · G{me["grade"]}' if me["grade"] else ""
         rm = (f'<form class="inline" method="post" action="/meet-events/{me["id"]}/delete" '
               f'onsubmit="return confirm(\'Remove event?\')"><button class="danger">✕</button></form>'
               if setup else "")
-        trs.append(f'<tr><td><b><a href="/meet-events/{me["id"]}">{escape(me["ename"])}</a></b></td>'
-                   f'<td>{g_}{gr}</td><td>{counts.get(me["id"],0)} entries</td>'
-                   f'<td style="text-align:right">{rm}</td></tr>')
-    table = (f'<div class="card"><table><tr><th>Event</th><th>Division</th><th></th><th></th></tr>'
-             f'{"".join(trs)}</table></div>' if mes else '<div class="card muted">No events yet.</div>')
+        erows.append(f'<tr><td><b><a href="/meet-events/{me["id"]}">{escape(me["ename"])}</a></b></td>'
+                     f'<td>{g_}{gr}</td><td>{counts.get(me["id"], 0)} entries</td>'
+                     f'<td style="text-align:right">{rm}</td></tr>')
+    etbl = (f'<table><tr><th>Event</th><th>Division</th><th>Entries</th><th></th></tr>'
+            f'{"".join(erows)}</table>' if mes else '<p class="muted">none yet — add some below</p>')
 
-    forms = ""
+    add = ""
     if setup:
-        opts = "".join(f'<option value="{e["id"]}">{escape(e["name"])}</option>' for e in catalog)
-        forms = f"""
-<div class="card"><h2>Add event</h2>
-<form method="post" action="/meets/{mid}/events" class="row">
-  <div><label>Event</label><select name="event_id">{opts}</select></div>
-  <div style="max-width:130px"><label>Division</label>
-    <select name="gender"><option value="M">Boys</option><option value="F">Girls</option>
-    <option value="">Open</option></select></div>
-  <div style="max-width:110px"><label>Grade</label><input name="grade" type="number" placeholder="any"></div>
-  <div style="max-width:110px;display:flex;align-items:flex-end"><button type="submit">Add</button></div>
-</form></div>
-<div class="card"><h2>Meet settings</h2>
-<form method="post" action="/meets/{mid}/settings" class="row">
-  <div style="max-width:200px"><label>Per-athlete event limit</label>
-    <input name="event_limit" type="number" value="{event_limit(m)}"></div>
-  <div style="max-width:120px;display:flex;align-items:flex-end"><button type="submit">Save</button></div>
-</form></div>"""
+        def checks(kind):
+            return "".join(
+                f'<label style="display:inline-flex;gap:.35rem;align-items:center;margin:0 1rem .4rem 0">'
+                f'<input type="checkbox" name="event_ids" value="{e["id"]}" style="width:auto">'
+                f'{escape(e["name"])}</label>' for e in catalog if e["kind"] == kind)
+        grades = "".join(
+            f'<label style="display:inline-flex;gap:.3rem;align-items:center;margin-right:.8rem">'
+            f'<input type="checkbox" name="grades" value="{g}" style="width:auto">{g}th</label>'
+            for g in (6, 7, 8, 9))
+        add = f"""
+<h3>Add events</h3>
+<p class="muted">Pick events, genders, and grades — every combination is created.</p>
+<form method="post" action="/meets/{m['id']}/events">
+  <div><b>Track</b><br>{checks('track')}</div>
+  <div style="margin-top:.5rem"><b>Relays</b><br>{checks('relay')}</div>
+  <div style="margin-top:.5rem"><b>Field</b><br>{checks('field')}</div>
+  <div style="margin-top:.9rem">
+    <label style="display:inline-flex;gap:.3rem;align-items:center;margin-right:1rem">
+      <input type="checkbox" name="genders" value="M" checked style="width:auto">Boys</label>
+    <label style="display:inline-flex;gap:.3rem;align-items:center;margin-right:1.4rem">
+      <input type="checkbox" name="genders" value="F" checked style="width:auto">Girls</label>
+    {grades}
+    <button type="submit" style="margin-left:.6rem">+ Add events</button>
+  </div>
+</form>"""
 
-    body = (f'<p class="muted"><a href="/meets/{mid}">← {escape(m["name"])}</a></p>'
-            f'<h1>{escape(m["name"])} — Events</h1>'
-            f'<p class="sub">Add events, then open each to enter athletes and seed heats.</p>'
-            f'{table}{forms}')
-    return shell(g.principal, body, active="meets",
-                 active_district=active_district_id(), districts=_districts_for_switcher())
+    return (f'<div class="card"><h2>Meet setup</h2>{settings}</div>'
+            f'<div class="card"><h2>Events at this meet ({len(mes)})</h2>{etbl}{add}</div>')
+
+
+@bp.get("/meets/<int:mid>/events")
+@login_required
+def meet_events(mid):
+    # Setup now lives on the meet detail page.
+    return redirect(f"/meets/{mid}")
 
 
 @bp.post("/meets/<int:mid>/events")
 @login_required
 def add_meet_event(mid):
+    """Batch: create every event × gender × grade combination (dupes ignored)."""
     m = load_meet(mid)
     if not can_setup_meet(m):
         abort(403)
-    eid = request.form.get("event_id")
-    if not (eid or "").isdigit():
-        abort(400)
-    gender = request.form.get("gender") if request.form.get("gender") in ("M", "F") else None
-    grade = request.form.get("grade")
-    grade = int(grade) if (grade or "").isdigit() else None
+    event_ids = [int(x) for x in request.form.getlist("event_ids") if x.isdigit()]
+    genders = [g for g in request.form.getlist("genders") if g in ("M", "F")] or [""]
+    grades = [g.strip() for g in request.form.getlist("grades")] or [""]
+    if not grades:
+        grades = [""]
     conn = db.connect()
-    conn.execute("INSERT INTO meet_events (meet_id, event_id, gender, grade) VALUES (?,?,?,?)",
-                 (mid, int(eid), gender, grade))
+    valid = {r[0] for r in conn.execute("SELECT id FROM events").fetchall()}
+    for eid in event_ids:
+        if eid not in valid:
+            continue
+        for gen in genders:
+            for grd in grades:
+                conn.execute(
+                    "INSERT OR IGNORE INTO meet_events (meet_id, event_id, gender, grade) "
+                    "VALUES (?,?,?,?)", (mid, eid, gen, grd))
     conn.commit()
     conn.close()
-    return redirect(f"/meets/{mid}/events")
+    return redirect(f"/meets/{mid}")
 
 
-@bp.post("/meets/<int:mid>/settings")
+@bp.post("/meets/<int:mid>/track-settings")
 @login_required
-def meet_settings(mid):
+def track_settings(mid):
     m = load_meet(mid)
     if not can_setup_meet(m):
         abort(403)
-    lim = request.form.get("event_limit")
-    settings = json.loads(m["settings_json"] or "{}")
-    if (lim or "").isdigit():
-        settings["event_limit"] = int(lim)
     conn = db.connect()
-    conn.execute("UPDATE meets SET settings_json=? WHERE id=?", (json.dumps(settings), mid))
+    pt = request.form.get("points_table_id")
+    if pt and pt.isdigit():
+        conn.execute("UPDATE meets SET points_table_id=? WHERE id=?", (int(pt), mid))
+    el = request.form.get("event_limit")
+    if el and el.isdigit():
+        settings = json.loads(m["settings_json"] or "{}")
+        settings["event_limit"] = max(1, min(20, int(el)))
+        conn.execute("UPDATE meets SET settings_json=?, event_limit=? WHERE id=?",
+                     (json.dumps(settings), settings["event_limit"], mid))
+    ln = request.form.get("lanes")
+    if ln and ln.isdigit():
+        conn.execute("UPDATE meets SET lanes=? WHERE id=?", (max(2, min(12, int(ln))), mid))
     conn.commit()
     conn.close()
-    return redirect(f"/meets/{mid}/events")
+    return redirect(f"/meets/{mid}")
 
 
 @bp.post("/meet-events/<int:meid>/delete")
@@ -321,7 +397,8 @@ def seed_event(meid):
         abort(403)
     mode = request.form.get("mode", "seeded")
     laned = bool(me["laned"])
-    size = DEFAULT_LANES if laned else DEFAULT_SECTION
+    lanes = m["lanes"] or DEFAULT_LANES
+    size = lanes if laned else DEFAULT_SECTION
     conn = db.connect()
     entries = conn.execute("SELECT * FROM entries WHERE meet_event_id=?", (meid,)).fetchall()
     entries = list(entries)
@@ -605,11 +682,42 @@ def heatsheet_pdf(meid):
                     headers={"Content-Disposition": f'inline; filename="heatsheet.pdf"'})
 
 
+@bp.get("/meets/<int:mid>/heatsheets.pdf")
+@login_required
+def meet_heatsheets(mid):
+    """Meet-wide heat sheets — every event with drawn heats, one packet."""
+    m = load_meet(mid)
+    if not can_view_meet(m):
+        abort(403)
+    conn = db.connect()
+    mes = conn.execute(
+        "SELECT me.id, me.gender, me.grade, e.name AS ename, e.laned FROM meet_events me "
+        "JOIN events e ON e.id=me.event_id WHERE me.meet_id=? ORDER BY e.sort, me.gender", (mid,)).fetchall()
+    sections = []
+    for me in mes:
+        entries = conn.execute(
+            "SELECT * FROM entries WHERE meet_event_id=? ORDER BY heat, lane, id", (me["id"],)).fetchall()
+        rows = []
+        for e in entries:
+            name, bib, school = _entry_label(conn, e)
+            rows.append({"heat": e["heat"], "lane": e["lane"], "bib": bib,
+                         "name": name, "school": school})
+        div = {"M": "Boys", "F": "Girls"}.get(me["gender"], "Open")
+        title = f'{me["ename"]} — {div}' + (f' G{me["grade"]}' if me["grade"] else "")
+        sections.append((title, rows, bool(me["laned"])))
+    conn.close()
+    pdf = pdfs.multi_heat_sheet_pdf(sections)
+    return Response(pdf, mimetype="application/pdf",
+                    headers={"Content-Disposition": 'inline; filename="meet-heatsheets.pdf"'})
+
+
 # ------------------------------- results + scoring -------------------------------
 def build_results(mid):
     """Per-event results + team point totals for a track meet."""
-    ind_pts, rel_pts = points_tables()
     conn = db.connect()
+    meet = conn.execute("SELECT * FROM meets WHERE id=?", (mid,)).fetchone()
+    vals, mult = _meet_points(meet)
+    rel_vals = [round(v * mult) for v in vals]
     meet_events = conn.execute(
         "SELECT me.*, e.name AS ename, e.kind, e.unit, e.scoring_order, e.sort "
         "FROM meet_events me JOIN events e ON e.id=me.event_id WHERE me.meet_id=? "
@@ -617,7 +725,7 @@ def build_results(mid):
     events_out = []
     team_pts = {}  # (school, gender) -> points
     for me in meet_events:
-        table = rel_pts if me["kind"] == "relay" else ind_pts
+        table = rel_vals if me["kind"] == "relay" else vals
         rows = conn.execute(
             "SELECT r.*, en.school_id FROM results r JOIN entries en ON en.id=r.entry_id "
             "WHERE en.meet_event_id=? AND r.place IS NOT NULL ORDER BY r.place", (me["id"],)).fetchall()

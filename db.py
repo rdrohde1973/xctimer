@@ -211,12 +211,15 @@ SEED_EVENTS = [
     ("Shot Put",      "field", "metric", 110, 0, "desc"),
 ]
 
-# Default points tables. NOTE: reconcile exact values against track_timer.py's
-# points_tables seed in Phase 4 before scoring goes live.
+# Points tables (from the Track reference app). Relays score the same table
+# times relay_multiplier (default 1.0). Meets pick one via meets.points_table_id.
 SEED_POINTS_TABLES = [
-    ("Individual (1-8)", "[10, 8, 6, 5, 4, 3, 2, 1]"),
-    ("Relay (1-8)",      "[20, 16, 12, 10, 8, 6, 4, 2]"),
+    ("Dual 5-3-1",                    "[5, 3, 1]"),
+    ("Dual 5-3-2-1",                  "[5, 3, 2, 1]"),
+    ("Invitational 10-8-6-4-2-1",     "[10, 8, 6, 4, 2, 1]"),
+    ("Invitational 10-8-6-5-4-3-2-1", "[10, 8, 6, 5, 4, 3, 2, 1]"),
 ]
+DEFAULT_POINTS_TABLE = "Invitational 10-8-6-4-2-1"
 
 
 def _column_names(conn, table):
@@ -235,6 +238,33 @@ def migrate(conn):
     # Demo accounts: read-only + anonymized names (handoff §8 demo mode).
     if "is_demo" not in _column_names(conn, "users"):
         conn.execute("ALTER TABLE users ADD COLUMN is_demo INTEGER DEFAULT 0")
+
+    # Meet setup fields ported from the reference apps.
+    mcols = _column_names(conn, "meets")
+    if "event_limit" not in mcols:      # track: max individual+field events/athlete
+        conn.execute("ALTER TABLE meets ADD COLUMN event_limit INTEGER DEFAULT 4")
+    if "lanes" not in mcols:            # track: lanes for sprint heat/lane draws
+        conn.execute("ALTER TABLE meets ADD COLUMN lanes INTEGER DEFAULT 8")
+    if "points_table_id" not in mcols:  # track: selected scoring table
+        conn.execute("ALTER TABLE meets ADD COLUMN points_table_id INTEGER")
+    if "team_scoring" not in mcols:     # xc: team-score tab on/off
+        conn.execute("ALTER TABLE meets ADD COLUMN team_scoring INTEGER DEFAULT 1")
+
+    ptcols = _column_names(conn, "points_tables")
+    if "relay_multiplier" not in ptcols:
+        conn.execute("ALTER TABLE points_tables ADD COLUMN relay_multiplier REAL DEFAULT 1.0")
+    if "builtin" not in ptcols:
+        conn.execute("ALTER TABLE points_tables ADD COLUMN builtin INTEGER DEFAULT 1")
+
+    # Prevent duplicate event×gender×grade rows (enables INSERT OR IGNORE batch add).
+    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_meet_events_combo "
+                 "ON meet_events(meet_id, event_id, gender, grade)")
+
+    # Ensure the named points tables exist (older DBs seeded a different set).
+    for name, vals in SEED_POINTS_TABLES:
+        if not conn.execute("SELECT 1 FROM points_tables WHERE name=?", (name,)).fetchone():
+            conn.execute("INSERT INTO points_tables (name, point_values_json) VALUES (?,?)",
+                         (name, vals))
 
 
 def init_db():

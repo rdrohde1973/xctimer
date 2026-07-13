@@ -68,6 +68,61 @@ def _athlete_for_bib(conn, meet_id, bib):
         "WHERE ms.meet_id=? AND a.bib=? LIMIT 1", (meet_id, bib)).fetchone()
 
 
+CAPTURE_MODES = [("tap", "Tap then scan"), ("scan", "Scan at finish")]
+
+
+def setup_section(m, setup):
+    """Heats card for the meet setup page (team-scoring toggle + heat table)."""
+    import json as _json
+    conn = db.connect()
+    races = conn.execute("SELECT * FROM races WHERE meet_id=? ORDER BY id", (m["id"],)).fetchall()
+    counts = {r[0]: r[1] for r in conn.execute(
+        "SELECT r.id, COUNT(f.id) FROM races r LEFT JOIN finishers f ON f.race_id=r.id "
+        "WHERE r.meet_id=? GROUP BY r.id", (m["id"],)).fetchall()}
+    conn.close()
+
+    ts_toggle = ""
+    if setup:
+        chk = "checked" if m["team_scoring"] else ""
+        ts_toggle = (
+            f'<form method="post" action="/meets/{m["id"]}/scoring" style="margin-bottom:.6rem">'
+            f'<label style="display:flex;gap:.5rem;align-items:center">'
+            f'<input type="checkbox" name="team_scoring" style="width:auto" {chk} onchange="this.form.submit()"> '
+            f'<b>Team scoring</b> <span class="muted">— adds team scores (top 5 per school) to results</span></label></form>')
+
+    rows = []
+    for r in races:
+        status = "ended" if r["stop_time"] else ("running" if r["start_time"] else "not started")
+        act = f'<a class="btn" href="/races/{r["id"]}/console">⏱ Time</a>'
+        if setup:
+            nm = _json.dumps(r["name"])
+            act += (
+                f" <button class='ghost' onclick='renameHeat({r['id']}, {escape(nm)})'>✎</button>"
+                f" <form class='inline' method='post' action='/races/{r['id']}/delete' "
+                f"onsubmit=\"return confirm('Delete heat?')\"><button class='danger'>✕</button></form>")
+        rows.append(
+            f'<tr><td><b>{escape(r["name"])}</b></td><td>{r["capture_mode"]}</td>'
+            f'<td>{status}</td><td>{counts.get(r["id"], 0)}</td>'
+            f'<td style="text-align:right">{act}</td></tr>')
+    tbl = (f'<table><tr><th>Heat</th><th>Mode</th><th>Status</th><th>Finishers</th><th></th></tr>'
+           f'{"".join(rows)}</table>' if races else '<p class="muted">No heats yet.</p>')
+
+    add = ""
+    if setup:
+        opts = "".join(f'<option value="{v}">{escape(lbl)}</option>' for v, lbl in CAPTURE_MODES)
+        add = (
+            f'<form method="post" action="/meets/{m["id"]}/races" class="row" style="margin-top:.8rem">'
+            f'<div><input name="name" placeholder="Heat name (e.g. Girls)"></div>'
+            f'<div style="max-width:200px"><select name="capture_mode">{opts}</select></div>'
+            f'<div style="display:flex;align-items:flex-end"><button type="submit">+ Add heat</button></div>'
+            f'</form>'
+            f'<script>function renameHeat(id,cur){{var n=prompt("Heat name",cur);if(!n)return;'
+            f'var f=document.createElement("form");f.method="post";f.action="/races/"+id+"/rename";'
+            f'var i=document.createElement("input");i.name="name";i.value=n;f.appendChild(i);'
+            f'document.body.appendChild(f);f.submit();}}</script>')
+    return f'<div class="card"><h2>Heats</h2>{ts_toggle}{tbl}{add}</div>'
+
+
 # ------------------------------- races -------------------------------
 @bp.post("/meets/<int:mid>/races")
 @login_required
@@ -75,15 +130,31 @@ def create_race(mid):
     m = load_meet(mid)
     if not can_setup_meet(m):
         abort(403)
-    name = (request.form.get("name") or "").strip()
-    if not name:
-        abort(400)
+    name = (request.form.get("name") or "").strip() or "Heat"
+    mode = request.form.get("capture_mode")
+    mode = mode if mode in ("tap", "scan") else "tap"
     conn = db.connect()
     conn.execute("INSERT INTO races (meet_id, name, capture_mode) VALUES (?,?,?)",
-                 (mid, name, "tap"))
+                 (mid, name, mode))
     conn.commit()
     conn.close()
     return redirect(f"/meets/{mid}")
+
+
+@bp.post("/races/<int:rid>/rename")
+@login_required
+def rename_race(rid):
+    r, m = _race_or_403(rid, can_setup_meet)
+    name = (request.form.get("name") or "").strip()
+    mode = request.form.get("capture_mode")
+    conn = db.connect()
+    if name:
+        conn.execute("UPDATE races SET name=? WHERE id=?", (name, rid))
+    if mode in ("tap", "scan"):
+        conn.execute("UPDATE races SET capture_mode=? WHERE id=?", (mode, rid))
+    conn.commit()
+    conn.close()
+    return redirect(f"/meets/{m['id']}")
 
 
 @bp.post("/races/<int:rid>/delete")
@@ -366,6 +437,10 @@ def build_results(mid):
     """Return {gender_key: {'label','individuals','teams'}} plus 'overall'."""
     fins = [f for f in _meet_finishers(mid)
             if f["elapsed_seconds"] is not None]
+    conn = db.connect()
+    ts = conn.execute("SELECT team_scoring FROM meets WHERE id=?", (mid,)).fetchone()
+    conn.close()
+    team_on = bool(ts["team_scoring"]) if ts else True
     out = {}
     groups = {"M": [], "F": [], None: []}
     for f in fins:
@@ -388,7 +463,7 @@ def build_results(mid):
                 "gender": f["snap_gender"], "dq": bool(f["dq"]),
             })
         scoring_runners = [dict(i) for i in indiv if not i["dq"] and i["school"]]
-        teams = team_scores(scoring_runners)
+        teams = team_scores(scoring_runners) if team_on else []
         return indiv, teams
 
     for key, label in GENDERS:
