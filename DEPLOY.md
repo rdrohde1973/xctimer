@@ -35,9 +35,12 @@ ssh rob@10.0.1.167 'ssh rob@5.78.183.9 "
   cd ~ && git clone git@github-xctimer-platform:rdrohde1973/xctimer.git xctimer &&
   cd xctimer && python3 -m venv .venv && .venv/bin/pip install -q -r requirements.txt"'
 ```
-- Create `~/xctimer/env` on Hetzner (copy secrets from `~/track/env`), but set:
+- Create `~/xctimer/env` on Hetzner (copy `ANTHROPIC_API_KEY`/`RESEND_API_KEY`/
+  `XC_CLAUDE_MODEL` from `~/xc-district/env`), plus:
   ```
-  XC_HOST=127.0.0.1
+  XC_MAIL_FROM=xctimer@rohde.cc      # rohde.cc is the VERIFIED Resend domain.
+  XC_MAIL_FROM_NAME=XCTimer          # xctimer.com is NOT verified in Resend (403);
+  XC_HOST=127.0.0.1                  # verify it there later to send as @xctimer.com.
   XC_PORT=5006
   XC_PUBLIC_URL=https://xctimer.com
   XCTIMER_SECRET=<fresh random>
