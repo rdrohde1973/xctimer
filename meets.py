@@ -176,7 +176,9 @@ def list_meets():
         form = '<p class="muted">Pick a district in the header to create a meet.</p>'
 
     from .phone import _install_card
-    body = (f"<h1>Meets</h1><p class='sub'>Cross-country &amp; track meets.</p>"
+    body = (f'<div class="row" style="justify-content:space-between;align-items:center">'
+            f"<div><h1>Meets</h1><p class='sub'>Cross-country &amp; track meets.</p></div>"
+            f'<a class="btn ghost" href="/bibcheck">🔍 Bib check</a></div>'
             f"{_install_card()}{table}{form}")
     return shell(p, body, active="meets", active_district=did, districts=_districts_for_switcher())
 

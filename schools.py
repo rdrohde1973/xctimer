@@ -148,6 +148,11 @@ def list_schools():
     p = g.principal
     if p.role == "timer" or p.meet_scope:
         abort(403)
+    # A coach has one school — "Roster" should open it directly, not a 1-row list.
+    if p.role == "coach":
+        ids = p.school_ids()
+        if len(ids) == 1:
+            return redirect(f"/schools/{ids[0]}")
     did = active_district_id()
     rows = _visible_schools()
     show_d = p.is_super and did is None
@@ -945,6 +950,7 @@ def bibcheck():
         return jsonify(result or {})
 
     body = """
+<p class="muted"><a href="/meets">← Meets</a></p>
 <h1>Bib check</h1>
 <p class="sub">Scan a sticker QR or type a bib number. The box clears after each lookup,
 so you can scan one after another.</p>
@@ -972,5 +978,5 @@ async function lookup(){
   }
 }
 </script>"""
-    return shell(p, body, active="", active_district=active_district_id(),
+    return shell(p, body, active="meets", active_district=active_district_id(),
                  districts=_districts_for_switcher())
