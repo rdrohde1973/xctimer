@@ -21,7 +21,7 @@ from .admin import bp as admin_bp
 from .insights import bp as insights_bp
 from .phone import bp as phone_bp
 
-APP_VERSION = "0.15.2-darklogo"
+APP_VERSION = "0.15.3-darklogo2"
 
 LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width, initial-scale=1">
