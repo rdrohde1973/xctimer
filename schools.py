@@ -201,17 +201,11 @@ def create_school():
 @role_required("super_admin", "district_admin")
 def edit_school(sid):
     s = _load_school_or_403(sid)
-
-    def _int(v):
-        v = (v or "").strip()
-        return int(v) if v.lstrip("-").isdigit() else None
-
+    # Bib numbers are NOT editable here — they're managed by auto-assignment.
     name = (request.form.get("name") or "").strip() or s["name"]
     logo_path = _save_logo(request.files.get("logo"), name) or s["logo_path"]
     conn = db.connect()
-    conn.execute("UPDATE schools SET name=?, bib_start=?, bib_end=?, logo_path=? WHERE id=?",
-                 (name, _int(request.form.get("bib_start")), _int(request.form.get("bib_end")),
-                  logo_path, sid))
+    conn.execute("UPDATE schools SET name=?, logo_path=? WHERE id=?", (name, logo_path, sid))
     conn.commit()
     conn.close()
     return redirect(f"/schools/{sid}")
@@ -499,11 +493,7 @@ async function commitImport(){{
         body += f"""
 <div class="card"><h2>Edit school</h2>
 <form method="post" action="/schools/{sid}/edit" enctype="multipart/form-data">
-  <div class="row">
-    <div><label>Name</label><input name="name" value="{escape(s['name'])}"></div>
-    <div style="max-width:120px"><label>Bib start</label><input name="bib_start" type="number" value="{s['bib_start'] or ''}"></div>
-    <div style="max-width:120px"><label>Bib end</label><input name="bib_end" type="number" value="{s['bib_end'] or ''}"></div>
-  </div>
+  <label>Name</label><input name="name" value="{escape(s['name'])}">
   <label>Replace logo (optional)</label><input name="logo" type="file" accept="image/*">
   <button type="submit" style="margin-top:.8rem">Save changes</button>
 </form></div>"""
