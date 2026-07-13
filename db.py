@@ -219,11 +219,27 @@ SEED_POINTS_TABLES = [
 ]
 
 
+def _column_names(conn, table):
+    return {r[1] for r in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+
+
+def migrate(conn):
+    """Additive, idempotent column migrations (SQLite can only ADD COLUMN)."""
+    # Sessions carry a kind + meet_id so the same table holds both normal user
+    # logins and the meet-day no-login QR sessions (handoff §11).
+    scols = _column_names(conn, "sessions")
+    if "kind" not in scols:
+        conn.execute("ALTER TABLE sessions ADD COLUMN kind TEXT DEFAULT 'user'")
+    if "meet_id" not in scols:
+        conn.execute("ALTER TABLE sessions ADD COLUMN meet_id INTEGER")
+
+
 def init_db():
     """Create schema + indexes and seed the global catalog if empty. Idempotent."""
     conn = connect()
     try:
         conn.executescript(SCHEMA)
+        migrate(conn)
         for stmt in INDEXES:
             conn.execute(stmt)
         if conn.execute("SELECT COUNT(*) FROM events").fetchone()[0] == 0:
