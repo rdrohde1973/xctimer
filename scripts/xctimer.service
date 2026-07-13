@@ -1,0 +1,14 @@
+[Unit]
+Description=XCTimer platform (Flask + waitress)
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h
+EnvironmentFile=%h/xctimer/env
+ExecStart=%h/xctimer/venv/bin/python -m xctimer.app
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=default.target

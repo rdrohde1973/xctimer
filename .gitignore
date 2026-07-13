@@ -1,0 +1,11 @@
+venv/
+.venv/
+*.db
+*.db-wal
+*.db-shm
+env
+secret.key
+__pycache__/
+*.pyc
+._*
+.DS_Store
