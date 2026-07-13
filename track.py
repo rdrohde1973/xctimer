@@ -870,17 +870,20 @@ def meet_day_page(mid):
                     f'<td>{n} entries</td>'
                     f'<td>{status}</td>'
                     f'<td style="text-align:right">{hs}</td></tr>')
-    sortbar = ('<div style="display:flex;justify-content:flex-end;align-items:center;gap:.4rem;margin-bottom:.5rem">'
-               '<span class="muted">Sort by</span>'
-               '<select id="evsort" onchange="sortEv()" style="max-width:150px">'
-               '<option value="order">Event</option><option value="gender">Gender</option>'
-               '<option value="grade">Grade</option></select></div>')
-    ev_js = ('<script>function sortEv(){var v=document.getElementById("evsort").value,'
-             'tb=document.getElementById("evbody"),rs=[].slice.call(tb.querySelectorAll("tr"));'
-             'rs.sort(function(a,b){if(v=="gender")return (a.dataset.gender||"").localeCompare(b.dataset.gender||"")||(+a.dataset.order-+b.dataset.order);'
-             'if(v=="grade")return (+a.dataset.grade-+b.dataset.grade)||(+a.dataset.order-+b.dataset.order);'
-             'return +a.dataset.order-+b.dataset.order;});rs.forEach(function(r){tb.appendChild(r);});}</script>')
-    ev_tbl = (f'<div class="card"><h2>Events</h2>{sortbar}'
+    grades = sorted({me["grade"] for me in mes if me["grade"] is not None})
+    grade_opts = '<option value="">All</option>' + "".join(f'<option value="{gd}">{gd}</option>' for gd in grades)
+    filterbar = ('<div style="display:flex;justify-content:flex-end;align-items:center;gap:.5rem;'
+                 'margin-bottom:.5rem;flex-wrap:wrap"><span class="muted">Filter</span>'
+                 '<select id="fgender" onchange="filterEv()" style="max-width:110px">'
+                 '<option value="">All</option><option value="M">Boys</option>'
+                 '<option value="F">Girls</option></select>'
+                 f'<select id="fgrade" onchange="filterEv()" style="max-width:110px">{grade_opts}</select></div>')
+    ev_js = ('<script>function filterEv(){var g=document.getElementById("fgender").value,'
+             'gr=document.getElementById("fgrade").value,tb=document.getElementById("evbody");'
+             '[].forEach.call(tb.querySelectorAll("tr"),function(r){'
+             'var ok=(!g||r.dataset.gender===g)&&(!gr||r.dataset.grade===gr);'
+             'r.style.display=ok?"":"none";});}</script>')
+    ev_tbl = (f'<div class="card"><h2>Events</h2>{filterbar}'
               f'<table><thead><tr><th>Event</th><th>Entries</th><th>Status</th>'
               f'<th style="text-align:right">Heat sheet</th></tr></thead>'
               f'<tbody id="evbody">{"".join(rows)}</tbody></table>{ev_js}</div>'
@@ -1702,10 +1705,20 @@ def build_results(mid):
         items = []
         for r in rows:
             pts = pts_for(r["place"])
-            # Track = time; field (LJ/HJ/SP) = feet-inches.
-            mark = fmt_time(r["mark_seconds"]) if me["unit"] == "seconds" else _fmt_ht(r["mark_metric"])
-            items.append({"place": r["place"], "mark": mark, "name": r["snap_name"],
-                          "school": r["snap_school"], "points": pts})
+            # Track = time; field (LJ/HJ/SP) = feet-inches. Field shows all attempts.
+            atts = ""
+            if me["unit"] == "seconds":
+                mark = fmt_time(r["mark_seconds"])
+            else:
+                mark = _fmt_ht(r["mark_metric"])
+                if me["ename"] != "High Jump" and r["attempts_json"]:
+                    try:
+                        atts = ", ".join(_fmt_ht(x) for x in json.loads(r["attempts_json"])
+                                         if x is not None)
+                    except (ValueError, TypeError):
+                        atts = ""
+            items.append({"place": r["place"], "mark": mark, "attempts": atts,
+                          "name": r["snap_name"], "school": r["snap_school"], "points": pts})
             if r["snap_school"]:
                 key = (r["snap_school"], me["gender"] or "U", me["grade"])
                 team_pts[key] = team_pts.get(key, 0) + pts
@@ -1764,17 +1777,21 @@ def results_inner(mid, name_mode=None):
     for ev in data["events"]:
         if not ev["items"]:
             continue
+        any_att = any(i.get("attempts") for i in ev["items"])
         trs = ""
         for i in ev["items"]:
             nm = demo.display(i["name"] or "", name_mode)
             txt = f'{nm} {i["school"] or ""}'.lower()
+            att_td = (f'<td class="muted">{escape(i.get("attempts") or "")}</td>' if any_att else "")
             trs += (f'<tr data-text="{escape(txt)}"><td>{i["place"]}</td>'
                     f'<td>{escape(nm)}</td><td>{escape(i["school"] or "")}</td>'
-                    f'<td>{escape(i["mark"])}</td><td>{_fmt_pts(i["points"])}</td></tr>')
+                    f'<td><b>{escape(i["mark"])}</b></td>{att_td}'
+                    f'<td>{_fmt_pts(i["points"])}</td></tr>')
+        att_th = "<th>Attempts</th>" if any_att else ""
         html.append(f'<div class="card rcard" data-gender="{ev["gkey"]}" '
                     f'data-title="{escape(ev["name"].lower())}"><h2>{escape(ev["name"])}</h2>'
                     f'<table><tr><th>Pl</th><th>Competitor</th><th>School</th>'
-                    f'<th>Mark</th><th>Pts</th></tr>{trs}</table></div>')
+                    f'<th>Best</th>{att_th}<th>Pts</th></tr>{trs}</table></div>')
     html.append("""<script>
 function _v(id){var e=document.getElementById(id);return e?e.value:'';}
 function rfilter(){var q=_v('rsearch').toLowerCase(),g=_v('rgender');
@@ -1843,9 +1860,10 @@ def results_xlsx(mid):
         if not ev["items"]:
             continue
         ws2.append([ev["name"]])
-        ws2.append(["Place", "Competitor", "School", "Mark", "Points"])
+        ws2.append(["Place", "Competitor", "School", "Best", "Attempts", "Points"])
         for i in ev["items"]:
-            ws2.append([i["place"], i["name"], i["school"], i["mark"], _fmt_pts(i["points"])])
+            ws2.append([i["place"], i["name"], i["school"], i["mark"],
+                        i.get("attempts") or "", _fmt_pts(i["points"])])
         ws2.append([])
     if not wb.sheetnames:
         wb.create_sheet("Results").append(["No results yet"])
