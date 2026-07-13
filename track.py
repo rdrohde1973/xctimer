@@ -135,10 +135,7 @@ def _is_hj(ev):
     return ev["ename"] == "High Jump"
 
 
-# High Jump make/miss grid: bar heights in feet-inches (e.g. "4-06").
-DEFAULT_HJ_BARS = ["4-00", "4-02", "4-04", "4-06", "4-08", "4-10", "5-00", "5-02", "5-04", "5-06"]
-
-
+# High Jump make/miss grid: bar heights are added one at a time as the bar is raised.
 def _parse_ht(s):
     """Feet-inches -> total inches (float). Accepts '5-03', \"5'3\\\"\", '5 03',
     '15-06.5', or a bare number (inches). Utah field events use feet & inches."""
@@ -1056,7 +1053,7 @@ def _hj_grid_html(meid, me, entries, res, labels, setup, record):
             bars = json.loads(me["bar_heights"]) or []
         except (ValueError, TypeError):
             bars = []
-    bars = sorted({b for b in (bars or DEFAULT_HJ_BARS) if _parse_ht(b) is not None}, key=_parse_ht)
+    bars = sorted({b for b in (bars or []) if _parse_ht(b) is not None}, key=_parse_ht)
     rows_data = []
     for e in entries:
         name, bib, school = labels[e["id"]]
@@ -1072,10 +1069,11 @@ def _hj_grid_html(meid, me, entries, res, labels, setup, record):
                           "marks": grid, "dq": bool(r and r["dq"]),
                           "place": (r["place"] if r and r["place"] else "")})
     add_h = ("" if not record else
-             '<div class="hjrow"><input id="newht" placeholder="Add a height (ft-in, e.g. 4-02)" '
-             'style="max-width:280px"><button type="button" onclick="addHeight()">+ Add height</button>'
-             '<span class="muted">Mark each athlete per height: O=clear, X=miss (e.g. XO), '
-             'P=pass, XXX=out.</span></div>')
+             '<div class="hjrow"><input id="newht" placeholder="Next height (ft-in, e.g. 4-02)" '
+             'style="max-width:280px"><button type="button" onclick="addHeight()">+ Add height</button></div>'
+             '<p class="muted" style="margin:.2rem 0 .6rem">Start at the opening height and add each new '
+             'height as you raise the bar — go up until no one clears. Per height: '
+             '<b>O</b>=clear, <b>X</b>=miss (XO, XXO), <b>P</b>=pass, <b>XXX</b>=out.</p>')
     add_bib = ("" if not record else
                '<div class="hjrow"><b>Last-minute add by bib:</b> '
                '<input id="addbib" placeholder="Bib #" inputmode="numeric" style="max-width:120px">'
@@ -1086,7 +1084,7 @@ def _hj_grid_html(meid, me, entries, res, labels, setup, record):
     return f"""
 <div class="card" style="overflow-x:auto">
   {note}{add_bib}
-  <div class="hjrow"><b>Bar heights</b> <span class="muted">(low → high):</span> <span id="barchips"></span></div>
+  <div class="hjrow"><b>Heights so far</b> <span class="muted">(low → high):</span> <span id="barchips"></span></div>
   {add_h}
   <div id="hjtable"></div>
 </div>
