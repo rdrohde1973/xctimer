@@ -314,8 +314,11 @@ def migrate(conn):
     if "team_scoring" not in mcols:     # xc: team-score tab on/off
         conn.execute("ALTER TABLE meets ADD COLUMN team_scoring INTEGER DEFAULT 1")
 
-    if "combine_id" not in _column_names(conn, "meet_events"):
+    mecols = _column_names(conn, "meet_events")
+    if "combine_id" not in mecols:
         conn.execute("ALTER TABLE meet_events ADD COLUMN combine_id INTEGER")
+    if "bar_heights" not in mecols:      # High Jump: JSON list of bar heights (ft-in)
+        conn.execute("ALTER TABLE meet_events ADD COLUMN bar_heights TEXT")
 
     ptcols = _column_names(conn, "points_tables")
     if "relay_multiplier" not in ptcols:

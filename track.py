@@ -135,6 +135,46 @@ def _is_hj(ev):
     return ev["ename"] == "High Jump"
 
 
+# High Jump make/miss grid: bar heights in feet-inches (e.g. "4-06").
+DEFAULT_HJ_BARS = ["4-00", "4-02", "4-04", "4-06", "4-08", "4-10", "5-00", "5-02", "5-04", "5-06"]
+
+
+def _parse_ht(s):
+    """'4-06' -> 54 (inches); a bare number -> its rounded inches; else None."""
+    s = (s or "").strip()
+    if not s:
+        return None
+    if "-" in s:
+        f, _, i = s.partition("-")
+        try:
+            return int(f) * 12 + int(i)
+        except ValueError:
+            return None
+    try:
+        return int(round(float(s)))
+    except ValueError:
+        return None
+
+
+def _fmt_ht(inches):
+    if inches is None:
+        return ""
+    n = int(round(inches))
+    return f"{n // 12}-{n % 12:02d}"
+
+
+def _hj_best(grid):
+    """Best cleared bar (inches) from a {bar: marks} grid — a bar is cleared if its
+    marks contain an 'O' (e.g. O, XO, XXO)."""
+    best = None
+    for bar, mk in (grid or {}).items():
+        if mk and "O" in str(mk).upper():
+            v = _parse_ht(bar)
+            if v is not None and (best is None or v > best):
+                best = v
+    return best
+
+
 def _combine_meids(conn, me):
     """Meet-event ids sharing this one's combine group (just itself if not combined)."""
     cid = me["combine_id"] if "combine_id" in me.keys() else None
@@ -987,6 +1027,165 @@ def save_marks(meid):
     return redirect(f"/meet-events/{meid}")
 
 
+# ------------------------------- High Jump grid -------------------------------
+def _hj_grid_html(meid, me, entries, res, labels, setup, record):
+    bars = []
+    if me["bar_heights"]:
+        try:
+            bars = json.loads(me["bar_heights"]) or []
+        except (ValueError, TypeError):
+            bars = []
+    bars = sorted({b for b in (bars or DEFAULT_HJ_BARS) if _parse_ht(b) is not None}, key=_parse_ht)
+    rows_data = []
+    for e in entries:
+        name, bib, school = labels[e["id"]]
+        r = res.get(e["id"])
+        grid = {}
+        if r and r["attempts_json"]:
+            try:
+                g_ = json.loads(r["attempts_json"])
+                grid = g_ if isinstance(g_, dict) else {}
+            except (ValueError, TypeError):
+                grid = {}
+        rows_data.append({"eid": e["id"], "name": name, "bib": bib, "school": school or "",
+                          "marks": grid, "dq": bool(r and r["dq"]),
+                          "place": (r["place"] if r and r["place"] else "")})
+    add_h = ("" if not record else
+             '<div class="hjrow"><input id="newht" placeholder="Add a height (ft-in, e.g. 4-02)" '
+             'style="max-width:280px"><button type="button" onclick="addHeight()">+ Add height</button>'
+             '<span class="muted">Mark each athlete per height: O=clear, X=miss (e.g. XO), '
+             'P=pass, XXX=out.</span></div>')
+    add_bib = ("" if not record else
+               '<div class="hjrow"><b>Last-minute add by bib:</b> '
+               '<input id="addbib" placeholder="Bib #" inputmode="numeric" style="max-width:120px">'
+               '<button type="button" onclick="addBib()">+ Add</button></div>')
+    note = (f'<p class="muted">➕ Add athletes on the '
+            f'<a href="/meets/{me["meet_id"]}/assign">Assign athletes</a> screen (per athlete). '
+            f'This grid is for entering results.</p>')
+    return f"""
+<div class="card" style="overflow-x:auto">
+  {note}{add_bib}
+  <div class="hjrow"><b>Bar heights</b> <span class="muted">(low → high):</span> <span id="barchips"></span></div>
+  {add_h}
+  <div id="hjtable"></div>
+</div>
+<style>
+.hjrow{{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;margin:.5rem 0}}
+.barchip{{display:inline-block;background:var(--panel2);border:1px solid var(--line);border-radius:999px;padding:.1rem .55rem;font-size:.8rem;margin:.1rem}}
+table.hjgrid{{white-space:nowrap;font-size:.9rem}}
+table.hjgrid th,table.hjgrid td{{padding:.35rem .45rem;text-align:center;border-bottom:1px solid var(--line)}}
+table.hjgrid td:nth-child(2),table.hjgrid td:nth-child(3),table.hjgrid th:nth-child(2),table.hjgrid th:nth-child(3){{text-align:left}}
+.hjc{{width:54px;text-align:center;text-transform:uppercase}}
+.hjgrid .pl{{font-weight:800;color:var(--acc)}}
+.hjgrid .best{{font-weight:700;font-variant-numeric:tabular-nums}}
+</style>
+<script>
+const MEID={meid}, CANREC={str(bool(record)).lower()}, SETUP={str(bool(setup)).lower()};
+let BARS={json.dumps(bars)};
+let ROWS={json.dumps(rows_data)};
+function inches(b){{ if(!b)return null; if((''+b).indexOf('-')>=0){{const p=(''+b).split('-'),f=parseInt(p[0]),i=parseInt(p[1]);return (isNaN(f)||isNaN(i))?null:f*12+i;}} const n=parseFloat(b); return isNaN(n)?null:Math.round(n); }}
+function fmtht(n){{ if(n==null)return''; n=Math.round(n); return Math.floor(n/12)+'-'+String(n%12).padStart(2,'0'); }}
+function bestOf(marks){{ let best=null; BARS.forEach(function(b){{ const mk=(marks[b]||''); if(mk.toUpperCase().indexOf('O')>=0){{const v=inches(b); if(v!=null&&(best==null||v>best))best=v;}} }}); return best; }}
+function render(){{
+  BARS=[...new Set(BARS)].filter(b=>inches(b)!=null).sort((a,b)=>inches(a)-inches(b));
+  document.getElementById('barchips').innerHTML = BARS.map(b=>'<span class="barchip">'+esc(b)+'</span>').join(' ') || '<span class="muted">none yet</span>';
+  let h='<table class="hjgrid"><tr><th>PL</th><th>Athlete</th><th>School</th>'+BARS.map(b=>'<th>'+esc(b)+'</th>').join('')+'<th>Best</th><th>DQ</th><th></th></tr>';
+  ROWS.forEach(function(r,ri){{
+    h+='<tr><td class="pl" id="pl'+ri+'">'+(r.place||'')+'</td>'
+      +'<td><b>'+esc(r.name)+'</b>'+(r.bib?' <span class=muted>#'+r.bib+'</span>':'')+'</td>'
+      +'<td>'+esc(r.school)+'</td>'
+      +BARS.map(function(b){{ return '<td><input class="hjc" '+(CANREC?'':'disabled')+' value="'+esc(r.marks[b]||'')+'" data-ri="'+ri+'" data-bar="'+esc(b)+'" onchange="edit(this)"></td>'; }}).join('')
+      +'<td class="best" id="best'+ri+'">'+fmtht(bestOf(r.marks))+'</td>'
+      +'<td><input type="checkbox" '+(r.dq?'checked':'')+' '+(CANREC?'':'disabled')+' onchange="dqc('+ri+',this)"></td>'
+      +'<td>'+(SETUP?'<button class="danger" onclick="delRow('+r.eid+')">✕</button>':'')+'</td></tr>';
+  }});
+  h+='</table>';
+  document.getElementById('hjtable').innerHTML=h;
+}}
+function edit(el){{ const ri=+el.dataset.ri,b=el.dataset.bar; el.value=el.value.trim().toUpperCase(); ROWS[ri].marks[b]=el.value;
+  document.getElementById('best'+ri).textContent=fmtht(bestOf(ROWS[ri].marks)); save(); }}
+function dqc(ri,el){{ ROWS[ri].dq=el.checked; save(); }}
+async function save(){{ try{{ const j=await jpost('/meet-events/'+MEID+'/hj-save',{{bars:BARS,rows:ROWS}});
+  (j.results||[]).forEach(function(x){{ const r=ROWS.find(rr=>rr.eid==x.eid); if(r)r.place=x.place; }});
+  ROWS.forEach(function(r,ri){{ const c=document.getElementById('pl'+ri); if(c)c.textContent=r.place||''; }});
+ }}catch(e){{}} }}
+function addHeight(){{ const el=document.getElementById('newht'),v=el.value.trim(); if(inches(v)==null){{alert('Use ft-in, e.g. 4-02');return;}} BARS.push(v); el.value=''; render(); save(); }}
+async function addBib(){{ const el=document.getElementById('addbib'),v=el.value.trim(); if(!v)return;
+  try{{ await jpost('/meet-events/'+MEID+'/add-bib',{{bib:v}}); location.reload(); }}catch(e){{ alert(e.message); }} }}
+async function delRow(eid){{ if(!confirm('Remove this athlete from the event?'))return;
+  await fetch('/entries/'+eid+'/delete',{{method:'POST'}}); location.reload(); }}
+render();
+</script>"""
+
+
+@bp.post("/meet-events/<int:meid>/hj-save")
+@login_required
+def hj_save(meid):
+    me = load_meet_event(meid)
+    m = load_meet(me["meet_id"])
+    if not can_record_meet(m):
+        abort(403)
+    data = request.get_json(silent=True) or {}
+    bars = sorted({b for b in (data.get("bars") or []) if _parse_ht(b) is not None}, key=_parse_ht)
+    conn = db.connect()
+    conn.execute("UPDATE meet_events SET bar_heights=? WHERE id=?", (json.dumps(bars), meid))
+    valid = {e["id"]: e for e in conn.execute("SELECT * FROM entries WHERE meet_event_id=?",
+                                               (meid,)).fetchall()}
+    for row in (data.get("rows") or []):
+        try:
+            eid = int(row.get("eid"))
+        except (TypeError, ValueError):
+            continue
+        e = valid.get(eid)
+        if not e:
+            continue
+        marks = row.get("marks") or {}
+        grid = {b: str(marks.get(b, "")).strip().upper() for b in bars if str(marks.get(b, "")).strip()}
+        best = _hj_best(grid)
+        name, bib, school = _entry_label(conn, e)
+        conn.execute("DELETE FROM results WHERE entry_id=?", (eid,))
+        conn.execute("INSERT INTO results (entry_id, mark_metric, attempts_json, dq, snap_name, "
+                     "snap_bib, snap_school) VALUES (?,?,?,?,?,?,?)",
+                     (eid, best, json.dumps(grid), 1 if row.get("dq") else 0, name, bib, school))
+    _recompute_places(conn, load_meet_event(meid))
+    out = [{"eid": r["entry_id"], "place": r["place"], "best": _fmt_ht(r["mark_metric"])}
+           for r in conn.execute("SELECT r.entry_id, r.place, r.mark_metric FROM results r "
+                                 "JOIN entries e ON e.id=r.entry_id WHERE e.meet_event_id=?",
+                                 (meid,)).fetchall()]
+    conn.commit()
+    conn.close()
+    return jsonify(ok=True, results=out)
+
+
+@bp.post("/meet-events/<int:meid>/add-bib")
+@login_required
+def add_bib(meid):
+    me = load_meet_event(meid)
+    m = load_meet(me["meet_id"])
+    if not can_record_meet(m):
+        abort(403)
+    raw = (request.get_json(silent=True) or {}).get("bib")
+    try:
+        bib = int(str(raw).strip())
+    except (TypeError, ValueError):
+        return jsonify(error="Enter a bib number"), 400
+    conn = db.connect()
+    a = conn.execute("SELECT a.id, a.school_id, a.name FROM athletes a "
+                     "JOIN meet_schools ms ON ms.school_id=a.school_id "
+                     "WHERE ms.meet_id=? AND a.bib=? LIMIT 1", (me["meet_id"], bib)).fetchone()
+    if not a:
+        conn.close()
+        return jsonify(error=f"No athlete with bib {bib} at this meet"), 400
+    exists = conn.execute("SELECT 1 FROM entries WHERE meet_event_id=? AND runner_id=?",
+                          (meid, a["id"])).fetchone()
+    if not exists:
+        conn.execute("INSERT INTO entries (meet_event_id, runner_id, school_id) VALUES (?,?,?)",
+                     (meid, a["id"], a["school_id"]))
+        conn.commit()
+    conn.close()
+    return jsonify(ok=True, name=a["name"])
+
+
 # ------------------------------- event page -------------------------------
 @bp.get("/meet-events/<int:meid>")
 @login_required
@@ -1070,6 +1269,9 @@ def event_page(meid):
             marks_form = f'<div class="card">{inner}</div>'
     else:
         marks_form = '<div class="card muted">No entries yet.</div>'
+
+    if hj:   # interactive make/miss grid replaces the single-mark table
+        marks_form = _hj_grid_html(meid, me, entries, res, labels, setup, record)
 
     # Add-entry form
     add = ""
@@ -1457,7 +1659,12 @@ def build_results(mid):
         items = []
         for r in rows:
             pts = pts_for(r["place"])
-            mark = fmt_time(r["mark_seconds"]) if me["unit"] == "seconds" else fmt_metric(r["mark_metric"])
+            if me["unit"] == "seconds":
+                mark = fmt_time(r["mark_seconds"])
+            elif me["ename"] == "High Jump":
+                mark = _fmt_ht(r["mark_metric"])
+            else:
+                mark = fmt_metric(r["mark_metric"])
             items.append({"place": r["place"], "mark": mark, "name": r["snap_name"],
                           "school": r["snap_school"], "points": pts})
             if r["snap_school"]:
