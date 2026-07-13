@@ -8,7 +8,7 @@ BRAND = "XCTimer"
 # Styled wordmark echoing the logo: orange "xc", light "timer".
 BRAND_HTML = '<span class="bx">xc</span><span class="bt">timer</span>'
 LOGO_URL = "/static/branding/xctimer.png"        # light bg — landing / login card
-LOGO_DARK_URL = "/static/branding/xctimerdark.png?v=2"  # dark bg — header / phone app (v= busts Cloudflare cache)
+LOGO_DARK_URL = "/static/branding/xctimerdark.png?v=3"  # dark bg — header / phone app (v= busts Cloudflare cache)
 # PWA / home-screen install (clean standalone app on Add to Home Screen).
 HEAD_EXTRA = (
     '<link rel="manifest" href="/manifest.webmanifest">'

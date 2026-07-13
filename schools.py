@@ -275,7 +275,7 @@ def roster(sid):
         acts = [f'<a class="ic" href="/athletes/{aid}/progress" title="Stats &amp; progress">📈</a>',
                 f'<button class="ic" onclick="openCard({aid})" title="Info">ⓘ</button>']
         if not ro:
-            acts.append(f'<button class="ic edit" onclick="openCard({aid},true)" title="Edit info">✏️</button>')
+            acts.append(f'<button class="ic edit" onclick="openEdit({aid})" title="Edit name / grade / sex">✏️</button>')
             acts.append(
                 f'<form class="inline" method="post" action="/athletes/{aid}/delete" '
                 f'onsubmit="return confirm(\'Remove {escape(nm)}?\')">'
@@ -368,6 +368,20 @@ async function openCard(aid, edit){{
   catch(e){{ b.innerHTML='<p class="msg err">Could not load.</p>'; }}
 }}
 function closeCard(){{ document.getElementById('cardModal').style.display='none'; }}
+async function openEdit(aid){{
+  const m=document.getElementById('cardModal'), b=document.getElementById('cardBody');
+  b.innerHTML='<p class="muted">Loading…</p>'; m.style.display='flex';
+  try{{ const r=await fetch('/athletes/'+aid+'/editcard'); b.innerHTML=await r.text(); }}
+  catch(e){{ b.innerHTML='<p class="msg err">Could not load.</p>'; }}
+}}
+async function saveCore(aid){{
+  const f={{name:document.getElementById('e_name').value,
+           grade:document.getElementById('e_grade').value,
+           gender:document.getElementById('e_gender').value}};
+  if(!f.name.trim()){{ alert('Name is required.'); return; }}
+  try{{ await jpost('/athletes/'+aid+'/edit', f); location.reload(); }}
+  catch(e){{ alert(e.message); }}
+}}
 function editInfo(){{ document.getElementById('cardView').style.display='none';
   document.getElementById('cardEdit').style.display='block'; }}
 async function saveInfo(aid){{
@@ -707,6 +721,70 @@ def athlete_card(aid):
                      (aid,)).fetchone()
     conn.close()
     return _card_fragment(a, w, g.principal.is_demo)
+
+
+@bp.get("/athletes/<int:aid>/editcard")
+@login_required
+def athlete_editcard(aid):
+    """Quick edit of the core roster fields — name, grade, sex (the ✏️ button)."""
+    conn = db.connect()
+    a = conn.execute("SELECT a.*, s.name AS sname FROM athletes a JOIN schools s ON s.id=a.school_id "
+                     "WHERE a.id=?", (aid,)).fetchone()
+    s = conn.execute("SELECT * FROM schools WHERE id=?", (a["school_id"],)).fetchone() if a else None
+    conn.close()
+    if not a:
+        abort(404)
+    if not _can_access_school(s) or g.principal.is_demo:
+        abort(403)
+    grade = "" if a["grade"] is None else a["grade"]
+    gsel = lambda v: "selected" if (a["gender"] or "") == v else ""
+    return f"""
+<h2 style="margin:.1em 0 1rem">Edit athlete</h2>
+<label>Name</label>
+<input id="e_name" value="{escape(a['name'])}" autofocus>
+<div class="row" style="margin-top:.4rem">
+  <div style="max-width:120px"><label>Grade</label>
+    <input id="e_grade" type="number" inputmode="numeric" value="{grade}"></div>
+  <div style="max-width:140px"><label>Sex</label>
+    <select id="e_gender">
+      <option value="" {gsel("")}>—</option>
+      <option value="M" {gsel("M")}>M</option>
+      <option value="F" {gsel("F")}>F</option>
+    </select></div>
+</div>
+<div style="margin-top:1rem;display:flex;gap:.5rem">
+  <button onclick="saveCore({aid})">Save</button>
+  <button class="ghost" onclick="closeCard()">Cancel</button>
+</div>
+<p class="muted" style="margin-top:.9rem">Contacts, physical &amp; waiver are on the ⓘ Info panel.</p>"""
+
+
+@bp.post("/athletes/<int:aid>/edit")
+@login_required
+def athlete_edit(aid):
+    conn = db.connect()
+    a = conn.execute("SELECT * FROM athletes WHERE id=?", (aid,)).fetchone()
+    s = conn.execute("SELECT * FROM schools WHERE id=?", (a["school_id"],)).fetchone() if a else None
+    conn.close()
+    if not a:
+        abort(404)
+    if not _can_access_school(s) or g.principal.is_demo:
+        abort(403)
+    d = request.get_json(silent=True) or {}
+    name = (str(d.get("name") or "")).strip()
+    if not name:
+        return jsonify(error="Name is required"), 400
+    gr = str(d.get("grade") or "").strip()
+    grade = int(gr) if gr.isdigit() else None
+    gender = (str(d.get("gender") or "").strip().upper() or None)
+    if gender not in ("M", "F", None):
+        gender = None
+    conn = db.connect()
+    conn.execute("UPDATE athletes SET name=?, grade=?, gender=? WHERE id=?",
+                 (name, grade, gender, aid))
+    conn.commit()
+    conn.close()
+    return jsonify(ok=True)
 
 
 @bp.post("/athletes/<int:aid>/info")
