@@ -37,7 +37,7 @@ background:var(--panel);border-bottom:1px solid var(--line);position:sticky;top:
 header.top .brand{font-weight:800;font-size:1.2rem;letter-spacing:-.02em;display:inline-flex;align-items:center}
 header.top .brand .brandchip{display:inline-flex;align-items:center;background:#f4f6f8;border-radius:8px;padding:3px 8px}
 header.top .brand .brandchip img{height:26px;width:auto;max-width:160px;object-fit:contain;display:block}
-header.top .brand .xclogo{height:32px;width:auto;display:block;border-radius:6px}
+header.top .brand .xclogo{height:48px;width:auto;display:block;border-radius:6px}
 header.top nav{display:flex;gap:.25rem;flex-wrap:wrap}
 header.top nav a{padding:.35rem .7rem;border-radius:8px;color:var(--mut)}
 header.top nav a:hover{background:var(--panel2);color:var(--fg);text-decoration:none}
