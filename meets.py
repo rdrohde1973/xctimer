@@ -332,12 +332,7 @@ def meet_detail(mid):
     setup = can_setup_meet(m)
     base = os.environ.get("XC_PUBLIC_URL", request.host_url.rstrip("/"))
     is_xc = m["sport"] == "xc"
-    results_url = f"/meets/{mid}/results" if is_xc else f"/meets/{mid}/track-results"
-
-    actions = [f'<a class="btn" href="{results_url}">📊 Results</a>',
-               f'<a class="btn ghost" href="/r/{m["public_token"]}" target="_blank">Public ↗</a>']
-    xlsx_url = f"/meets/{mid}/results.xlsx" if is_xc else f"/meets/{mid}/track-results.xlsx"
-    actions.append(f'<a class="btn ghost" href="{xlsx_url}">Export xlsx</a>')
+    # Results / Public / Export live on the Results tab — not duplicated here.
 
     hs = (f' <a class="btn ghost" href="/meets/{mid}/heatsheets.pdf">Heat sheets</a>'
           if not is_xc else "")
@@ -414,7 +409,6 @@ def meet_detail(mid):
 <p class="sub">{"🏃 Cross-country" if is_xc else "🎽 Track & Field"} · {escape(m['date'] or '')}
  · host: {escape(host['name']) if host else '—'}</p>
 {tabs}
-<div class="row">{''.join(actions)}</div>
 {print_bar}
 {mid_block}
 <div class="card"><h2>No-login timer QR</h2>
