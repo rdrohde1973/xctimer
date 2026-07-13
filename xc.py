@@ -794,10 +794,23 @@ table{width:100%;border-collapse:collapse;font-size:.92rem}
 th{background:#f1f4f8;text-align:left;padding:.5rem .8rem;font-size:.7rem;text-transform:uppercase;letter-spacing:.04em;color:#5b6b7c}
 td{padding:.55rem .8rem;border-top:1px solid #edf1f5}
 tbody tr:nth-child(even) td{background:#f8fafb}
-.pl{color:#2f6db5;font-weight:800}
-.tm{font-weight:700;font-variant-numeric:tabular-nums}
+.pl{color:#2f6db5;font-weight:800;text-align:center;width:2.2rem}
+.tm{font-weight:700;font-variant-numeric:tabular-nums;white-space:nowrap}
 .mut{color:#7c8b9a;font-size:.85rem}
-@media(max-width:600px){.top{flex-wrap:wrap}.qr img{width:66px;height:66px}.top .mt{font-size:1.15rem}}
+@media(max-width:600px){
+  .top{flex-wrap:wrap;padding:.75rem .8rem;gap:.7rem}
+  .top .mt{font-size:1.1rem}
+  .top .right{gap:.7rem}
+  .xls{padding:.5rem .8rem;font-size:.9rem}
+  .qr img{width:58px;height:58px}
+  main{padding:.6rem}
+  .tabs{gap:.35rem;margin:.3rem 0 .9rem}
+  .tab{padding:.6rem .25rem;font-size:.85rem}
+  .sec{border-radius:10px;margin-bottom:.8rem}
+  .sec h2{font-size:.92rem;padding:.5rem .7rem}
+  th{padding:.35rem .45rem;font-size:.6rem}
+  td{padding:.45rem .45rem;font-size:.86rem}
+}
 """
 
 
@@ -809,19 +822,18 @@ def _pub_rows(individuals, mode, show_grade):
             disp = "Bib not found"
         else:
             disp = demo.display(nm, mode)
-        bibcell = "" if (i["bib"] is None or mode) else i["bib"]
         pl = "" if i["place"] is None else i["place"]
         dq = " (DQ)" if i["dq"] else ""
         grcell = f'<td>{i["grade"] or ""}</td>' if show_grade else ""
         out.append(
-            f'<tr><td class="pl">{pl}</td><td>{bibcell}</td>'
+            f'<tr><td class="pl">{pl}</td>'
             f'<td>{escape(disp)}{dq}</td><td>{escape(i["school"] or "")}</td>'
             f'{grcell}<td class="tm">{fmt_hms(i["time"])}</td></tr>')
     return "".join(out)
 
 
 def _pub_table(label, individuals, mode, show_grade):
-    head = ('<tr><th>Place</th><th>Bib</th><th>Name</th><th>School</th>'
+    head = ('<tr><th>Pl</th><th>Name</th><th>School</th>'
             + ('<th>Gr</th>' if show_grade else '') + '<th>Time</th></tr>')
     return (f'<div class="sec"><h2>{escape(label)}</h2><table><thead>{head}</thead>'
             f'<tbody>{_pub_rows(individuals, mode, show_grade)}</tbody></table></div>')
@@ -919,8 +931,8 @@ def _public_xc(m, mode):
 <main>
   <div class="tabs">
     <button class="tab on" id="t-overall" onclick="tab('overall')">📋 Overall</button>
-    <button class="tab" id="t-grade" onclick="tab('grade')">🎽 By Grade &amp; Gender</button>
-    <button class="tab" id="t-team" onclick="tab('team')">🏆 Team Score</button>
+    <button class="tab" id="t-grade" onclick="tab('grade')">🎽 Sorted</button>
+    <button class="tab" id="t-team" onclick="tab('team')">🏆 Team</button>
   </div>
   <div id="v-overall">{overall}</div>
   <div id="v-grade" style="display:none">{grade}</div>

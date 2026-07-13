@@ -431,7 +431,7 @@ def add_entry(meid):
         abort(403)
     conn = db.connect()
     seed = parse_time(request.form.get("seed")) if me["unit"] == "seconds" \
-        else parse_metric(request.form.get("seed"))
+        else _parse_ht(request.form.get("seed"))   # field seeds are feet-inches
     if me["kind"] == "relay":
         sid = request.form.get("school_id")
         if not (sid or "").isdigit():
@@ -1315,7 +1315,7 @@ def event_page(meid):
                 aopt_list.append(
                     f'<option value="{a["id"]}">{escape(a["name"])} — {escape(a["sname"])}{bibtxt}</option>')
             aopts = "".join(aopt_list)
-            seedph = "mm:ss.t / s.t" if me["unit"] == "seconds" else "meters"
+            seedph = "mm:ss.t / s.t" if me["unit"] == "seconds" else "15-06 (ft-in)"
             add = f"""
 <div class="card"><h2>Add athlete</h2>
 <form method="post" action="/meet-events/{meid}/entries" class="row">
