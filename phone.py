@@ -5,6 +5,7 @@ a no-login QR (meets.py /t/<token>) drops a helper straight into one meet's timi
 Both land here. XC meets time via the race console; track via the per-event grid.
 """
 import io
+import json
 import os
 
 from markupsafe import escape
@@ -34,51 +35,132 @@ def _phone_shell(principal, body):
 
 
 def _meet_card(m):
-    p = g.principal
     conn = db.connect()
-    body = [f'<p class="muted"><a href="/phone">← Meets</a></p>',
-            f'<h1>{"🏃" if m["sport"]=="xc" else "🎽"} {escape(m["name"])}</h1>',
-            f'<p class="sub">{escape(m["date"] or "")}</p>']
     if m["sport"] == "xc":
+        body = [f'<p class="muted"><a href="/phone">← Meets</a></p>',
+                f'<h1>🏃 {escape(m["name"])}</h1><p class="sub">{escape(m["date"] or "")}</p>',
+                '<h2>Heats — tap to time</h2>']
         races = conn.execute("SELECT * FROM races WHERE meet_id=? ORDER BY id", (m["id"],)).fetchall()
-        body.append('<h2>Heats — tap to time</h2>')
         for r in races:
             status = "ended" if r["stop_time"] else ("running" if r["start_time"] else "not started")
             body.append(f'<a class="btn" style="{BTN}" href="/races/{r["id"]}/console">'
                         f'⏱ {escape(r["name"])} <span class="muted">· {r["capture_mode"]} · {status}</span></a>')
         if not races:
             body.append('<p class="muted">No heats yet.</p>')
+        html = "".join(body)
     else:
-        # Track: only the tap-timed events (distance + 4x400), and for a coach only
-        # the ones their school is entered in.
-        tap_q = ",".join("?" * len(TAP_EVENTS))
-        if p.role == "coach" and not p.meet_scope and p.school_ids():
-            ids = p.school_ids()
-            q = ",".join("?" * len(ids))
-            mes = conn.execute(
-                f"SELECT DISTINCT me.id, e.name AS ename, me.gender, me.grade, e.sort "
-                f"FROM meet_events me JOIN events e ON e.id=me.event_id "
-                f"JOIN entries en ON en.meet_event_id=me.id "
-                f"WHERE me.meet_id=? AND en.school_id IN ({q}) AND e.name IN ({tap_q}) "
-                f"ORDER BY e.sort, me.gender, me.grade", (m["id"], *ids, *TAP_EVENTS)).fetchall()
-            scoped = True
-        else:
-            mes = conn.execute(
-                f"SELECT me.id, e.name AS ename, me.gender, me.grade, e.sort "
-                f"FROM meet_events me JOIN events e ON e.id=me.event_id "
-                f"WHERE me.meet_id=? AND e.name IN ({tap_q}) "
-                f"ORDER BY e.sort, me.gender, me.grade", (m["id"], *TAP_EVENTS)).fetchall()
-            scoped = False
-        hdr = "Your distance/relay events" if scoped else "Distance & 4x400 — tap to time"
-        body.append(f'<h2>{hdr}</h2>')
-        for me in mes:
-            div = {"M": "Boys", "F": "Girls"}.get(me["gender"], "Open") + (f" G{me['grade']}" if me["grade"] else "")
-            body.append(f'<a class="btn" style="{BTN}" href="/meet-events/{me["id"]}">'
-                        f'{escape(me["ename"])} <span class="muted">· {div}</span></a>')
-        if not mes:
-            body.append('<p class="muted">No distance/relay events to time here yet.</p>')
+        html = _track_timer(conn, m)
     conn.close()
-    return _phone_shell(g.principal, "".join(body))
+    return _phone_shell(g.principal, html)
+
+
+def _track_timer(conn, m):
+    """Two-tab Track Timer: Time race (event/heat pickers -> tap console) + Scan sheet."""
+    tap_q = ",".join("?" * len(TAP_EVENTS))
+    events = conn.execute(
+        f"SELECT me.id, e.name AS ename, me.gender, me.grade FROM meet_events me "
+        f"JOIN events e ON e.id=me.event_id WHERE me.meet_id=? AND e.name IN ({tap_q}) "
+        f"ORDER BY e.sort, me.gender, me.grade", (m["id"], *TAP_EVENTS)).fetchall()
+    evdata, ev_opts = {}, ['<option value="">— pick event —</option>']
+    for ev in events:
+        heats = [r[0] for r in conn.execute(
+            "SELECT DISTINCT heat FROM entries WHERE meet_event_id=? AND heat IS NOT NULL "
+            "ORDER BY heat", (ev["id"],)).fetchall()]
+        gword = {"M": "Boys", "F": "Girls"}.get(ev["gender"], "")
+        gr = f"{ev['grade']}th Grade " if ev["grade"] else ""
+        label = f"{gr}{gword + ' ' if gword else ''}{ev['ename']}".strip()
+        evdata[str(ev["id"])] = {"label": label, "heats": heats}
+        ev_opts.append(f'<option value="{ev["id"]}">{escape(label)}</option>')
+    # meet switcher (track meets the user can time)
+    meet_opts = []
+    for mm in conn.execute("SELECT * FROM meets WHERE district_id=? AND sport='track' "
+                           "ORDER BY date DESC, id DESC", (m["district_id"],)).fetchall():
+        if can_record_meet(mm):
+            sel = "selected" if mm["id"] == m["id"] else ""
+            meet_opts.append(f'<option value="{mm["id"]}" {sel}>{escape(mm["name"])}</option>')
+
+    return f"""
+<h1>🏅 Track Timer</h1>
+<div class="seg">
+  <button id="seg-scan" class="ghost" onclick="segTab('scan')">📷 Scan sheet</button>
+  <button id="seg-time" onclick="segTab('time')">⏱ Time race</button>
+</div>
+
+<div class="card" id="tab-time">
+  <h2>Time a race</h2>
+  <p class="sub">For 800m, 1600m, 3200m &amp; 4×400m — start the clock and tap each runner as they finish.</p>
+  <label>Meet</label>
+  <select onchange="if(this.value)location.href='/phone/meet/'+this.value">{''.join(meet_opts)}</select>
+  <label>Event</label>
+  <select id="tev" onchange="fillHeats()">{''.join(ev_opts)}</select>
+  <label>Heat / section</label>
+  <select id="tht" onchange="upd()"></select>
+  <button id="startbtn" onclick="startRace()" disabled style="width:100%;margin-top:1rem;padding:.8rem">▶ Start race</button>
+</div>
+
+<div class="card" id="tab-scan" style="display:none">
+  <h2>Scan a heat sheet</h2>
+  <p class="sub">Take a photo of a marked-up heat sheet. The results are read and posted to that heat.</p>
+  <label>Event</label>
+  <select id="sev">{''.join(ev_opts)}</select>
+  <label>Photo of the sheet</label>
+  <input type="file" id="scanf" accept="image/*" capture="environment" onchange="doScan()">
+  <p class="muted">Reads automatically once you take the photo.</p>
+  <div id="scanout"></div>
+</div>
+
+<style>
+.seg{{display:flex;gap:.6rem;margin:.4rem 0 1rem}}
+.seg button{{flex:1;padding:1rem;font-size:1.05rem}}
+</style>
+<script>
+const EV={json.dumps(evdata)};
+function segTab(t){{
+  document.getElementById('tab-time').style.display = t==='time'?'':'none';
+  document.getElementById('tab-scan').style.display = t==='scan'?'':'none';
+  document.getElementById('seg-time').className = t==='time'?'':'ghost';
+  document.getElementById('seg-scan').className = t==='scan'?'':'ghost';
+}}
+function fillHeats(){{
+  const ev=document.getElementById('tev').value, ht=document.getElementById('tht');
+  ht.innerHTML='';
+  const d=EV[ev];
+  if(!d){{ht.innerHTML='<option value="">— pick an event first —</option>';upd();return;}}
+  if(!d.heats.length){{ht.innerHTML='<option value="">no heats — draw them first</option>';upd();return;}}
+  d.heats.forEach(function(h){{ht.innerHTML+='<option value="'+h+'">Heat '+h+'</option>';}});
+  upd();
+}}
+function upd(){{
+  const ev=document.getElementById('tev').value, ht=document.getElementById('tht').value;
+  document.getElementById('startbtn').disabled = !(ev && ht);
+}}
+function startRace(){{
+  const ev=document.getElementById('tev').value, ht=document.getElementById('tht').value;
+  if(ev&&ht) location.href='/meet-events/'+ev+'/time?heat='+ht;
+}}
+async function doScan(){{
+  const ev=document.getElementById('sev').value;
+  const f=document.getElementById('scanf').files[0];
+  if(!ev){{alert('Pick the event first');return;}}
+  if(!f)return;
+  document.getElementById('scanout').innerHTML='<p class="muted">Reading…</p>';
+  const fd=new FormData(); fd.append('image',f);
+  const r=await fetch('/meet-events/'+ev+'/scan',{{method:'POST',body:fd}});
+  const j=await r.json();
+  if(!r.ok||!(j.marks||[]).length){{document.getElementById('scanout').innerHTML='<p class="msg err">'+esc((j.error||'No marks read'))+'</p>';return;}}
+  let h='<p class="muted">Review, then post.</p><table><tr><th>Bib</th><th>Mark</th></tr>';
+  j.marks.forEach(function(m,i){{h+='<tr><td><input id="sb'+i+'" value="'+esc(m.bib==null?'':m.bib)+'" style="width:70px"></td>'
+    +'<td><input id="sm'+i+'" value="'+esc(m.mark==null?'':m.mark)+'" style="width:120px"></td></tr>';}});
+  h+='</table><button onclick="postScan('+j.marks.length+','+ev+')" style="margin-top:.6rem">Post to this event</button>';
+  document.getElementById('scanout').innerHTML=h;
+}}
+async function postScan(n,ev){{
+  const marks=[];
+  for(let i=0;i<n;i++){{const b=document.getElementById('sb'+i).value.trim();const mk=document.getElementById('sm'+i).value.trim();if(b&&mk)marks.push({{bib:b,mark:mk}});}}
+  try{{const j=await jpost('/meet-events/'+ev+'/scan/post',{{marks}});alert('Posted '+j.applied+' marks'+(j.unmatched&&j.unmatched.length?'; unmatched: '+j.unmatched.join(', '):''));}}
+  catch(e){{alert(e.message);}}
+}}
+</script>"""
 
 
 def _install_card():

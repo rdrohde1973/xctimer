@@ -1204,6 +1204,115 @@ def scan_post(meid):
     return jsonify(applied=applied, unmatched=unmatched)
 
 
+# ------------------------------- live tap timer (distance / relay) -------------------------------
+@bp.get("/meet-events/<int:meid>/time")
+@login_required
+def time_console(meid):
+    """Phone tap timer for a distance/relay heat: start the clock, tap finishers,
+    assign each to a runner/squad, save -> results."""
+    me = load_meet_event(meid)
+    m = load_meet(me["meet_id"])
+    if not can_record_meet(m):
+        abort(403)
+    heat = request.args.get("heat", "")
+    conn = db.connect()
+    meids = _combine_meids(conn, me)
+    qm = ",".join("?" * len(meids))
+    if heat.isdigit():
+        rows = conn.execute(f"SELECT * FROM entries WHERE meet_event_id IN ({qm}) AND heat=? "
+                            f"ORDER BY lane, id", (*meids, int(heat))).fetchall()
+    else:
+        rows = conn.execute(f"SELECT * FROM entries WHERE meet_event_id IN ({qm}) "
+                            f"ORDER BY heat, lane, id", tuple(meids)).fetchall()
+    ents = []
+    for e in rows:
+        name, bib, school = _entry_label(conn, e)
+        lbl = name + (f" #{bib}" if bib else "") + (f" · {school}" if school and not bib else "")
+        ents.append({"id": e["id"], "label": lbl})
+    conn.close()
+    ents_json = json.dumps(ents)
+    div = {"M": "Boys", "F": "Girls"}.get(me["gender"], "Open")
+    title = f'{me["ename"]} — {div}' + (f' G{me["grade"]}' if me["grade"] else "")
+    sub = (f"Heat {heat}" if heat else "All entries") + " · Start, then tap each finisher"
+    body = f"""
+<p class="muted"><a href="/phone/meet/{me['meet_id']}">← Track Timer</a></p>
+<h1>⏱ {escape(title)}</h1><p class="sub">{escape(sub)}</p>
+<div class="card" style="position:sticky;top:.5rem;text-align:center">
+  <div id="clock" style="font-size:2.8rem;font-weight:800;font-variant-numeric:tabular-nums">0:00.0</div>
+  <div style="margin:.5rem 0">
+    <button id="startbtn" onclick="startRace()">Start</button>
+    <button class="ghost" onclick="stopRace()">Stop</button></div>
+  <button id="tapbtn" onclick="tap()" disabled
+    style="font-size:1.7rem;padding:1.2rem;width:100%;max-width:440px">TAP finisher</button>
+</div>
+<div class="card"><h2>Finishers (<span id="cnt">0</span>)</h2>
+  <table id="rows"></table>
+  <button onclick="save()" style="margin-top:.9rem">💾 Save results</button>
+</div>
+<script>
+const ENTS={ents_json};
+let START=null, STOP=null, taps=[];
+function fmt(s){{const m=Math.floor(s/60);return m+':'+(s-60*m).toFixed(1).padStart(4,'0');}}
+function tick(){{ if(!START)return; const end=STOP||Date.now(); document.getElementById('clock').textContent=fmt((end-START)/1000); }}
+function startRace(){{START=Date.now();STOP=null;taps=[];document.getElementById('tapbtn').disabled=false;document.getElementById('startbtn').textContent='Restart';render();}}
+function stopRace(){{STOP=Date.now();}}
+function tap(){{ if(!START)return; taps.push({{t:((STOP||Date.now())-START)/1000, entry:''}}); render(); }}
+function render(){{
+  document.getElementById('cnt').textContent=taps.length;
+  let h='<tr><th>#</th><th>Time</th><th>Runner</th></tr>';
+  taps.forEach(function(tp,i){{
+    let opts='<option value="">— pick —</option>';
+    ENTS.forEach(function(e){{opts+='<option value="'+e.id+'" '+(tp.entry==e.id?'selected':'')+'>'+esc(e.label)+'</option>';}});
+    h+='<tr><td>'+(i+1)+'</td><td>'+fmt(tp.t)+'</td>'
+      +'<td><select onchange="taps['+i+'].entry=this.value">'+opts+'</select></td></tr>';
+  }});
+  document.getElementById('rows').innerHTML=h;
+}}
+async function save(){{
+  const marks=taps.filter(function(tp){{return tp.entry;}}).map(function(tp){{return {{entry_id:tp.entry,seconds:tp.t}};}});
+  if(!marks.length){{alert('Tap finishers and assign at least one runner first.');return;}}
+  try{{ await jpost('/meet-events/{meid}/time-save',{{marks}}); location.href='/phone/meet/{me['meet_id']}'; }}
+  catch(e){{ alert(e.message); }}
+}}
+setInterval(tick,100);
+</script>"""
+    return shell(g.principal, body, active="phone", bare=True)
+
+
+@bp.post("/meet-events/<int:meid>/time-save")
+@login_required
+def time_save(meid):
+    me = load_meet_event(meid)
+    m = load_meet(me["meet_id"])
+    if not can_record_meet(m):
+        abort(403)
+    marks = (request.get_json(silent=True) or {}).get("marks", [])
+    conn = db.connect()
+    meids = _combine_meids(conn, me)
+    qm = ",".join("?" * len(meids))
+    valid = {r[0] for r in conn.execute(
+        f"SELECT id FROM entries WHERE meet_event_id IN ({qm})", tuple(meids)).fetchall()}
+    saved = 0
+    for mk in marks:
+        try:
+            eid, sec = int(mk["entry_id"]), float(mk["seconds"])
+        except (TypeError, ValueError, KeyError):
+            continue
+        if eid not in valid or sec <= 0:
+            continue
+        e = conn.execute("SELECT * FROM entries WHERE id=?", (eid,)).fetchone()
+        name, bib, school = _entry_label(conn, e)
+        conn.execute("DELETE FROM results WHERE entry_id=?", (eid,))
+        conn.execute("INSERT INTO results (entry_id, mark_seconds, dq, snap_name, snap_bib, snap_school) "
+                     "VALUES (?,?,0,?,?,?)", (eid, sec, name, bib, school))
+        saved += 1
+    for m2 in meids:
+        _recompute_places(conn, load_meet_event(m2))
+    conn.commit()
+    conn.close()
+    return jsonify(saved=saved)
+
+
 # ------------------------------- heat sheet PDF -------------------------------
 @bp.get("/meet-events/<int:meid>/heatsheet.pdf")
 @login_required
