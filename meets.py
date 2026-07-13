@@ -216,13 +216,28 @@ def create_meet():
     return redirect(f"/meets/{mid}")
 
 
+def can_delete_meet(m):
+    """Deleting a meet is Super Admin / District Admin (own district) only."""
+    p = g.principal
+    if not p or p.meet_scope:
+        return False
+    return p.is_admin and (p.is_super or p.district_id == m["district_id"])
+
+
 @bp.post("/meets/<int:mid>/delete")
 @login_required
 def delete_meet(mid):
     m = load_meet(mid)
-    if not can_setup_meet(m):
+    if not can_delete_meet(m):
         abort(403)
     conn = db.connect()
+    # Track data: results -> entries -> meet_events
+    conn.execute("DELETE FROM results WHERE entry_id IN (SELECT en.id FROM entries en "
+                 "JOIN meet_events me ON me.id=en.meet_event_id WHERE me.meet_id=?)", (mid,))
+    conn.execute("DELETE FROM entries WHERE meet_event_id IN "
+                 "(SELECT id FROM meet_events WHERE meet_id=?)", (mid,))
+    conn.execute("DELETE FROM meet_events WHERE meet_id=?", (mid,))
+    # XC data: finishers -> races
     conn.execute("DELETE FROM finishers WHERE race_id IN (SELECT id FROM races WHERE meet_id=?)", (mid,))
     conn.execute("DELETE FROM races WHERE meet_id=?", (mid,))
     conn.execute("DELETE FROM meet_schools WHERE meet_id=?", (mid,))
@@ -379,6 +394,16 @@ def meet_detail(mid):
     section = _sport.setup_section(m, setup)
     tabs = "" if is_xc else _sport._track_tabs(mid, "setup")
 
+    delete_card = ""
+    if can_delete_meet(m):
+        delete_card = (
+            '<div class="card" style="border-color:var(--err)"><h2>Danger zone</h2>'
+            '<p class="muted">Deleting this meet also removes its heats, entries, results, '
+            'and timing data. This can\'t be undone.</p>'
+            f'<form method="post" action="/meets/{mid}/delete" '
+            'onsubmit="return confirm(\'Delete this meet and ALL its data? This cannot be undone.\')">'
+            '<button class="danger">🗑 Delete meet</button></form></div>')
+
     body = f"""
 <p class="muted"><a href="/meets">← Meets</a></p>
 <h1>{escape(m['name'])}</h1>
@@ -389,6 +414,7 @@ def meet_detail(mid):
 {print_bar}
 {setup_card}
 {section}
+{delete_card}
 <div class="card"><h2>No-login timer QR</h2>
 <p class="muted">Share this QR/link with helpers — it opens the phone timing app for
 <b>this meet only</b>, no login, anytime. Rotate to revoke.</p>
