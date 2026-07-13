@@ -180,6 +180,55 @@ def delete_race(rid):
     return redirect(f"/meets/{m['id']}")
 
 
+# ------------------------------- meet-day tabs -------------------------------
+def _xc_tabs(mid, active):
+    """Tab bar for XC meets (parallels track's). XC has no per-event assignment,
+    so: Setup (config) · Meet day (run the heats + print) · Results."""
+    def tab(href, label, key):
+        on = "background:var(--panel2);color:var(--fg)" if active == key else "color:var(--mut)"
+        return (f'<a href="{href}" style="padding:.4rem .9rem;border-radius:8px;'
+                f'text-decoration:none;{on}">{label}</a>')
+    return ('<div style="display:flex;gap:.3rem;margin:.4rem 0 1rem;border-bottom:1px solid var(--line);'
+            'padding-bottom:.5rem;flex-wrap:wrap">'
+            + tab(f"/meets/{mid}", "⚙️ Setup", "setup")
+            + tab(f"/meets/{mid}/xc-day", "🏁 Meet day", "meetday")
+            + tab(f"/meets/{mid}/results", "📊 Results", "results")
+            + '</div>')
+
+
+@bp.get("/meets/<int:mid>/xc-day")
+@login_required
+def xc_meet_day(mid):
+    """Day-of view: run each heat's timing console + print stickers / bib lists."""
+    m = load_meet(mid)
+    if not can_view_meet(m) or m["sport"] != "xc":
+        abort(403)
+    conn = db.connect()
+    races = conn.execute("SELECT * FROM races WHERE meet_id=? ORDER BY id", (mid,)).fetchall()
+    counts = {r[0]: r[1] for r in conn.execute(
+        "SELECT r.id, COUNT(f.id) FROM races r LEFT JOIN finishers f ON f.race_id=r.id "
+        "WHERE r.meet_id=? GROUP BY r.id", (mid,)).fetchall()}
+    conn.close()
+    rows = []
+    for r in races:
+        status = "ended" if r["stop_time"] else ("running" if r["start_time"] else "not started")
+        rows.append(
+            f'<tr><td><b>{escape(r["name"])}</b></td><td>{r["capture_mode"]}</td>'
+            f'<td>{status}</td><td>{counts.get(r["id"], 0)}</td>'
+            f'<td style="text-align:right"><a class="btn" href="/races/{r["id"]}/console">⏱ Time</a></td></tr>')
+    tbl = (f'<div class="card"><h2>Heats — tap to time</h2><table><tr><th>Heat</th><th>Mode</th>'
+           f'<th>Status</th><th>Finishers</th><th></th></tr>{"".join(rows)}</table></div>'
+           if races else '<div class="card muted">No heats yet — add them on the Setup tab.</div>')
+    print_bar = (
+        f'<div class="card"><b>Print:</b> '
+        f'<a class="btn ghost" href="/meets/{mid}/stickers.pdf?template=5160">Stickers 5160</a> '
+        f'<a class="btn ghost" href="/meets/{mid}/stickers.pdf?template=5163">Stickers 5163</a> '
+        f'<a class="btn ghost" href="/meets/{mid}/biblist.pdf">Bib lists</a></div>')
+    body = (f'<p class="muted"><a href="/meets">← Meets</a></p><h1>{escape(m["name"])}</h1>'
+            f'{_xc_tabs(mid, "meetday")}{tbl}{print_bar}')
+    return shell(g.principal, body, active="meets")
+
+
 # ------------------------------- timing console -------------------------------
 CONSOLE_CSS = """
 .tc-clock{font-size:3.2rem;font-weight:800;font-variant-numeric:tabular-nums;
@@ -694,6 +743,7 @@ def results_page(mid):
     inner = _results_inner(m, build_results(mid), name_mode=demo.mode_for(g.principal))
     body = (f'<p class="muted"><a href="/meets/{mid}">← {escape(m["name"])}</a></p>'
             f'<h1>{escape(m["name"])} — Results</h1>'
+            f'{_xc_tabs(mid, "results")}'
             f'<div class="row"><a class="btn ghost" href="/r/{m["public_token"]}" target="_blank">'
             f'Public page ↗</a> <a class="btn ghost" href="/meets/{mid}/results.xlsx">Export xlsx</a></div>'
             f'{inner}')

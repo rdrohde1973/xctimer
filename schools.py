@@ -944,19 +944,33 @@ def bibcheck():
     if request.args.get("format") == "json":
         return jsonify(result or {})
 
-    box = ""
-    if result:
-        box = (f'<div class="card"><div style="font-size:1.6rem;font-weight:700">'
-               f'#{result["bib"]} · {escape(result["name"])}</div>'
-               f'<p class="muted">{escape(result.get("sname",""))} · '
-               f'grade {result.get("grade") or "—"} · {result.get("gender") or "—"}</p></div>')
-    elif bib:
-        box = '<div class="msg err">No athlete with that bib in your scope.</div>'
-    body = f"""
-<h1>Bib check</h1><p class="sub">Scan a sticker QR or type a bib number.</p>
-<div class="card"><form method="get" action="/bibcheck">
-  <label>Bib number</label><input name="bib" type="number" autofocus value="{escape(bib)}">
-  <button type="submit" style="margin-top:1rem">Look up</button>
-</form></div>{box}"""
+    body = """
+<h1>Bib check</h1>
+<p class="sub">Scan a sticker QR or type a bib number. The box clears after each lookup,
+so you can scan one after another.</p>
+<div class="card">
+  <label>Bib number</label>
+  <input id="bib" type="number" inputmode="numeric" autofocus autocomplete="off"
+    onkeydown="if(event.key==='Enter'){lookup();}">
+  <button onclick="lookup()" style="margin-top:1rem">Look up</button>
+</div>
+<div id="result"></div>
+<script>
+async function lookup(){
+  const el=document.getElementById('bib'); const v=el.value.trim();
+  el.value=''; el.focus();                 // clear immediately, ready for the next scan
+  if(!v) return;
+  let a={};
+  try{ a=await (await fetch('/bibcheck?format=json&bib='+encodeURIComponent(v))).json(); }catch(e){}
+  const box=document.getElementById('result');
+  if(a && a.bib){
+    box.innerHTML='<div class="card"><div style="font-size:1.6rem;font-weight:700">#'+a.bib
+      +' · '+esc(a.name||'')+'</div><p class="muted">'+esc(a.sname||'')+' · grade '
+      +(a.grade||'—')+' · '+(a.gender||'—')+'</p></div>';
+  }else{
+    box.innerHTML='<div class="msg err">Bib '+esc(v)+' — no athlete with that bib in your scope.</div>';
+  }
+}
+</script>"""
     return shell(p, body, active="", active_district=active_district_id(),
                  districts=_districts_for_switcher())

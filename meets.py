@@ -404,7 +404,7 @@ def meet_detail(mid):
                      f'{"Rotate" if m["timer_token"] else "Generate"} timer QR</button></form>')
 
     section = _sport.setup_section(m, setup)
-    tabs = "" if is_xc else _sport._track_tabs(mid, "setup")
+    tabs = _sport._xc_tabs(mid, "setup") if is_xc else _sport._track_tabs(mid, "setup")
     # XC: heats above the schools card; track keeps its meet-setup form first.
     mid_block = f"{section}\n{setup_card}" if is_xc else f"{setup_card}\n{section}"
 
