@@ -128,7 +128,12 @@ def list_districts():
 <form method="post" action="/districts">
   <label>Name</label><input name="name" placeholder="Alpine School District" required>
   <button type="submit" style="margin-top:1rem">Create district</button>
-</form></div>"""
+</form></div>
+<div class="card"><h2>Demo data</h2>
+<p class="muted">Create a self-contained “Demo District” with rosters and a finished
+meet — handy for showcasing without touching real data.</p>
+<form method="post" action="/seed-demo"><button class="ghost" type="submit">Seed demo district</button></form>
+</div>"""
     body = f"<h1>Districts</h1><p class='sub'>Top-level tenants. Super Admin only.</p>{table}{form}"
     return shell(g.principal, body, active="districts",
                  active_district=active_district_id(), districts=all_districts())
@@ -150,6 +155,14 @@ def create_district():
     conn.execute("INSERT INTO districts (name, slug) VALUES (?,?)", (name, slug))
     conn.commit()
     conn.close()
+    return redirect("/districts")
+
+
+@bp.post("/seed-demo")
+@role_required("super_admin")
+def seed_demo():
+    from . import demo_seed
+    demo_seed.seed()
     return redirect("/districts")
 
 

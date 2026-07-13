@@ -67,6 +67,21 @@ border-radius:16px;padding:2rem}
 .authcard .sub{text-align:center;margin-bottom:1.4rem}
 .authcard button{width:100%;margin-top:1rem;padding:.65rem}
 .center{text-align:center;margin-top:1rem}
+/* wide tables scroll inside their card instead of breaking the page */
+.card{overflow-x:auto}
+@media (max-width:640px){
+  header.top{flex-wrap:wrap;gap:.5rem;padding:.5rem .7rem}
+  header.top nav{order:3;width:100%;overflow-x:auto;flex-wrap:nowrap;-webkit-overflow-scrolling:touch}
+  header.top nav a{padding:.35rem .55rem;white-space:nowrap}
+  header.top .sp{display:none}
+  .who{font-size:.75rem;text-align:left}
+  main{padding:1rem .7rem 3rem}
+  h1{font-size:1.35rem}
+  .card{padding:.9rem}
+  table{font-size:.85rem}
+  th,td{padding:.4rem .45rem}
+  .row>div{min-width:120px}
+}
 """
 
 JS = """
@@ -154,6 +169,20 @@ def shell(principal, body, *, active="", active_district=None, districts=None,
 <main>{_flashes(msg, err)}{body}</main>
 <script>{JS}</script>
 </body></html>"""
+
+
+def error_page(code, title, msg):
+    """Standalone friendly error page."""
+    return f"""<!doctype html><html lang=en><head><meta charset=utf-8>
+<meta name=viewport content="width=device-width, initial-scale=1">
+<title>{code} · {BRAND}</title><style>{CSS}</style></head><body>
+<div class="authwrap"><div class="authcard" style="text-align:center">
+  <h1>{BRAND_HTML}</h1>
+  <p style="font-size:3rem;font-weight:800;margin:.2em 0;color:var(--acc)">{code}</p>
+  <p style="font-size:1.1rem;font-weight:600">{escape(title)}</p>
+  <p class="sub">{escape(msg)}</p>
+  <a class="btn" href="/dashboard" style="display:inline-block;margin-top:.5rem">Back to dashboard</a>
+</div></div></body></html>"""
 
 
 def auth_page(title, sub, body, *, msg=None, err=None):

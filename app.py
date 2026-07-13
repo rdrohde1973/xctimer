@@ -20,7 +20,7 @@ from .track import bp as track_bp
 from .admin import bp as admin_bp
 from .insights import bp as insights_bp
 
-APP_VERSION = "0.5.0-phase5"
+APP_VERSION = "0.6.0-phase6"
 
 LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width, initial-scale=1">
@@ -80,6 +80,20 @@ def create_app():
     @app.get("/healthz")
     def healthz():
         return jsonify(status="ok", version=APP_VERSION)
+
+    from .ui import error_page
+
+    @app.errorhandler(403)
+    def _e403(e):
+        return error_page(403, "Not allowed", "You don't have access to that."), 403
+
+    @app.errorhandler(404)
+    def _e404(e):
+        return error_page(404, "Not found", "That page or record doesn't exist."), 404
+
+    @app.errorhandler(500)
+    def _e500(e):
+        return error_page(500, "Something went wrong", "An unexpected error occurred."), 500
 
     return app
 
