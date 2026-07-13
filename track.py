@@ -523,42 +523,40 @@ def assign_page(mid):
         f'<a class="btn {"" if s["id"]==sid else "ghost"}" href="/meets/{mid}/assign?school={s["id"]}">'
         f'{escape(s["name"])}</a> ' for s in pickable)
 
-    # per-athlete rows
+    # per-athlete rows — individual/field AND relay events are all just checkboxes
     def div(me):
         return {"M": "B", "F": "G"}.get(me["gender"], "") + (str(me["grade"]) if me["grade"] else "")
+
+    # which relays (this school) each athlete is already on
+    relay_member = {}  # aid -> set(meid)
+    for meid, members in relay_squads.items():
+        for a in athletes:
+            if a["name"] in members:
+                relay_member.setdefault(a["id"], set()).add(meid)
+
+    def box(me, aid, checked, relay):
+        rel = ' data-relay="1"' if relay else f' onchange="cnt({aid})"'
+        tag = "🔗 " if relay else ""
+        return (f'<label style="display:inline-flex;gap:.3rem;align-items:center;margin:0 .8rem .3rem 0">'
+                f'<input type="checkbox" name="me_{aid}" value="{me["id"]}" style="width:auto" '
+                f'data-ath="{aid}"{rel} {"checked" if checked else ""}>'
+                f'{tag}{escape(me["ename"])} <span class="muted">{div(me)}</span></label>')
+
     rows = []
     for a in athletes:
-        elig = [me for me in indiv_mes if _eligible(me, a)]
         cur = entered.get(a["id"], set())
-        boxes = "".join(
-            f'<label style="display:inline-flex;gap:.3rem;align-items:center;margin:0 .8rem .3rem 0">'
-            f'<input type="checkbox" name="me_{a["id"]}" value="{me["id"]}" style="width:auto" '
-            f'data-ath="{a["id"]}" {"checked" if me["id"] in cur else ""} onchange="cnt({a["id"]})">'
-            f'{escape(me["ename"])} <span class="muted">{div(me)}</span></label>' for me in elig)
-        if not boxes:
-            boxes = '<span class="muted">no eligible events</span>'
+        relcur = relay_member.get(a["id"], set())
+        parts = [box(me, a["id"], me["id"] in cur, False) for me in indiv_mes if _eligible(me, a)]
+        parts += [box(me, a["id"], me["id"] in relcur, True) for me in relay_mes if _eligible(me, a)]
+        boxes = "".join(parts) or '<span class="muted">no eligible events</span>'
         rows.append(
             f'<tr><td><b>{escape(a["name"])}</b><br><span class="muted">gr {a["grade"] or "?"} '
             f'{a["gender"] or ""}{" · bib "+str(a["bib"]) if a["bib"] else ""}</span></td>'
             f'<td>{boxes}<div class="muted" id="c{a["id"]}"></div></td></tr>')
-    ath_tbl = (f'<table><tr><th>Athlete</th><th>Events (limit {limit})</th></tr>{"".join(rows)}</table>'
+    hdr = f'Events (limit {limit}; relays 🔗 not counted)' if relay_mes else f'Events (limit {limit})'
+    ath_tbl = (f'<table><tr><th>Athlete</th><th>{hdr}</th></tr>{"".join(rows)}</table>'
                if athletes else '<p class="muted">No athletes on this roster.</p>')
-
-    # relay squads (this school)
     relay_block = ""
-    if relay_mes:
-        blocks = []
-        for me in relay_mes:
-            members = relay_squads.get(me["id"], [])
-            opts = "".join(
-                f'<option value="{escape(a["name"])}" {"selected" if a["name"] in members else ""}>'
-                f'{escape(a["name"])} (gr {a["grade"] or "?"})</option>'
-                for a in athletes if _eligible(me, a))
-            blocks.append(
-                f'<div style="margin:.4rem 0"><label>{escape(me["ename"])} {div(me)} '
-                f'<span class="muted">— pick up to 4</span></label>'
-                f'<select name="relay_{me["id"]}" multiple size="4" style="max-width:340px">{opts}</select></div>')
-        relay_block = f'<div class="card"><h3>Relays — {escape(school["name"])}</h3>{"".join(blocks)}</div>'
 
     body = f"""
 <p class="muted"><a href="/meets">← Meets</a></p>
@@ -576,13 +574,13 @@ def assign_page(mid):
 <script>
 const LIMIT={limit};
 function cnt(aid){{
-  const boxes=document.querySelectorAll('input[data-ath="'+aid+'"]');
+  const boxes=document.querySelectorAll('input[data-ath="'+aid+'"]:not([data-relay])');
   let n=0; boxes.forEach(b=>{{if(b.checked)n++;}});
   const el=document.getElementById('c'+aid);
   el.textContent=n+' / {limit}';
   el.style.color = n>LIMIT ? 'var(--err)' : 'var(--mut)';
 }}
-document.querySelectorAll('input[data-ath]').forEach(b=>cnt(b.dataset.ath));
+document.querySelectorAll('input[data-ath]:not([data-relay])').forEach(b=>cnt(b.dataset.ath));
 </script>
 """
     return shell(g.principal, body, active="meets")
@@ -598,31 +596,34 @@ def save_assign(mid):
         abort(403)
     limit = event_limit(m)
     conn = db.connect()
-    athletes = conn.execute("SELECT id FROM athletes WHERE school_id=? AND does_track=1 AND active=1",
+    athletes = conn.execute("SELECT id, name FROM athletes WHERE school_id=? AND does_track=1 AND active=1",
                             (sid,)).fetchall()
     valid_me = {r[0]: r[1] for r in conn.execute(
         "SELECT me.id, e.kind FROM meet_events me JOIN events e ON e.id=me.event_id "
         "WHERE me.meet_id=?", (mid,)).fetchall()}
+    # each athlete's checked meet_events (relays included — same checkbox flow)
+    sel = {a["id"]: [int(x) for x in request.form.getlist(f"me_{a['id']}")
+                     if x.isdigit() and int(x) in valid_me] for a in athletes}
+
     for a in athletes:
         aid = a["id"]
-        selected = [int(x) for x in request.form.getlist(f"me_{aid}")
-                    if x.isdigit() and int(x) in valid_me and valid_me[int(x)] != "relay"]
-        selected = selected[:limit]  # enforce cap
+        indiv = [meid for meid in sel[aid] if valid_me[meid] != "relay"][:limit]  # cap excludes relays
         current = {r[0] for r in conn.execute(
             "SELECT en.meet_event_id FROM entries en JOIN meet_events me ON me.id=en.meet_event_id "
             "WHERE me.meet_id=? AND en.runner_id=?", (mid, aid)).fetchall()}
-        for meid in set(selected) - current:
+        for meid in set(indiv) - current:
             conn.execute("INSERT INTO entries (meet_event_id, runner_id, school_id) VALUES (?,?,?)",
                          (meid, aid, sid))
-        for meid in current - set(selected):
+        for meid in current - set(indiv):
             conn.execute("DELETE FROM results WHERE entry_id IN "
                          "(SELECT id FROM entries WHERE meet_event_id=? AND runner_id=?)", (meid, aid))
             conn.execute("DELETE FROM entries WHERE meet_event_id=? AND runner_id=?", (meid, aid))
-    # relays for this school
+
+    # relay squads: members = the athletes (this school) who checked that relay
     for meid, kind in valid_me.items():
         if kind != "relay":
             continue
-        members = [x for x in request.form.getlist(f"relay_{meid}") if x][:4]
+        members = [a["name"] for a in athletes if meid in sel[a["id"]]][:4]
         conn.execute("DELETE FROM entries WHERE meet_event_id=? AND school_id=? AND runner_id IS NULL",
                      (meid, sid))
         if members:
