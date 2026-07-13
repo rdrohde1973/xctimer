@@ -104,18 +104,41 @@ def _save_logo(file_storage, prefix):
     return f"/static/logos/{name}"
 
 
+BIB_BLOCK = 200          # slots auto-allocated per school (roomy enough for any team)
+BIB_BASE = 100           # first school's block starts here (100–299)
+
+
+def _alloc_block(conn, district_id):
+    """Next free (start, end) block for a new school — sequential, no gaps."""
+    top = conn.execute("SELECT COALESCE(MAX(bib_end), 0) FROM schools WHERE district_id=?",
+                       (district_id,)).fetchone()[0]
+    lo = (top + 1) if top else BIB_BASE
+    return lo, lo + BIB_BLOCK - 1
+
+
 def _next_bib(conn, school):
-    """Lowest free bib within the school's block, or None if unset/full."""
-    lo, hi = school["bib_start"], school["bib_end"]
-    if not lo or not hi:
-        return None
+    """Auto-assign the next bib: fill the school's block, and if it's full, take the
+    next free number in a shared overflow zone above every block. Always unique
+    across the district, so scans/heat-sheet matching are never ambiguous. Lazily
+    allocates a block to a school that doesn't have one yet."""
+    row = conn.execute("SELECT bib_start, bib_end, district_id FROM schools WHERE id=?",
+                       (school["id"],)).fetchone()
+    lo, hi, did = row["bib_start"], row["bib_end"], row["district_id"]
+    if not (lo and hi):
+        lo, hi = _alloc_block(conn, did)
+        conn.execute("UPDATE schools SET bib_start=?, bib_end=? WHERE id=?", (lo, hi, school["id"]))
     used = {r[0] for r in conn.execute(
-        "SELECT bib FROM athletes WHERE school_id=? AND bib IS NOT NULL", (school["id"],)
-    ).fetchall()}
-    for b in range(lo, hi + 1):
+        "SELECT a.bib FROM athletes a JOIN schools s ON s.id=a.school_id "
+        "WHERE s.district_id=? AND a.bib IS NOT NULL", (did,)).fetchall()}
+    for b in range(lo, hi + 1):          # tidy: inside the school's own block
         if b not in used:
             return b
-    return None
+    top = conn.execute("SELECT COALESCE(MAX(bib_end), 0) FROM schools WHERE district_id=?",
+                       (did,)).fetchone()[0]
+    b = top + 1                          # overflow zone above all blocks — still unique
+    while b in used:
+        b += 1
+    return b
 
 
 # ------------------------------- school list -------------------------------
@@ -160,12 +183,9 @@ def list_schools():
 <div class="card"><h2>Add a school</h2>
 <form method="post" action="/schools" enctype="multipart/form-data">
   <label>Name</label><input name="name" required>
-  <div class="row">
-    <div><label>Bib start</label><input name="bib_start" type="number" inputmode="numeric"></div>
-    <div><label>Bib end</label><input name="bib_end" type="number" inputmode="numeric"></div>
-  </div>
   <label>Logo (optional)</label><input name="logo" type="file" accept="image/*">
   <button type="submit" style="margin-top:1rem">Add school</button>
+  <span class="muted">Bib numbers are assigned automatically.</span>
 </form></div>"""
 
     heading = "Roster" if p.role == "coach" else "Schools"
@@ -181,16 +201,12 @@ def create_school():
     name = (request.form.get("name") or "").strip()
     if not name:
         abort(400)
-
-    def _int(v):
-        v = (v or "").strip()
-        return int(v) if v.lstrip("-").isdigit() else None
-
     logo_path = _save_logo(request.files.get("logo"), name)
     conn = db.connect()
+    lo, hi = _alloc_block(conn, did)   # auto-assigned bib block (no manual ranges)
     conn.execute(
         "INSERT INTO schools (district_id, name, bib_start, bib_end, logo_path) VALUES (?,?,?,?,?)",
-        (did, name, _int(request.form.get("bib_start")), _int(request.form.get("bib_end")), logo_path),
+        (did, name, lo, hi, logo_path),
     )
     conn.commit()
     conn.close()
