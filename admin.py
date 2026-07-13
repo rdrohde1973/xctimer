@@ -286,10 +286,10 @@ def list_users():
         if "is_demo" in u.keys() and u["is_demo"]:
             status += ' <span class="pill">demo</span>'
         dcol = f'<td>{escape(u["dname"] or "—")}</td>' if show_d else ""
-        resend = ""
-        if not u["password_hash"]:
-            resend = (f'<form class="inline" method="post" action="/users/{u["id"]}/resend">'
-                      f'<button class="ghost" type="submit">Resend</button></form> ')
+        # Pending users get a fresh setup invite; active users get a login/reset link.
+        resend_label = "Resend invite" if not u["password_hash"] else "Send login link"
+        resend = (f'<form class="inline" method="post" action="/users/{u["id"]}/resend">'
+                  f'<button class="ghost" type="submit">{resend_label}</button></form> ')
         trs.append(
             f'<tr><td><b>{escape(u["name"] or "")}</b><br>'
             f'<span class="muted">{escape(u["email"])}</span></td>'
@@ -334,7 +334,7 @@ def list_users():
 </div>"""
 
     body = f"<h1>Users</h1><p class='sub'>Coaches, timers, and district admins.</p>{table}{form}"
-    return shell(p, body, active="users",
+    return shell(p, body, active="users", msg=request.args.get("msg"),
                  active_district=did, districts=_districts_for_switcher())
 
 
@@ -382,8 +382,8 @@ def resend_invite(uid):
     if u["district_id"] is not None:
         require_district(u["district_id"])
     token = issue_reset_token(uid)
-    send_setup_email(u["email"], token)
-    return redirect("/users")
+    send_setup_email(u["email"], token, reset=bool(u["password_hash"]))
+    return redirect("/users?msg=" + ("Login+link+sent" if u["password_hash"] else "Invite+resent"))
 
 
 @bp.post("/users/<int:uid>/delete")
