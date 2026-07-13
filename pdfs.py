@@ -155,20 +155,21 @@ def _draw_field_section(c, ph, pw, left, title, rows, hj, token=None, bars=None)
     if hj:                       # no school -> room for big, readable bar boxes
         name_x, gx = left + 0.5 * inch, left + 2.4 * inch
         cols, cw, gap, boxh, rowh = 9, 0.46 * inch, 0.52 * inch, 0.46 * inch, 0.6 * inch
+        y -= 0.85 * inch         # drop the wide grid clear below the top-right QR/token
+        c.setFont("Helvetica-Bold", 7)
+        c.setFillGray(0.4)
+        c.drawString(gx, y + 0.24 * inch, "BAR HEIGHTS — write each height, then mark O / X / P below")
+        c.setFillGray(0)
     else:
         name_x, gx = left + 0.7 * inch, left + 4.5 * inch
+        y -= 0.34 * inch
 
-    y -= 0.34 * inch
     c.setFont("Helvetica-Bold", 9)
     c.setFillGray(0.35)
     c.drawString(left, y, "BIB")
     c.drawString(name_x, y, "NAME")
     c.setFillGray(0)
     if hj:
-        c.setFont("Helvetica", 7)
-        c.setFillGray(0.4)
-        c.drawString(gx, y + 0.2 * inch, "BAR HEIGHTS  →  (write the height, mark O / X / P below)")
-        c.setFillGray(0)
         c.setFont("Helvetica-Bold", 13)
         for i in range(cols):
             cx = gx + i * gap
@@ -180,7 +181,7 @@ def _draw_field_section(c, ph, pw, left, title, rows, hj, token=None, bars=None)
         c.setFont("Helvetica-Bold", 9)
         for i, lbl in enumerate(("ATT 1", "ATT 2", "ATT 3")):
             c.drawString(gx + i * 0.85 * inch, y, lbl)
-    y -= 0.12 * inch
+    y -= 0.14 * inch
     c.line(left, y, pw - 0.5 * inch, y)
     y -= (0.42 if hj else 0.3) * inch
 
