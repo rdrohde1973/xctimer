@@ -104,16 +104,41 @@ def _seed_track_meet(conn, did):
     return True
 
 
+def _seed_users(conn, did):
+    """Demo login accounts: a district admin + a coach per school (password DEMO_PASSWORD).
+    Idempotent; returns the emails created this run. These are writable (not is_demo)
+    so you can log in and drive the real workflows."""
+    created = []
+
+    def ensure(email, name, role, school_id=None):
+        if conn.execute("SELECT 1 FROM users WHERE email=?", (email,)).fetchone():
+            return
+        uid = conn.execute(
+            "INSERT INTO users (district_id, email, name, role, password_hash) VALUES (?,?,?,?,?)",
+            (did, email, name, role, auth.hash_password(DEMO_PASSWORD))).lastrowid
+        if school_id:
+            conn.execute("INSERT INTO user_schools (user_id, school_id) VALUES (?,?)", (uid, school_id))
+        created.append(email)
+
+    ensure("demoadmin@xctimer.local", "Demo District Admin", "district_admin")
+    for s in conn.execute("SELECT id, name FROM schools WHERE district_id=? ORDER BY id", (did,)).fetchall():
+        slug = s["name"].split()[0].lower()
+        ensure(f"coach.{slug}@xctimer.local", f"{s['name']} Coach", "coach", s["id"])
+    return created
+
+
 def seed():
     conn = db.connect()
     row = conn.execute("SELECT id FROM districts WHERE slug=?", (SLUG,)).fetchone()
     if row:
         did = row[0]
         track = _seed_track_meet(conn, did)
+        users = _seed_users(conn, did)
         conn.commit()
         conn.close()
         return {"created": False, "note": "Demo District already existed",
-                "track_meet_added": track}
+                "track_meet_added": track, "users_added": users,
+                "password": DEMO_PASSWORD}
 
     did = conn.execute("INSERT INTO districts (name, slug) VALUES (?,?)",
                        ("Demo District", SLUG)).lastrowid
@@ -174,6 +199,7 @@ def seed():
     conn.execute("INSERT INTO user_schools (user_id, school_id) VALUES (?,?)", (uid, school_ids[0]))
 
     _seed_track_meet(conn, did)   # also give the demo a finished track meet
+    _seed_users(conn, did)        # + demo district-admin and per-school coach logins
 
     conn.commit()
     conn.close()
