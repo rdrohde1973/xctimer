@@ -78,6 +78,48 @@ def vision_read_marks(image_bytes, media_type="image/jpeg"):
     return clean
 
 
+_SHEET_SYS = (
+    "You read a photographed track & field heat sheet. In the TOP-RIGHT corner a sheet "
+    "code is printed next to a QR, formatted like 'XCTSHEET E123'. Read that code exactly. "
+    "Each row has a lane/section, a competitor name and/or bib, and a handwritten MARK "
+    "(a time like 12.34 or 2:05.4 for running, or a distance/height like 5.42 for field). "
+    'Return ONLY a JSON object, no prose: {"sheet_code": "<code exactly as printed or null>", '
+    '"marks": [{"bib": <int or null>, "name": "<string or null>", "mark": "<string as written>"}]}. '
+    "Skip empty/illegible rows. Preserve marks exactly as written."
+)
+
+
+def vision_read_sheet(image_bytes, media_type="image/jpeg"):
+    """Read a heat sheet's identifying code AND its marks. Returns
+    {"sheet_code": <str|None>, "marks": [{bib,name,mark}]}."""
+    out = claude_vision(_SHEET_SYS, "Read this heat sheet's code and marks.", image_bytes,
+                        media_type=media_type, max_tokens=4000)
+    obj = _find_json_object(out)
+    code = obj.get("sheet_code") if isinstance(obj, dict) else None
+    marks = []
+    for r in (obj.get("marks", []) if isinstance(obj, dict) else []):
+        if isinstance(r, dict) and r.get("mark") not in (None, ""):
+            marks.append({"bib": r.get("bib"), "name": r.get("name"), "mark": str(r.get("mark"))})
+    return {"sheet_code": (str(code).strip() if code else None), "marks": marks}
+
+
+def _find_json_object(s):
+    """Locate and parse the first JSON object from a model response (handles fences)."""
+    s = (s or "").strip()
+    if s.startswith("```"):
+        s = s.split("```", 2)[1]
+        if s.startswith("json"):
+            s = s[4:]
+    a, b = s.find("{"), s.rfind("}")
+    if a == -1 or b == -1:
+        return {}
+    try:
+        obj = json.loads(s[a:b + 1])
+    except json.JSONDecodeError:
+        return {}
+    return obj if isinstance(obj, dict) else {}
+
+
 # ------------------------- document text extraction -------------------------
 def extract_text(filename, data):
     """Best-effort raw-text extraction from an uploaded roster file."""

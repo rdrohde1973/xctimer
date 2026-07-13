@@ -325,12 +325,11 @@ def _track_timer(conn, m):
 
 <div class="card" id="tab-scan" style="display:none">
   <h2>Scan a heat sheet</h2>
-  <p class="sub">Take a photo of a marked-up heat sheet. The results are read and posted to that heat.</p>
-  <label>Event</label>
-  <select id="sev">{''.join(ev_opts)}</select>
+  <p class="sub">Take a photo of a marked-up heat sheet — the event is read from the
+  sheet's code, and the results are posted to it.</p>
   <label>Photo of the sheet</label>
   <input type="file" id="scanf" accept="image/*" capture="environment" onchange="doScan()">
-  <p class="muted">Reads automatically once you take the photo.</p>
+  <p class="muted">Keep the code/QR in the top-right corner of the sheet in frame.</p>
   <div id="scanout"></div>
 </div>
 
@@ -340,6 +339,7 @@ def _track_timer(conn, m):
 </style>
 <script>
 const EV={json.dumps(evdata)};
+let SCAN_MEID=null;
 function segTab(t){{
   document.getElementById('tab-time').style.display = t==='time'?'':'none';
   document.getElementById('tab-scan').style.display = t==='scan'?'':'none';
@@ -364,25 +364,26 @@ function startRace(){{
   if(ev&&ht) location.href='/meet-events/'+ev+'/time?heat='+ht;
 }}
 async function doScan(){{
-  const ev=document.getElementById('sev').value;
   const f=document.getElementById('scanf').files[0];
-  if(!ev){{alert('Pick the event first');return;}}
   if(!f)return;
-  document.getElementById('scanout').innerHTML='<p class="muted">Reading…</p>';
+  document.getElementById('scanout').innerHTML='<p class="muted">Reading the sheet…</p>';
   const fd=new FormData(); fd.append('image',f);
-  const r=await fetch('/meet-events/'+ev+'/scan',{{method:'POST',body:fd}});
+  const r=await fetch('/track/scan',{{method:'POST',body:fd}});
   const j=await r.json();
-  if(!r.ok||!(j.marks||[]).length){{document.getElementById('scanout').innerHTML='<p class="msg err">'+esc((j.error||'No marks read'))+'</p>';return;}}
-  let h='<p class="muted">Review, then post.</p><table><tr><th>Bib</th><th>Mark</th></tr>';
+  if(!r.ok){{document.getElementById('scanout').innerHTML='<p class="msg err">'+esc(j.error||'Could not read the sheet')+'</p>';return;}}
+  SCAN_MEID=j.meid;
+  if(!(j.marks||[]).length){{document.getElementById('scanout').innerHTML='<p class="msg err">Read <b>'+esc(j.label)+'</b> but found no marks — retake the photo.</p>';return;}}
+  let h='<p><b>Detected:</b> '+esc(j.label)+'</p><p class="muted">Review, then post.</p><table><tr><th>Bib</th><th>Mark</th></tr>';
   j.marks.forEach(function(m,i){{h+='<tr><td><input id="sb'+i+'" value="'+esc(m.bib==null?'':m.bib)+'" style="width:70px"></td>'
     +'<td><input id="sm'+i+'" value="'+esc(m.mark==null?'':m.mark)+'" style="width:120px"></td></tr>';}});
-  h+='</table><button onclick="postScan('+j.marks.length+','+ev+')" style="margin-top:.6rem">Post to this event</button>';
+  h+='</table><button onclick="postScan('+j.marks.length+')" style="margin-top:.6rem">Post to '+esc(j.label)+'</button>';
   document.getElementById('scanout').innerHTML=h;
 }}
-async function postScan(n,ev){{
+async function postScan(n){{
+  if(!SCAN_MEID)return;
   const marks=[];
   for(let i=0;i<n;i++){{const b=document.getElementById('sb'+i).value.trim();const mk=document.getElementById('sm'+i).value.trim();if(b&&mk)marks.push({{bib:b,mark:mk}});}}
-  try{{const j=await jpost('/meet-events/'+ev+'/scan/post',{{marks}});alert('Posted '+j.applied+' marks'+(j.unmatched&&j.unmatched.length?'; unmatched: '+j.unmatched.join(', '):''));}}
+  try{{const j=await jpost('/meet-events/'+SCAN_MEID+'/scan/post',{{marks}});alert('Posted '+j.applied+' marks'+(j.unmatched&&j.unmatched.length?'; unmatched: '+j.unmatched.join(', '):''));}}
   catch(e){{alert(e.message);}}
 }}
 </script>"""

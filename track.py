@@ -1141,6 +1141,41 @@ async function postScan(n){{
 
 
 # ------------------------------- vision scan-back -------------------------------
+@bp.post("/track/scan")
+@login_required
+def scan_auto():
+    """Scan a heat sheet WITHOUT choosing an event — read the printed sheet code
+    ('XCTSHEET E<meid>') off the photo, resolve the event, and return its marks."""
+    import re
+    f = request.files.get("image")
+    if not f:
+        return jsonify(error="No image"), 400
+    media = f.mimetype or "image/jpeg"
+    try:
+        res = ai.vision_read_sheet(f.read(), media_type=media)
+    except Exception as e:  # noqa: BLE001
+        return jsonify(error=f"Vision read failed: {e}"), 400
+    code = res.get("sheet_code") or ""
+    mt = re.search(r"E\s*0*(\d+)", code.upper())
+    if not mt:
+        return jsonify(error="Couldn't read the sheet's code. Make sure the top-right "
+                             "code/QR is in the photo, then retake it."), 400
+    meid = int(mt.group(1))
+    conn = db.connect()
+    me = conn.execute("SELECT * FROM meet_events WHERE id=?", (meid,)).fetchone()
+    conn.close()
+    if not me:
+        return jsonify(error=f"Sheet code points to an event ({meid}) that no longer exists."), 400
+    m = load_meet(me["meet_id"])
+    if not can_record_meet(m):
+        abort(403)
+    me = load_meet_event(meid)
+    gword = {"M": "Boys", "F": "Girls"}.get(me["gender"], "")
+    gr = f'{me["grade"]}th Grade ' if me["grade"] else ""
+    label = f'{gr}{gword + " " if gword else ""}{me["ename"]}'.strip()
+    return jsonify(meid=meid, label=label, meet=m["name"], marks=res.get("marks", []))
+
+
 @bp.post("/meet-events/<int:meid>/scan")
 @login_required
 def scan_back(meid):
