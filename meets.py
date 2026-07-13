@@ -323,6 +323,13 @@ def meet_detail(mid):
         f'<a class="btn ghost" href="/meets/{mid}/stickers.pdf?template=5163">Stickers 5163</a> '
         f'<a class="btn ghost" href="/meets/{mid}/biblist.pdf">Bib lists</a>{hs}</div>')
 
+    if is_xc:
+        from . import xc as _sport
+    else:
+        from . import track as _sport
+
+    host_label = ('Host school <span class="muted">— only the host school\'s coaches '
+                  'can run this meet</span>')
     if setup:
         boxes = "".join(
             f'<label style="display:flex;gap:.5rem;align-items:center;font-size:.95rem">'
@@ -331,18 +338,36 @@ def meet_detail(mid):
         hopts = '<option value="">— none —</option>' + "".join(
             f'<option value="{s["id"]}" {"selected" if s["id"]==m["host_school_id"] else ""}>'
             f'{escape(s["name"])}</option>' for s in all_sch)
-        att_block = (
-            f'<form method="post" action="/meets/{mid}/schools">'
-            f'<div class="card" style="background:var(--panel2)">{boxes}</div>'
-            f'<button type="submit" style="margin-top:.6rem">Save attending</button></form>'
-            f'<form method="post" action="/meets/{mid}/host" style="margin-top:.9rem">'
-            f'<label>Host school <span class="muted">— only the host school\'s coaches can run this meet</span></label>'
-            f'<div class="row"><div style="max-width:260px"><select name="host_school_id">{hopts}</select></div>'
-            f'<div style="display:flex;align-items:flex-end"><button type="submit">Set host</button></div></div></form>')
+        if is_xc:
+            setup_card = (
+                '<div class="card"><h2>Schools at this meet</h2>'
+                f'<form method="post" action="/meets/{mid}/schools">'
+                f'<div class="card" style="background:var(--panel2)">{boxes}</div>'
+                f'<button type="submit" style="margin-top:.6rem">Save attending</button></form>'
+                f'<form method="post" action="/meets/{mid}/host" style="margin-top:.9rem">'
+                f'<label>{host_label}</label>'
+                f'<div class="row"><div style="max-width:260px"><select name="host_school_id">{hopts}</select></div>'
+                f'<div style="display:flex;align-items:flex-end"><button type="submit">Set host</button></div>'
+                f'</div></form></div>')
+        else:
+            # Track: one form, one Save meet setup button (schools + host + scoring/limit/lanes)
+            setup_card = (
+                '<div class="card"><h2>Meet setup</h2>'
+                f'<form method="post" action="/meets/{mid}/track-setup">'
+                f'<label>Schools at this meet</label>'
+                f'<div class="card" style="background:var(--panel2)">{boxes}</div>'
+                f'<label style="margin-top:.8rem">{host_label}</label>'
+                f'<select name="host_school_id" style="max-width:300px">{hopts}</select>'
+                f'{_sport.settings_fields(m, True)}'
+                f'<button type="submit" style="margin-top:1rem">💾 Save meet setup</button>'
+                f'</form></div>')
     else:
-        att_block = ("".join(f'<span class="pill">{escape(s["name"])}</span> ' for s in att) or
-                     '<span class="muted">None</span>') + \
-                    f'<p class="muted">Host: {escape(host["name"]) if host else "—"}</p>'
+        pills = ("".join(f'<span class="pill">{escape(s["name"])}</span> ' for s in att) or
+                 '<span class="muted">None</span>')
+        summary = f'<p class="muted">Host: {escape(host["name"]) if host else "—"}</p>'
+        if not is_xc:
+            summary += _sport.settings_fields(m, False)
+        setup_card = f'<div class="card"><h2>Schools at this meet</h2>{pills}{summary}</div>'
 
     qr_block = ""
     if m["timer_token"]:
@@ -354,10 +379,6 @@ def meet_detail(mid):
                      f'<button class="ghost" type="submit" style="margin-top:.6rem">'
                      f'{"Rotate" if m["timer_token"] else "Generate"} meet-day QR</button></form>')
 
-    if is_xc:
-        from . import xc as _sport
-    else:
-        from . import track as _sport
     section = _sport.setup_section(m, setup)
     tabs = "" if is_xc else _sport._track_tabs(mid, "setup")
 
@@ -369,7 +390,7 @@ def meet_detail(mid):
 {tabs}
 <div class="row">{''.join(actions)}</div>
 {print_bar}
-<div class="card"><h2>Schools at this meet</h2>{att_block}</div>
+{setup_card}
 {section}
 <div class="card"><h2>Meet-day timer QR</h2>
 <p class="muted">A no-login link that opens the timing console for this meet, today only.</p>

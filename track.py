@@ -174,28 +174,6 @@ def setup_section(m, setup):
         "SELECT me.id, COUNT(en.id) FROM meet_events me LEFT JOIN entries en ON en.meet_event_id=me.id "
         "WHERE me.meet_id=? GROUP BY me.id", (m["id"],)).fetchall()}
     conn.close()
-    tables = _points_tables()
-
-    if setup:
-        topts = "".join(
-            f'<option value="{t["id"]}" {"selected" if t["id"]==m["points_table_id"] else ""}>'
-            f'{escape(t["name"])}</option>' for t in tables)
-        settings = f"""
-<form method="post" action="/meets/{m['id']}/track-settings">
-  <label>Scoring <span class="muted">— points table for team scores</span></label>
-  <select name="points_table_id" style="max-width:340px">{topts}</select>
-  <div class="row" style="margin-top:.6rem">
-    <div style="max-width:150px"><label>Event limit</label>
-      <input name="event_limit" type="number" value="{event_limit(m)}"></div>
-    <div style="max-width:150px"><label>Track lanes</label>
-      <input name="lanes" type="number" value="{m['lanes'] or 8}"></div>
-  </div>
-  <button type="submit" style="margin-top:.8rem">💾 Save meet setup</button>
-</form>"""
-    else:
-        tname = next((t["name"] for t in tables if t["id"] == m["points_table_id"]), "—")
-        settings = (f'<p class="muted">Scoring: {escape(tname)} · event limit {event_limit(m)} '
-                    f'· {m["lanes"] or 8} lanes</p>')
 
     erows = []
     for me in mes:
@@ -238,8 +216,66 @@ def setup_section(m, setup):
   </div>
 </form>"""
 
-    return (f'<div class="card"><h2>Meet setup</h2>{settings}</div>'
-            f'<div class="card"><h2>Events at this meet ({len(mes)})</h2>{etbl}{add}</div>')
+    return f'<div class="card"><h2>Events at this meet ({len(mes)})</h2>{etbl}{add}</div>'
+
+
+def settings_fields(m, setup):
+    """Scoring / event-limit / lanes fields (no <form> — hosted by the combined
+    Save meet setup form in meet_detail). Returns a read-only summary otherwise."""
+    tables = _points_tables()
+    if not setup:
+        tname = next((t["name"] for t in tables if t["id"] == m["points_table_id"]), "—")
+        return (f'<p class="muted">Scoring: {escape(tname)} · event limit {event_limit(m)} '
+                f'· {m["lanes"] or 8} lanes</p>')
+    topts = "".join(
+        f'<option value="{t["id"]}" {"selected" if t["id"]==m["points_table_id"] else ""}>'
+        f'{escape(t["name"])}</option>' for t in tables)
+    return f"""
+<label style="margin-top:.8rem">Scoring <span class="muted">— points table for team scores</span></label>
+<select name="points_table_id" style="max-width:340px">{topts}</select>
+<div class="row" style="margin-top:.6rem">
+  <div style="max-width:150px"><label>Event limit</label>
+    <input name="event_limit" type="number" value="{event_limit(m)}"></div>
+  <div style="max-width:150px"><label>Track lanes</label>
+    <input name="lanes" type="number" value="{m['lanes'] or 8}"></div>
+</div>"""
+
+
+@bp.post("/meets/<int:mid>/track-setup")
+@login_required
+def track_setup(mid):
+    """One save for the whole track setup: attending schools + host + scoring/limit/lanes."""
+    m = load_meet(mid)
+    if not can_setup_meet(m):
+        abort(403)
+    conn = db.connect()
+    valid = {r[0] for r in conn.execute(
+        "SELECT id FROM schools WHERE district_id=?", (m["district_id"],)).fetchall()}
+    # attending schools
+    school_ids = [int(x) for x in request.form.getlist("school_ids") if x.isdigit() and int(x) in valid]
+    conn.execute("DELETE FROM meet_schools WHERE meet_id=?", (mid,))
+    for s in school_ids:
+        conn.execute("INSERT OR IGNORE INTO meet_schools (meet_id, school_id) VALUES (?,?)", (mid, s))
+    # host
+    h = (request.form.get("host_school_id") or "").strip()
+    host = int(h) if h.isdigit() and int(h) in valid else None
+    conn.execute("UPDATE meets SET host_school_id=? WHERE id=?", (host, mid))
+    # scoring / limit / lanes
+    pt = request.form.get("points_table_id")
+    if pt and pt.isdigit():
+        conn.execute("UPDATE meets SET points_table_id=? WHERE id=?", (int(pt), mid))
+    el = request.form.get("event_limit")
+    if el and el.isdigit():
+        settings = json.loads(m["settings_json"] or "{}")
+        settings["event_limit"] = max(1, min(20, int(el)))
+        conn.execute("UPDATE meets SET settings_json=?, event_limit=? WHERE id=?",
+                     (json.dumps(settings), settings["event_limit"], mid))
+    ln = request.form.get("lanes")
+    if ln and ln.isdigit():
+        conn.execute("UPDATE meets SET lanes=? WHERE id=?", (max(2, min(12, int(ln))), mid))
+    conn.commit()
+    conn.close()
+    return redirect(f"/meets/{mid}")
 
 
 @bp.get("/meets/<int:mid>/events")
