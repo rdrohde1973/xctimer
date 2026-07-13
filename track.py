@@ -387,6 +387,247 @@ def delete_entry(eid):
     return redirect(f"/meet-events/{e['meet_event_id']}")
 
 
+# ------------------------------- assign athletes -------------------------------
+def _track_tabs(mid, active):
+    def tab(href, label, key):
+        on = "background:var(--panel2);color:var(--fg)" if active == key else "color:var(--mut)"
+        return (f'<a href="{href}" style="padding:.4rem .9rem;border-radius:8px;'
+                f'text-decoration:none;{on}">{label}</a>')
+    return ('<div style="display:flex;gap:.3rem;margin:.4rem 0 1rem;border-bottom:1px solid var(--line);'
+            'padding-bottom:.5rem">'
+            + tab(f"/meets/{mid}", "⚙️ Setup", "setup")
+            + tab(f"/meets/{mid}/assign", "👤 Assign athletes", "assign")
+            + tab(f"/meets/{mid}/track-results", "🏁 Results", "results")
+            + '</div>')
+
+
+def _can_assign_school(m, sid):
+    p = g.principal
+    if not p or p.meet_scope:
+        return False
+    if p.is_super:
+        return True
+    if p.district_id != m["district_id"]:
+        return False
+    if p.role == "district_admin":
+        return True
+    if p.role == "coach":
+        return sid in p.school_ids()
+    return False
+
+
+def _eligible(me, athlete):
+    g_ = me["gender"]
+    if g_ and g_ != athlete["gender"]:
+        return False
+    gr = me["grade"]
+    if gr not in (None, "") and str(gr) != str(athlete["grade"]):
+        return False
+    return True
+
+
+@bp.get("/meets/<int:mid>/assign")
+@login_required
+def assign_page(mid):
+    m = load_meet(mid)
+    if not can_view_meet(m) or m["sport"] != "track":
+        abort(403)
+    conn = db.connect()
+    schools = _attending_schools(conn, mid)
+    # scope the school picker
+    p = g.principal
+    pickable = [s for s in schools if _can_assign_school(m, s["id"])]
+    if not pickable:
+        conn.close()
+        abort(403)
+    sid = request.args.get("school")
+    sid = int(sid) if (sid or "").isdigit() and any(s["id"] == int(sid) for s in pickable) else pickable[0]["id"]
+    school = next(s for s in pickable if s["id"] == sid)
+
+    athletes = conn.execute(
+        "SELECT * FROM athletes WHERE school_id=? ORDER BY grade, gender, name", (sid,)).fetchall()
+    mes = conn.execute(
+        "SELECT me.*, e.name AS ename, e.kind FROM meet_events me JOIN events e ON e.id=me.event_id "
+        "WHERE me.meet_id=? ORDER BY e.sort, me.gender, me.grade", (mid,)).fetchall()
+    entered = {}  # athlete_id -> set(meid)
+    for r in conn.execute(
+        "SELECT en.runner_id, en.meet_event_id FROM entries en JOIN meet_events me ON me.id=en.meet_event_id "
+        "WHERE me.meet_id=? AND en.runner_id IS NOT NULL", (mid,)).fetchall():
+        entered.setdefault(r["runner_id"], set()).add(r["meet_event_id"])
+    relay_squads = {}  # meid -> members_json (this school)
+    for r in conn.execute(
+        "SELECT meet_event_id, members_json FROM entries WHERE school_id=? AND runner_id IS NULL "
+        "AND meet_event_id IN (SELECT id FROM meet_events WHERE meet_id=?)", (sid, mid)).fetchall():
+        relay_squads[r["meet_event_id"]] = json.loads(r["members_json"] or "[]")
+    conn.close()
+
+    limit = event_limit(m)
+    indiv_mes = [me for me in mes if me["kind"] != "relay"]
+    relay_mes = [me for me in mes if me["kind"] == "relay"]
+
+    setup = _can_assign_school(m, sid)
+    # school picker
+    picker = "".join(
+        f'<a class="btn {"" if s["id"]==sid else "ghost"}" href="/meets/{mid}/assign?school={s["id"]}">'
+        f'{escape(s["name"])}</a> ' for s in pickable)
+
+    # per-athlete rows
+    def div(me):
+        return {"M": "B", "F": "G"}.get(me["gender"], "") + (str(me["grade"]) if me["grade"] else "")
+    rows = []
+    for a in athletes:
+        elig = [me for me in indiv_mes if _eligible(me, a)]
+        cur = entered.get(a["id"], set())
+        boxes = "".join(
+            f'<label style="display:inline-flex;gap:.3rem;align-items:center;margin:0 .8rem .3rem 0">'
+            f'<input type="checkbox" name="me_{a["id"]}" value="{me["id"]}" style="width:auto" '
+            f'data-ath="{a["id"]}" {"checked" if me["id"] in cur else ""} onchange="cnt({a["id"]})">'
+            f'{escape(me["ename"])} <span class="muted">{div(me)}</span></label>' for me in elig)
+        if not boxes:
+            boxes = '<span class="muted">no eligible events</span>'
+        rows.append(
+            f'<tr><td><b>{escape(a["name"])}</b><br><span class="muted">gr {a["grade"] or "?"} '
+            f'{a["gender"] or ""}{" · bib "+str(a["bib"]) if a["bib"] else ""}</span></td>'
+            f'<td>{boxes}<div class="muted" id="c{a["id"]}"></div></td></tr>')
+    ath_tbl = (f'<table><tr><th>Athlete</th><th>Events (limit {limit})</th></tr>{"".join(rows)}</table>'
+               if athletes else '<p class="muted">No athletes on this roster.</p>')
+
+    # relay squads (this school)
+    relay_block = ""
+    if relay_mes:
+        blocks = []
+        for me in relay_mes:
+            members = relay_squads.get(me["id"], [])
+            opts = "".join(
+                f'<option value="{escape(a["name"])}" {"selected" if a["name"] in members else ""}>'
+                f'{escape(a["name"])} (gr {a["grade"] or "?"})</option>'
+                for a in athletes if _eligible(me, a))
+            blocks.append(
+                f'<div style="margin:.4rem 0"><label>{escape(me["ename"])} {div(me)} '
+                f'<span class="muted">— pick up to 4</span></label>'
+                f'<select name="relay_{me["id"]}" multiple size="4" style="max-width:340px">{opts}</select></div>')
+        relay_block = f'<div class="card"><h3>Relays — {escape(school["name"])}</h3>{"".join(blocks)}</div>'
+
+    body = f"""
+<p class="muted"><a href="/meets">← Meets</a></p>
+<h1>{escape(m['name'])}</h1>{_track_tabs(mid, 'assign')}
+<div class="card"><b>School:</b> {picker}</div>
+<form method="post" action="/meets/{mid}/assign?school={sid}">
+  <div class="card"><h2>{escape(school['name'])} — assign athletes</h2>{ath_tbl}</div>
+  {relay_block}
+  <button type="submit">💾 Save entries</button>
+</form>
+<form method="post" action="/meets/{mid}/carryover?school={sid}" style="margin-top:.6rem">
+  <button class="ghost" type="submit" onclick="return confirm('Carry each athlete\\'s events forward from their last meet?')">↩ Carry over last meet</button>
+</form>"""
+    body += f"""
+<script>
+const LIMIT={limit};
+function cnt(aid){{
+  const boxes=document.querySelectorAll('input[data-ath="'+aid+'"]');
+  let n=0; boxes.forEach(b=>{{if(b.checked)n++;}});
+  const el=document.getElementById('c'+aid);
+  el.textContent=n+' / {limit}';
+  el.style.color = n>LIMIT ? 'var(--err)' : 'var(--mut)';
+}}
+document.querySelectorAll('input[data-ath]').forEach(b=>cnt(b.dataset.ath));
+</script>
+"""
+    return shell(g.principal, body, active="meets")
+
+
+@bp.post("/meets/<int:mid>/assign")
+@login_required
+def save_assign(mid):
+    m = load_meet(mid)
+    sid = request.args.get("school")
+    sid = int(sid) if (sid or "").isdigit() else None
+    if sid is None or not _can_assign_school(m, sid):
+        abort(403)
+    limit = event_limit(m)
+    conn = db.connect()
+    athletes = conn.execute("SELECT id FROM athletes WHERE school_id=?", (sid,)).fetchall()
+    valid_me = {r[0]: r[1] for r in conn.execute(
+        "SELECT me.id, e.kind FROM meet_events me JOIN events e ON e.id=me.event_id "
+        "WHERE me.meet_id=?", (mid,)).fetchall()}
+    for a in athletes:
+        aid = a["id"]
+        selected = [int(x) for x in request.form.getlist(f"me_{aid}")
+                    if x.isdigit() and int(x) in valid_me and valid_me[int(x)] != "relay"]
+        selected = selected[:limit]  # enforce cap
+        current = {r[0] for r in conn.execute(
+            "SELECT en.meet_event_id FROM entries en JOIN meet_events me ON me.id=en.meet_event_id "
+            "WHERE me.meet_id=? AND en.runner_id=?", (mid, aid)).fetchall()}
+        for meid in set(selected) - current:
+            conn.execute("INSERT INTO entries (meet_event_id, runner_id, school_id) VALUES (?,?,?)",
+                         (meid, aid, sid))
+        for meid in current - set(selected):
+            conn.execute("DELETE FROM results WHERE entry_id IN "
+                         "(SELECT id FROM entries WHERE meet_event_id=? AND runner_id=?)", (meid, aid))
+            conn.execute("DELETE FROM entries WHERE meet_event_id=? AND runner_id=?", (meid, aid))
+    # relays for this school
+    for meid, kind in valid_me.items():
+        if kind != "relay":
+            continue
+        members = [x for x in request.form.getlist(f"relay_{meid}") if x][:4]
+        conn.execute("DELETE FROM entries WHERE meet_event_id=? AND school_id=? AND runner_id IS NULL",
+                     (meid, sid))
+        if members:
+            conn.execute("INSERT INTO entries (meet_event_id, school_id, relay_label, members_json) "
+                         "VALUES (?,?,?,?)", (meid, sid, "A", json.dumps(members)))
+    conn.commit()
+    conn.close()
+    return redirect(f"/meets/{mid}/assign?school={sid}")
+
+
+@bp.post("/meets/<int:mid>/carryover")
+@login_required
+def carryover(mid):
+    m = load_meet(mid)
+    sid = request.args.get("school")
+    sid = int(sid) if (sid or "").isdigit() else None
+    if sid is None or not _can_assign_school(m, sid):
+        abort(403)
+    limit = event_limit(m)
+    conn = db.connect()
+    athletes = conn.execute("SELECT * FROM athletes WHERE school_id=?", (sid,)).fetchall()
+    # this meet's events keyed by (event_id, gender, grade)
+    this_mes = {}
+    for me in conn.execute(
+        "SELECT me.id, me.event_id, me.gender, me.grade, e.kind FROM meet_events me "
+        "JOIN events e ON e.id=me.event_id WHERE me.meet_id=?", (mid,)).fetchall():
+        this_mes[(me["event_id"], me["gender"] or "", str(me["grade"] or ""))] = me
+    for a in athletes:
+        # athlete's most recent prior track meet with entries
+        prior = conn.execute(
+            "SELECT me.event_id, me.gender, me.grade, m.date, m.id AS mid FROM entries en "
+            "JOIN meet_events me ON me.id=en.meet_event_id JOIN meets m ON m.id=me.meet_id "
+            "WHERE en.runner_id=? AND m.sport='track' AND m.id!=? AND (m.date < ? OR m.date IS NULL) "
+            "ORDER BY m.date DESC", (a["id"], mid, m["date"] or "9999")).fetchall()
+        if not prior:
+            continue
+        last_date = prior[0]["date"]
+        last_events = [r for r in prior if r["date"] == last_date]
+        current = {r[0] for r in conn.execute(
+            "SELECT en.meet_event_id FROM entries en JOIN meet_events me ON me.id=en.meet_event_id "
+            "WHERE me.meet_id=? AND en.runner_id=?", (mid, a["id"])).fetchall()}
+        count = len(current)
+        for pe in last_events:
+            key = (pe["event_id"], pe["gender"] or "", str(pe["grade"] or ""))
+            me = this_mes.get(key)
+            if not me or me["kind"] == "relay" or not _eligible(me, a) or count >= limit:
+                continue
+            if me["id"] in current:
+                continue
+            conn.execute("INSERT INTO entries (meet_event_id, runner_id, school_id) VALUES (?,?,?)",
+                         (me["id"], a["id"], sid))
+            current.add(me["id"])
+            count += 1
+    conn.commit()
+    conn.close()
+    return redirect(f"/meets/{mid}/assign?school={sid}")
+
+
 # ------------------------------- seeding -------------------------------
 @bp.post("/meet-events/<int:meid>/seed")
 @login_required
@@ -785,7 +1026,7 @@ def results_page(mid):
     if not can_view_meet(m):
         abort(403)
     body = (f'<p class="muted"><a href="/meets/{mid}">← {escape(m["name"])}</a></p>'
-            f'<h1>{escape(m["name"])} — Results</h1>'
+            f'<h1>{escape(m["name"])} — Results</h1>{_track_tabs(mid, "results")}'
             f'<div class="row"><a class="btn ghost" href="/r/{m["public_token"]}" target="_blank">'
             f'Public page ↗</a></div>{results_inner(mid, name_mode=demo.mode_for(g.principal))}')
     return shell(g.principal, body, active="meets")

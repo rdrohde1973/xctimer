@@ -359,12 +359,14 @@ def meet_detail(mid):
     else:
         from . import track as _sport
     section = _sport.setup_section(m, setup)
+    tabs = "" if is_xc else _sport._track_tabs(mid, "setup")
 
     body = f"""
 <p class="muted"><a href="/meets">← Meets</a></p>
 <h1>{escape(m['name'])}</h1>
 <p class="sub">{"🏃 Cross-country" if is_xc else "🏟️ Track & Field"} · {escape(m['date'] or '')}
  · host: {escape(host['name']) if host else '—'}</p>
+{tabs}
 <div class="row">{''.join(actions)}</div>
 {print_bar}
 <div class="card"><h2>Schools at this meet</h2>{att_block}</div>
