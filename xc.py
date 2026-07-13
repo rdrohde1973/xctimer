@@ -185,11 +185,14 @@ CONSOLE_CSS = """
 .tc-clock{font-size:3.2rem;font-weight:800;font-variant-numeric:tabular-nums;
   text-align:center;letter-spacing:-.02em;line-height:1}
 .tc-clock.stopped{color:var(--err)}
-.tc-btns{display:flex;gap:.5rem;justify-content:center;flex-wrap:wrap;margin:.9rem 0 .2rem}
-.tc-btns #btn-start{background:var(--ok);color:#04101f}
-.tc-btns #btn-start:disabled{opacity:.45;cursor:default}
-.tc-btns #btn-stop{background:transparent;color:var(--err);border:1px solid var(--line)}
-.tc-btns #btn-stop:disabled{opacity:.45;cursor:default}
+.tc-btns{display:flex;gap:.6rem;justify-content:center;align-items:center;flex-wrap:wrap;margin:1rem 0 .2rem}
+.tc-btns button,.tc-btns .btn{font-size:1.05rem;padding:.7rem 1.3rem}
+.tc-btns #btn-start{background:var(--ok);color:#04101f;font-size:1.4rem;padding:1rem 2.6rem}
+.tc-btns #btn-start:hover{background:#34a86e}
+.tc-btns #btn-start:disabled{opacity:.4;cursor:default}
+.tc-btns #btn-stop{background:var(--err);color:#fff}
+.tc-btns #btn-stop:hover{background:#d9534f}
+.tc-btns #btn-stop:disabled{opacity:.4;cursor:default}
 .tc-status{text-align:center;font-weight:600;padding:.5rem;border-radius:8px;margin-top:.5rem}
 .tc-status.wait{color:var(--warn)}
 .tc-status.run{color:var(--ok)}

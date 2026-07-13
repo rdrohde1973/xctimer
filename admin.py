@@ -34,6 +34,10 @@ def dashboard():
     p = g.principal
     did = active_district_id()
 
+    # Coaches/timers have no use for the admin dashboard — send them to Meets.
+    if p.role in ("coach", "timer") and not p.meet_scope:
+        return redirect("/meets")
+
     # Meet-day QR principal: minimal scoped landing (recording UI = Phase 3/4).
     if p.meet_scope:
         conn = db.connect()

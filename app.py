@@ -21,7 +21,7 @@ from .admin import bp as admin_bp
 from .insights import bp as insights_bp
 from .phone import bp as phone_bp
 
-APP_VERSION = "0.15.0-xctimer"
+APP_VERSION = "0.15.1-xctimer"
 
 LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width, initial-scale=1">
@@ -83,7 +83,8 @@ def create_app():
     @app.get("/")
     def landing():
         if getattr(g, "principal", None):
-            return redirect("/dashboard")
+            from .ui import home_url
+            return redirect(home_url(g.principal))
         return LANDING
 
     @app.get("/healthz")

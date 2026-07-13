@@ -126,9 +126,19 @@ def _flashes(msg=None, err=None):
     return out
 
 
-def _brand(principal, href="/dashboard"):
+def home_url(principal):
+    """Where the brand/logo and post-login land: coaches & timers have no
+    dashboard, so they go to Meets; admins get the dashboard."""
+    if getattr(principal, "meet_scope", None):
+        return "/phone"
+    return "/meets" if getattr(principal, "role", None) in ("coach", "timer") else "/dashboard"
+
+
+def _brand(principal, href=None):
     """Top-left brand: super admin -> XCTimer wordmark; district admin -> district
     logo; coach -> their school logo. Falls back to the XCTimer wordmark."""
+    if href is None:
+        href = home_url(principal)
     role = getattr(principal, "role", None)
     logo = None
     if role == "district_admin" and getattr(principal, "district_id", None):
@@ -179,7 +189,8 @@ def shell(principal, body, *, active="", active_district=None, districts=None,
     if getattr(principal, "meet_scope", None):
         nav = []  # meet-day QR principal: minimal chrome, no navigation
     else:
-        nav.append(link("/dashboard", "Dashboard", "dashboard"))
+        if role in ("super_admin", "district_admin"):
+            nav.append(link("/dashboard", "Dashboard", "dashboard"))
         nav.append(link("/meets", "Meets", "meets"))
         if role in ("super_admin", "district_admin"):
             nav.append(link("/schools", "Schools", "schools"))
