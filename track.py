@@ -1690,19 +1690,29 @@ def build_results(mid):
             items.append({"place": r["place"], "mark": mark, "name": r["snap_name"],
                           "school": r["snap_school"], "points": pts})
             if r["snap_school"]:
-                key = (r["snap_school"], me["gender"] or "U")
+                key = (r["snap_school"], me["gender"] or "U", me["grade"])
                 team_pts[key] = team_pts.get(key, 0) + pts
-        div = {"M": "Boys", "F": "Girls"}.get(me["gender"], "Open")
-        grd = f' G{me["grade"]}' if me["grade"] else ""
-        events_out.append({"name": f'{me["ename"]} — {div}{grd}', "items": items,
-                           "gkey": me["gender"] or "U"})
+        events_out.append({"name": f'{me["ename"]} — {_div_grade(me["gender"], me["grade"])}',
+                           "items": items, "gkey": me["gender"] or "U"})
     conn.close()
-    # Team totals by gender
-    totals = {"M": {}, "F": {}, "U": {}}
-    for (school, gender), pts in team_pts.items():
-        totals.setdefault(gender, {})
-        totals[gender][school] = totals[gender].get(school, 0) + pts
+    # Team totals broken down by gender × grade.
+    totals = {}
+    for (school, gender, grade), pts in team_pts.items():
+        d = totals.setdefault((gender, grade), {})
+        d[school] = d.get(school, 0) + pts
     return {"events": events_out, "totals": totals}
+
+
+def _div_grade(gender, grade):
+    """'F', 8 -> 'Girls 8th Grade'; gender-only when no grade."""
+    g = {"M": "Boys", "F": "Girls"}.get(gender, "Open")
+    return f"{g} {grade}th Grade" if grade else g
+
+
+def _grp_sort(k):
+    """Order team-score / event groups by grade then gender (Girls, Boys, Open)."""
+    gender, grade = k
+    return (grade if grade is not None else 999, {"F": 0, "M": 1}.get(gender, 2))
 
 
 def _fmt_pts(x):
@@ -1721,16 +1731,18 @@ def results_inner(mid, name_mode=None):
             '<select id="rgender" onchange="rfilter()" style="max-width:120px;margin-left:.4rem">'
             '<option value="">All</option><option value="M">Boys</option>'
             '<option value="F">Girls</option></select></div>']
-    for key, label in (("M", "Boys"), ("F", "Girls"), ("U", "Open")):
-        t = data["totals"].get(key) or {}
+    for (gender, grade) in sorted(data["totals"], key=_grp_sort):
+        t = data["totals"][(gender, grade)]
         if not t:
             continue
+        label = _div_grade(gender, grade)
         ranked = sorted(t.items(), key=lambda x: -x[1])
         trs = "".join(f'<tr data-text="{escape((s or "").lower())}"><td>{i+1}</td>'
                       f'<td>{escape(s)}</td><td><b>{_fmt_pts(p)}</b></td></tr>'
                       for i, (s, p) in enumerate(ranked))
-        html.append(f'<div class="card rcard" data-gender="{key}" data-title="{label.lower()} team scores">'
-                    f'<h2>{label} — Team scores</h2><table><tr><th>Rank</th><th>School</th>'
+        html.append(f'<div class="card rcard" data-gender="{gender or "U"}" '
+                    f'data-title="{escape((label + " team scores").lower())}">'
+                    f'<h2>{escape(label)} — Team scores</h2><table><tr><th>Rank</th><th>School</th>'
                     f'<th>Points</th></tr>{trs}</table></div>')
     for ev in data["events"]:
         if not ev["items"]:
@@ -1786,11 +1798,11 @@ def results_xlsx(mid):
     wb = openpyxl.Workbook()
     wb.remove(wb.active)
     ws = wb.create_sheet("Team Scores")
-    for key, label in (("M", "Boys"), ("F", "Girls"), ("U", "Open")):
-        t = data["totals"].get(key) or {}
+    for (gender, grade) in sorted(data["totals"], key=_grp_sort):
+        t = data["totals"][(gender, grade)]
         if not t:
             continue
-        ws.append([f"{label} — Team Scores"])
+        ws.append([f"{_div_grade(gender, grade)} — Team Scores"])
         ws.append(["Rank", "School", "Points"])
         for i, (s, p) in enumerate(sorted(t.items(), key=lambda x: -x[1])):
             ws.append([i + 1, s, _fmt_pts(p)])
