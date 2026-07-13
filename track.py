@@ -140,27 +140,33 @@ DEFAULT_HJ_BARS = ["4-00", "4-02", "4-04", "4-06", "4-08", "4-10", "5-00", "5-02
 
 
 def _parse_ht(s):
-    """'4-06' -> 54 (inches); a bare number -> its rounded inches; else None."""
-    s = (s or "").strip()
+    """Feet-inches -> total inches (float). Accepts '5-03', \"5'3\\\"\", '5 03',
+    '15-06.5', or a bare number (inches). Utah field events use feet & inches."""
+    s = (s or "").strip().replace('"', "").replace("”", "").replace("’", "'")
     if not s:
         return None
-    if "-" in s:
-        f, _, i = s.partition("-")
-        try:
-            return int(f) * 12 + int(i)
-        except ValueError:
-            return None
+    for sep in ("-", "'", " "):
+        if sep in s:
+            a, _, b = s.partition(sep)
+            try:
+                return int(a.strip()) * 12 + (float(b.strip()) if b.strip() else 0.0)
+            except ValueError:
+                return None
     try:
-        return int(round(float(s)))
+        return float(s)
     except ValueError:
         return None
 
 
 def _fmt_ht(inches):
+    """Total inches -> feet-inches, e.g. 63 -> '5-03', 186.5 -> '15-06.50'."""
     if inches is None:
         return ""
-    n = int(round(inches))
-    return f"{n // 12}-{n % 12:02d}"
+    ft = int(inches // 12)
+    ins = inches - ft * 12
+    if abs(ins - round(ins)) < 0.01:
+        return f"{ft}-{int(round(ins)):02d}"
+    return f"{ft}-{ins:05.2f}"
 
 
 def _hj_best(grid):
@@ -844,32 +850,47 @@ def meet_day_page(mid):
         opts = "".join(f'<label style="display:block"><input type="checkbox" name="meids" value="{me["id"]}" '
                        f'style="width:auto"> {escape(me["ename"])} {div(me)}</label>' for me in combinable)
         combine = f"""
-<div class="card"><h2>Combine races</h2>
-<p class="muted">Run several grade × gender groups of the SAME distance/relay event as one
-physical race. Results still score by grade.</p>{existing}
-<form method="post" action="/meets/{mid}/combine">
-  <div class="card" style="background:var(--panel2)">{opts}</div>
-  <button type="submit" style="margin-top:.5rem">🔗 Combine selected</button>
-</form></div>"""
+<details class="card">
+  <summary style="cursor:pointer;font-weight:700;font-size:1.05rem">🔗 Combine races</summary>
+  <p class="muted" style="margin-top:.6rem">Run several grade × gender groups of the SAME
+  distance/relay event as one physical race. Results still score by grade.</p>{existing}
+  <form method="post" action="/meets/{mid}/combine">
+    <div class="card" style="background:var(--panel2)">{opts}</div>
+    <button type="submit" style="margin-top:.5rem">🔗 Combine selected</button>
+  </form>
+</details>"""
 
     rows = []
-    for me in mes:
+    for i, me in enumerate(mes):
         n = counts.get(me["id"], 0)
         cid = me["combine_id"] if "combine_id" in me.keys() else None
         status = "drawn" if drawn_counts.get(me["id"]) else ("entered" if n else "")
         hs = (f'<a class="btn ghost" href="/meet-events/{me["id"]}/heatsheet.pdf" target="_blank">'
               f'Heat sheet</a>' if n else '<span class="muted">—</span>')
-        rows.append(f'<tr><td><a href="/meet-events/{me["id"]}"><b>{escape(me["ename"])}</b></a> '
+        rows.append(f'<tr data-order="{i}" data-gender="{me["gender"] or ""}" data-grade="{me["grade"] or 0}">'
+                    f'<td><a href="/meet-events/{me["id"]}"><b>{escape(me["ename"])}</b></a> '
                     f'<span class="muted">{div(me)}{" 🔗" if cid else ""}</span></td>'
                     f'<td>{n} entries</td>'
                     f'<td>{status}</td>'
                     f'<td style="text-align:right">{hs}</td></tr>')
-    ev_tbl = (f'<div class="card"><h2>Events</h2><table><tr><th>Event</th><th>Entries</th>'
-              f'<th>Status</th><th style="text-align:right">Heat sheet</th></tr>'
-              f'{"".join(rows)}</table></div>' if mes else '<div class="card muted">No events yet.</div>')
+    sortbar = ('<div style="display:flex;justify-content:flex-end;align-items:center;gap:.4rem;margin-bottom:.5rem">'
+               '<span class="muted">Sort by</span>'
+               '<select id="evsort" onchange="sortEv()" style="max-width:150px">'
+               '<option value="order">Event</option><option value="gender">Gender</option>'
+               '<option value="grade">Grade</option></select></div>')
+    ev_js = ('<script>function sortEv(){var v=document.getElementById("evsort").value,'
+             'tb=document.getElementById("evbody"),rs=[].slice.call(tb.querySelectorAll("tr"));'
+             'rs.sort(function(a,b){if(v=="gender")return (a.dataset.gender||"").localeCompare(b.dataset.gender||"")||(+a.dataset.order-+b.dataset.order);'
+             'if(v=="grade")return (+a.dataset.grade-+b.dataset.grade)||(+a.dataset.order-+b.dataset.order);'
+             'return +a.dataset.order-+b.dataset.order;});rs.forEach(function(r){tb.appendChild(r);});}</script>')
+    ev_tbl = (f'<div class="card"><h2>Events</h2>{sortbar}'
+              f'<table><thead><tr><th>Event</th><th>Entries</th><th>Status</th>'
+              f'<th style="text-align:right">Heat sheet</th></tr></thead>'
+              f'<tbody id="evbody">{"".join(rows)}</tbody></table>{ev_js}</div>'
+              if mes else '<div class="card muted">No events yet.</div>')
 
     body = (f'<p class="muted"><a href="/meets">← Meets</a></p><h1>{escape(m["name"])}</h1>'
-            f'{_track_tabs(mid, "meetday")}{draw}{packet}{combine}{ev_tbl}')
+            f'{_track_tabs(mid, "meetday")}{draw}{packet}{ev_tbl}{combine}')
     return shell(g.principal, body, active="meets")
 
 
@@ -1007,8 +1028,8 @@ def save_marks(meid):
             mark_seconds = parse_time(request.form.get(f"mark_{eid}"))
         elif hj:
             mark_metric = parse_metric(request.form.get(f"mark_{eid}"))
-        else:  # LJ / SP: three attempts, best legal
-            atts = [parse_metric(request.form.get(f"a{n}_{eid}")) for n in (1, 2, 3)]
+        else:  # LJ / SP: three attempts in feet-inches, best legal
+            atts = [_parse_ht(request.form.get(f"a{n}_{eid}")) for n in (1, 2, 3)]
             attempts = atts
             legal = [x for x in atts if x is not None]
             mark_metric = max(legal) if legal else None
@@ -1231,12 +1252,12 @@ def event_page(meid):
             v = fmt_time(r["mark_seconds"]) if r and r["mark_seconds"] is not None else ""
             return f'<input name="mark_{e["id"]}" value="{v}" placeholder="mm:ss.t / s.t" style="width:110px">'
         if hj:
-            v = f'{r["mark_metric"]:.2f}' if r and r["mark_metric"] is not None else ""
-            return f'<input name="mark_{e["id"]}" value="{v}" placeholder="height m" style="width:90px">'
+            v = _fmt_ht(r["mark_metric"]) if r and r["mark_metric"] is not None else ""
+            return f'<input name="mark_{e["id"]}" value="{v}" placeholder="5-02" style="width:90px">'
         atts = json.loads(r["attempts_json"]) if r and r["attempts_json"] else [None, None, None]
         cells = "".join(
-            f'<input name="a{n}_{e["id"]}" value="{("%.2f"%atts[n-1]) if atts[n-1] is not None else ""}" '
-            f'placeholder="A{n}" style="width:62px">' for n in (1, 2, 3))
+            f'<input name="a{n}_{e["id"]}" value="{_fmt_ht(atts[n-1]) if n-1 < len(atts) and atts[n-1] is not None else ""}" '
+            f'placeholder="A{n} · 15-06" style="width:82px">' for n in (1, 2, 3))
         return cells
 
     rows = []
@@ -1355,8 +1376,13 @@ async function postScan(n){{
 }}
 </script>"""
 
+    field_note = ""
+    if me["unit"] == "metric":
+        ex = ('bar heights like <code>4-06</code> or <code>5&#39;3&quot;</code>' if hj
+              else 'marks like <code>15-06</code>, <code>5-03</code>, or <code>5&#39;3&quot;</code>')
+        field_note = f'<p class="muted">Enter <b>feet-inches</b> — {ex}. Utah uses feet &amp; inches.</p>'
     body = (f'<p class="muted"><a href="/meets/{me["meet_id"]}/meet-day">← Meet day</a></p>'
-            f'<h1>{escape(ename)}</h1>{err}{marks_form}{add}{tools}')
+            f'<h1>{escape(ename)}</h1>{err}{field_note}{marks_form}{add}{tools}')
     return shell(g.principal, body, active="meets")
 
 
@@ -1447,7 +1473,7 @@ def scan_post(meid):
         if me["unit"] == "seconds":
             sec, met = parse_time(raw), None
         else:
-            sec, met = None, parse_metric(raw)
+            sec, met = None, _parse_ht(raw)   # field marks are feet-inches
         if sec is None and met is None:
             continue
         conn.execute("DELETE FROM results WHERE entry_id=?", (row["eid"],))
@@ -1659,12 +1685,8 @@ def build_results(mid):
         items = []
         for r in rows:
             pts = pts_for(r["place"])
-            if me["unit"] == "seconds":
-                mark = fmt_time(r["mark_seconds"])
-            elif me["ename"] == "High Jump":
-                mark = _fmt_ht(r["mark_metric"])
-            else:
-                mark = fmt_metric(r["mark_metric"])
+            # Track = time; field (LJ/HJ/SP) = feet-inches.
+            mark = fmt_time(r["mark_seconds"]) if me["unit"] == "seconds" else _fmt_ht(r["mark_metric"])
             items.append({"place": r["place"], "mark": mark, "name": r["snap_name"],
                           "school": r["snap_school"], "points": pts})
             if r["snap_school"]:
