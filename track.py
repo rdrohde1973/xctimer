@@ -1615,8 +1615,15 @@ def heatsheet_pdf(meid):
     div = {"M": "Boys", "F": "Girls"}.get(me["gender"], "Open")
     title = f'{m["name"]} — {me["ename"]} ({div})'
     kind = ("hj" if _is_hj(me) else "field") if me["kind"] == "field" else "track"
+    bars = None
+    if _is_hj(me) and me["bar_heights"]:
+        try:
+            bars = sorted({b for b in json.loads(me["bar_heights"]) if _parse_ht(b) is not None},
+                          key=_parse_ht)
+        except (ValueError, TypeError):
+            bars = None
     pdf = pdfs.heat_sheet_pdf(title, rows, laned=bool(me["laned"]),
-                              token=f"XCTSHEET E{meid}", kind=kind)
+                              token=f"XCTSHEET E{meid}", kind=kind, bars=bars)
     return Response(pdf, mimetype="application/pdf",
                     headers={"Content-Disposition": f'inline; filename="heatsheet.pdf"'})
 
@@ -1630,8 +1637,9 @@ def meet_heatsheets(mid):
         abort(403)
     conn = db.connect()
     mes = conn.execute(
-        "SELECT me.id, me.gender, me.grade, e.name AS ename, e.laned, e.kind FROM meet_events me "
-        "JOIN events e ON e.id=me.event_id WHERE me.meet_id=? ORDER BY e.sort, me.gender", (mid,)).fetchall()
+        "SELECT me.id, me.gender, me.grade, me.bar_heights, e.name AS ename, e.laned, e.kind "
+        "FROM meet_events me JOIN events e ON e.id=me.event_id WHERE me.meet_id=? "
+        "ORDER BY e.sort, me.gender", (mid,)).fetchall()
     sections = []
     for me in mes:
         entries = conn.execute(
@@ -1644,7 +1652,14 @@ def meet_heatsheets(mid):
         div = {"M": "Boys", "F": "Girls"}.get(me["gender"], "Open")
         title = f'{me["ename"]} — {div}' + (f' G{me["grade"]}' if me["grade"] else "")
         kind = ("hj" if me["ename"] == "High Jump" else "field") if me["kind"] == "field" else "track"
-        sections.append((title, rows, bool(me["laned"]), f"XCTSHEET E{me['id']}", kind))
+        bars = None
+        if kind == "hj" and me["bar_heights"]:
+            try:
+                bars = sorted({b for b in json.loads(me["bar_heights"]) if _parse_ht(b) is not None},
+                              key=_parse_ht)
+            except (ValueError, TypeError):
+                bars = None
+        sections.append((title, rows, bool(me["laned"]), f"XCTSHEET E{me['id']}", kind, bars))
     conn.close()
     pdf = pdfs.multi_heat_sheet_pdf(sections)
     return Response(pdf, mimetype="application/pdf",

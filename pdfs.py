@@ -140,8 +140,10 @@ def _draw_heat_section(c, ph, pw, left, title, rows, laned, token=None):
         c.showPage()
 
 
-def _draw_field_section(c, ph, pw, left, title, rows, hj, token=None):
-    """One page for a field event: LJ/SP 3-attempt boxes, or HJ make/miss bar grid."""
+def _draw_field_section(c, ph, pw, left, title, rows, hj, token=None, bars=None):
+    """One page for a field event: LJ/SP 3-attempt boxes, or HJ make/miss bar grid.
+    HJ uses big boxes and prints the bar heights (if known) so it scans cleanly."""
+    bars = [b for b in (bars or []) if b]
     y = ph - 0.9 * inch
     c.setFont("Helvetica-Bold", 16)
     c.drawString(left, y, title[:60])
@@ -151,50 +153,68 @@ def _draw_field_section(c, ph, pw, left, title, rows, hj, token=None):
     c.setFillGray(0.4)
     c.drawString(left, y, _HOWTO["hj"] if hj else _HOWTO["field"])
     c.setFillGray(0)
-    y -= 0.3 * inch
+
+    if hj:                       # tighter name/school -> room for big, readable boxes
+        name_x, school_x, gx = left + 0.5 * inch, left + 2.35 * inch, left + 3.75 * inch
+        cols, cw, gap, boxh, rowh = 7, 0.5 * inch, 0.58 * inch, 0.46 * inch, 0.6 * inch
+    else:
+        name_x, school_x, gx = left + 0.7 * inch, left + 3.0 * inch, left + 4.5 * inch
+
+    y -= 0.34 * inch
     c.setFont("Helvetica-Bold", 9)
     c.setFillGray(0.35)
     c.drawString(left, y, "BIB")
-    c.drawString(left + 0.7 * inch, y, "NAME")
-    c.drawString(left + 3.0 * inch, y, "SCHOOL")
-    if hj:
-        for i in range(7):
-            c.drawString(left + 4.5 * inch + i * 0.42 * inch, y, "____")
-    else:
-        for i, lbl in enumerate(("ATT 1", "ATT 2", "ATT 3")):
-            c.drawString(left + 4.5 * inch + i * 0.85 * inch, y, lbl)
+    c.drawString(name_x, y, "NAME")
+    c.drawString(school_x, y, "SCHOOL")
     c.setFillGray(0)
-    y -= 0.08 * inch
+    if hj:
+        c.setFont("Helvetica", 7)
+        c.setFillGray(0.4)
+        c.drawString(gx, y + 0.2 * inch, "BAR HEIGHTS  →  (write the height, mark O / X / P below)")
+        c.setFillGray(0)
+        c.setFont("Helvetica-Bold", 13)
+        for i in range(cols):
+            cx = gx + i * gap
+            if i < len(bars):
+                c.drawCentredString(cx + cw / 2, y, bars[i])       # printed height
+            else:
+                c.rect(cx, y - 0.06 * inch, cw, 0.28 * inch)       # blank box to write it
+    else:
+        c.setFont("Helvetica-Bold", 9)
+        for i, lbl in enumerate(("ATT 1", "ATT 2", "ATT 3")):
+            c.drawString(gx + i * 0.85 * inch, y, lbl)
+    y -= 0.12 * inch
     c.line(left, y, pw - 0.5 * inch, y)
-    y -= 0.3 * inch
+    y -= (0.42 if hj else 0.3) * inch
+
     display = list(rows) + [None] * 3  # blank rows for additions
-    c.setFont("Helvetica", 11)
     for r in display:
         if y < 0.9 * inch:
             c.showPage()
             y = ph - 0.9 * inch
-            c.setFont("Helvetica", 11)
+        c.setFont("Helvetica", 11)
         if r:
             c.drawString(left, y, "" if r["bib"] is None else str(r["bib"]))
-            c.drawString(left + 0.7 * inch, y, (r["name"] or "")[:24])
-            c.drawString(left + 3.0 * inch, y, (r["school"] or "")[:20])
+            c.drawString(name_x, y, (r["name"] or "")[:22 if hj else 24])
+            c.drawString(school_x, y, (r["school"] or "")[:16 if hj else 20])
         if hj:
-            for i in range(7):
-                c.rect(left + 4.5 * inch + i * 0.42 * inch, y - 0.05 * inch, 0.36 * inch, 0.26 * inch)
+            for i in range(cols):
+                c.rect(gx + i * gap, y - 0.12 * inch, cw, boxh)
+            y -= rowh
         else:
             for i in range(3):
-                c.rect(left + 4.5 * inch + i * 0.85 * inch, y - 0.05 * inch, 0.7 * inch, 0.26 * inch)
-        y -= 0.42 * inch
+                c.rect(gx + i * 0.85 * inch, y - 0.05 * inch, 0.7 * inch, 0.26 * inch)
+            y -= 0.42 * inch
     c.showPage()
 
 
-def heat_sheet_pdf(title, rows, *, laned=True, token=None, kind="track"):
+def heat_sheet_pdf(title, rows, *, laned=True, token=None, kind="track", bars=None):
     """Meet-day packet for one event. kind: 'track' | 'field' | 'hj'."""
     buf = io.BytesIO()
     c = pdfcanvas.Canvas(buf, pagesize=letter)
     pw, ph = letter
     if kind in ("field", "hj"):
-        _draw_field_section(c, ph, pw, 0.75 * inch, title, rows, kind == "hj", token)
+        _draw_field_section(c, ph, pw, 0.75 * inch, title, rows, kind == "hj", token, bars)
     else:
         _draw_heat_section(c, ph, pw, 0.75 * inch, title, rows, laned, token)
     c.save()
@@ -212,10 +232,11 @@ def multi_heat_sheet_pdf(sections):
         title, rows, laned = sec[0], sec[1], sec[2]
         token = sec[3] if len(sec) > 3 else None
         kind = sec[4] if len(sec) > 4 else "track"
+        bars = sec[5] if len(sec) > 5 else None
         if not rows:
             continue
         if kind in ("field", "hj"):
-            _draw_field_section(c, ph, pw, 0.75 * inch, title, rows, kind == "hj", token)
+            _draw_field_section(c, ph, pw, 0.75 * inch, title, rows, kind == "hj", token, bars)
         else:
             _draw_heat_section(c, ph, pw, 0.75 * inch, title, rows, laned, token)
         drew = True
