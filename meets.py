@@ -163,7 +163,9 @@ def list_meets():
     elif p.is_super and did is None:
         form = '<p class="muted">Pick a district in the header to create a meet.</p>'
 
-    body = f"<h1>Meets</h1><p class='sub'>Cross-country &amp; track meets.</p>{table}{form}"
+    from .phone import _install_card
+    body = (f"<h1>Meets</h1><p class='sub'>Cross-country &amp; track meets.</p>"
+            f"{_install_card()}{table}{form}")
     return shell(p, body, active="meets", active_district=did, districts=_districts_for_switcher())
 
 

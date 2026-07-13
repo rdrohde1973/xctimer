@@ -91,12 +91,7 @@ coach email, and add it to their home screen. Same link for everyone, every meet
   <img src="/phone/qr.png" width="150" height="150"
        style="background:#fff;padding:8px;border-radius:8px">
   <div style="flex:1;min-width:250px">
-    <div class="row" style="align-items:center">
-      <code style="background:var(--panel2);padding:.35rem .6rem;border-radius:8px">{escape(url)}</code>
-      <a class="btn" href="/phone">⏱ Open timing app ↗</a>
-      <button class="ghost" type="button"
-        onclick="navigator.clipboard.writeText('{escape(url)}');this.textContent='Copied ✓'">📋 Copy link</button>
-    </div>
+    <p style="margin:0 0 .3rem">Or open <code style="background:var(--panel2);padding:.25rem .5rem;border-radius:8px">{escape(url)}</code></p>
     <ol class="muted" style="margin-top:.7rem;line-height:1.9">
       <li>Open the link on your phone (or scan the QR).</li>
       <li>Sign in with your coach email.</li>
