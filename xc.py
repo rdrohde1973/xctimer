@@ -871,9 +871,6 @@ def _grade_gender_groups(mid):
 
 
 def _public_xc(m, mode):
-    import os
-    import base64
-    import qrcode
     mid = m["id"]
     results = build_results(mid)
     conn = db.connect()
@@ -885,12 +882,6 @@ def _public_xc(m, mode):
         status = "Live"
     else:
         status = ""
-
-    base = os.environ.get("XC_PUBLIC_URL", request.host_url.rstrip("/"))
-    url = f"{base}/r/{m['public_token']}"
-    b = io.BytesIO()
-    qrcode.make(url).save(b, format="PNG")
-    qr_uri = "data:image/png;base64," + base64.b64encode(b.getvalue()).decode()
 
     overall = "".join(
         _pub_table(f"{lbl} Overall", results[key]["individuals"], mode, True)
@@ -923,10 +914,6 @@ def _public_xc(m, mode):
 <title>{escape(m['name'])} — Results</title>{HEAD_EXTRA}<style>{PUB_CSS}</style></head><body>
 <div class="top">
   <div><div class="mt">{escape(m['name'])} — Combined</div><div class="sub">{sub}</div></div>
-  <div class="right">
-    <a class="xls" href="/r/{m['public_token']}/results.xlsx">⬇ Excel</a>
-    <div class="qr"><img src="{qr_uri}" alt="QR"><span>Scan for results</span></div>
-  </div>
 </div>
 <main>
   <div class="tabs">
