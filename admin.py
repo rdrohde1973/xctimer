@@ -290,10 +290,23 @@ def list_users():
         resend_label = "Resend invite" if not u["password_hash"] else "Send login link"
         resend = (f'<form class="inline" method="post" action="/users/{u["id"]}/resend">'
                   f'<button class="ghost" type="submit">{resend_label}</button></form> ')
+        # Role: editable dropdown when this admin may manage this user's role, else a pill.
+        # Never editable for super admins or for your own account (no self-lockout).
+        assignable = _creatable_roles(p)
+        if u["role"] in assignable and u["role"] != "super_admin" and u["id"] != p.id:
+            opts = "".join(
+                f'<option value="{r}" {"selected" if r == u["role"] else ""}>'
+                f'{r.replace("_", " ").title()}</option>' for r in assignable)
+            role_cell = (
+                f'<form class="inline" method="post" action="/users/{u["id"]}/role">'
+                f'<select name="role" onchange="this.form.submit()" '
+                f'style="width:auto;padding:.3rem .5rem">{opts}</select></form>')
+        else:
+            role_cell = f'<span class="pill">{escape(u["role"].replace("_"," "))}</span>'
         trs.append(
             f'<tr><td><b>{escape(u["name"] or "")}</b><br>'
             f'<span class="muted">{escape(u["email"])}</span></td>'
-            f'<td><span class="pill">{escape(u["role"].replace("_"," "))}</span></td>'
+            f'<td>{role_cell}</td>'
             f'{dcol}<td>{status}</td>'
             f'<td style="text-align:right">{resend}'
             f'<form class="inline" method="post" action="/users/{u["id"]}/delete" '
@@ -384,6 +397,35 @@ def resend_invite(uid):
     token = issue_reset_token(uid)
     send_setup_email(u["email"], token, reset=bool(u["password_hash"]))
     return redirect("/users?msg=" + ("Login+link+sent" if u["password_hash"] else "Invite+resent"))
+
+
+@bp.post("/users/<int:uid>/role")
+@role_required("super_admin", "district_admin")
+def change_role(uid):
+    p = g.principal
+    new_role = (request.form.get("role") or "").strip()
+    conn = db.connect()
+    u = conn.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone()
+    conn.close()
+    if not u:
+        abort(404)
+    if u["district_id"] is not None:
+        require_district(u["district_id"])
+    # Guards: can't change your own role, can't touch a super admin, and both the
+    # old and new role must be ones this admin is allowed to assign.
+    allowed = _creatable_roles(p)
+    if (u["id"] == p.id or u["role"] == "super_admin"
+            or u["role"] not in allowed or new_role not in allowed):
+        abort(403)
+    if new_role != u["role"]:
+        conn = db.connect()
+        conn.execute("UPDATE users SET role=? WHERE id=?", (new_role, uid))
+        # Dropping to a non-scoped role: clear school assignments (coach/timer only).
+        if new_role not in ("coach", "timer"):
+            conn.execute("DELETE FROM user_schools WHERE user_id=?", (uid,))
+        conn.commit()
+        conn.close()
+    return redirect("/users?msg=Role+updated")
 
 
 @bp.post("/users/<int:uid>/delete")
