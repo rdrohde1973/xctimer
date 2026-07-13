@@ -3,6 +3,7 @@
 Districts: super admin only. Users: super admin (any district) and district admin
 (own district). Every write is district-scoped server-side.
 """
+import json
 import re
 
 from markupsafe import escape
@@ -101,17 +102,25 @@ def list_districts():
     body_rows = []
     for d in rows:
         sc, us = counts.get(d["id"], (0, 0))
+        try:
+            masked = bool(json.loads(d["settings_json"] or "{}").get("mask_public"))
+        except (ValueError, TypeError):
+            masked = False
+        mask_btn = (f'<form class="inline" method="post" action="/districts/{d["id"]}/mask">'
+                    f'<button class="{"btn" if masked else "ghost"}" type="submit">'
+                    f'{"Masked" if masked else "Full names"}</button></form>')
         body_rows.append(
             f'<tr><td><b>{escape(d["name"])}</b><br>'
             f'<span class="muted">{escape(d["slug"])}</span></td>'
             f'<td>{sc} schools</td><td>{us} users</td>'
+            f'<td>{mask_btn}</td>'
             f'<td style="text-align:right">'
             f'<form class="inline" method="post" action="/districts/{d["id"]}/delete" '
             f'onsubmit="return confirm(\'Delete {escape(d["name"])} and ALL its data?\')">'
             f'<button class="danger" type="submit">Delete</button></form></td></tr>'
         )
     table = (f'<div class="card"><table><tr><th>District</th><th>Schools</th>'
-             f'<th>Users</th><th></th></tr>{"".join(body_rows)}</table></div>'
+             f'<th>Users</th><th>Public results</th><th></th></tr>{"".join(body_rows)}</table></div>'
              if rows else '<div class="card muted">No districts yet.</div>')
 
     form = """
@@ -139,6 +148,21 @@ def create_district():
         slug = f"{base}-{n}"
         n += 1
     conn.execute("INSERT INTO districts (name, slug) VALUES (?,?)", (name, slug))
+    conn.commit()
+    conn.close()
+    return redirect("/districts")
+
+
+@bp.post("/districts/<int:did>/mask")
+@role_required("super_admin")
+def toggle_mask(did):
+    conn = db.connect()
+    d = conn.execute("SELECT settings_json FROM districts WHERE id=?", (did,)).fetchone()
+    if not d:
+        conn.close(); abort(404)
+    settings = json.loads(d["settings_json"] or "{}")
+    settings["mask_public"] = not settings.get("mask_public")
+    conn.execute("UPDATE districts SET settings_json=? WHERE id=?", (json.dumps(settings), did))
     conn.commit()
     conn.close()
     return redirect("/districts")
@@ -198,6 +222,8 @@ def list_users():
     for u in rows:
         status = ('<span class="muted">pending setup</span>' if not u["password_hash"]
                   else "active")
+        if "is_demo" in u.keys() and u["is_demo"]:
+            status += ' <span class="pill">demo</span>'
         dcol = f'<td>{escape(u["dname"] or "—")}</td>' if show_d else ""
         resend = ""
         if not u["password_hash"]:
@@ -239,6 +265,8 @@ def list_users():
   </div>
   <label>Role</label><select name="role">{role_opts}</select>
   {school_block}
+  <label style="display:flex;gap:.5rem;align-items:center;margin-top:.7rem;font-size:.9rem">
+    <input type="checkbox" name="is_demo" style="width:auto"> Demo account (read-only, anonymized names)</label>
   <button type="submit" style="margin-top:1rem">Create &amp; send invite</button>
 </form>
 <p class="muted">An email with a setup link is sent so they can set their password.</p>
@@ -272,9 +300,10 @@ def create_user_route():
         conn.close()
         if ok != len(school_ids):
             abort(400)
+    is_demo = bool(request.form.get("is_demo"))
     try:
         _uid, token = create_user(email, role, district_id=did, name=name,
-                                  school_ids=school_ids)
+                                  school_ids=school_ids, is_demo=is_demo)
     except Exception:  # duplicate email, etc.
         return redirect("/users")
     send_setup_email(email, token)

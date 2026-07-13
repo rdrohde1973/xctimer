@@ -16,7 +16,7 @@ import random
 from markupsafe import escape
 from flask import Blueprint, request, redirect, g, abort, jsonify, Response
 
-from . import db, ai, pdfs
+from . import db, ai, pdfs, demo
 from .auth import login_required
 from .tenancy import active_district_id, all_districts
 from .ui import shell
@@ -641,7 +641,7 @@ def build_results(mid):
     return {"events": events_out, "totals": totals}
 
 
-def results_inner(mid):
+def results_inner(mid, name_mode=None):
     data = build_results(mid)
     if not data["events"]:
         return '<div class="card muted">No events yet.</div>'
@@ -661,7 +661,7 @@ def results_inner(mid):
         if not ev["items"]:
             continue
         trs = "".join(
-            f'<tr><td>{i["place"]}</td><td>{escape(i["name"] or "")}</td>'
+            f'<tr><td>{i["place"]}</td><td>{escape(demo.display(i["name"] or "", name_mode))}</td>'
             f'<td>{escape(i["school"] or "")}</td><td>{escape(i["mark"])}</td>'
             f'<td>{i["points"] or ""}</td></tr>' for i in ev["items"])
         html.append(f'<div class="card"><h2>{escape(ev["name"])}</h2>'
@@ -679,5 +679,5 @@ def results_page(mid):
     body = (f'<p class="muted"><a href="/meets/{mid}">← {escape(m["name"])}</a></p>'
             f'<h1>{escape(m["name"])} — Results</h1>'
             f'<div class="row"><a class="btn ghost" href="/r/{m["public_token"]}" target="_blank">'
-            f'Public page ↗</a></div>{results_inner(mid)}')
+            f'Public page ↗</a></div>{results_inner(mid, name_mode=demo.mode_for(g.principal))}')
     return shell(g.principal, body, active="meets")

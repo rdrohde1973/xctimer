@@ -232,6 +232,9 @@ def migrate(conn):
         conn.execute("ALTER TABLE sessions ADD COLUMN kind TEXT DEFAULT 'user'")
     if "meet_id" not in scols:
         conn.execute("ALTER TABLE sessions ADD COLUMN meet_id INTEGER")
+    # Demo accounts: read-only + anonymized names (handoff §8 demo mode).
+    if "is_demo" not in _column_names(conn, "users"):
+        conn.execute("ALTER TABLE users ADD COLUMN is_demo INTEGER DEFAULT 0")
 
 
 def init_db():

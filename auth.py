@@ -65,12 +65,14 @@ class Principal:
             self.name = user["name"]
             self.role = user["role"]
             self.district_id = user["district_id"]
+            self.is_demo = bool("is_demo" in user.keys() and user["is_demo"])
         else:
             self.id = None
             self.email = None
             self.name = "Meet Timer"
             self.role = role or "timer"
             self.district_id = district_id
+            self.is_demo = False
 
     @property
     def is_super(self):
@@ -111,7 +113,7 @@ def find_user_by_email(email):
 
 
 def create_user(email, role, *, district_id=None, name=None, school_ids=None,
-                ttl_days=SETUP_TTL_DAYS):
+                is_demo=False, ttl_days=SETUP_TTL_DAYS):
     """Create a user with a one-time setup token. Returns (user_id, setup_token)."""
     if role not in ROLES:
         raise ValueError(f"bad role {role!r}")
@@ -120,9 +122,9 @@ def create_user(email, role, *, district_id=None, name=None, school_ids=None,
     conn = db.connect()
     try:
         cur = conn.execute(
-            "INSERT INTO users (district_id, email, name, role, setup_token, token_expires) "
-            "VALUES (?,?,?,?,?,?)",
-            (district_id, email.strip().lower(), name, role, token, expires),
+            "INSERT INTO users (district_id, email, name, role, setup_token, token_expires, is_demo) "
+            "VALUES (?,?,?,?,?,?,?)",
+            (district_id, email.strip().lower(), name, role, token, expires, 1 if is_demo else 0),
         )
         uid = cur.lastrowid
         for sid in (school_ids or []):
@@ -204,6 +206,19 @@ def load_principal():
     conn.close()
     if u:
         g.principal = Principal(user=u, session_token=tok)
+
+
+# Demo accounts are read-only. These POSTs stay allowed (sign out + the
+# read-only insights query the demo is meant to showcase).
+_DEMO_POST_ALLOW = {"/logout", "/api/insights/ask"}
+
+
+def demo_readonly_guard():
+    """before_request: block mutations for demo accounts (handoff §8)."""
+    p = getattr(g, "principal", None)
+    if p and getattr(p, "is_demo", False) and request.method in ("POST", "PUT", "PATCH", "DELETE"):
+        if request.path not in _DEMO_POST_ALLOW:
+            abort(403)
 
 
 def _set_session_cookie(resp, token):

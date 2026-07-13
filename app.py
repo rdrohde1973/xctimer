@@ -18,8 +18,9 @@ from .meets import bp as meets_bp
 from .xc import bp as xc_bp
 from .track import bp as track_bp
 from .admin import bp as admin_bp
+from .insights import bp as insights_bp
 
-APP_VERSION = "0.4.0-phase4"
+APP_VERSION = "0.5.0-phase5"
 
 LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width, initial-scale=1">
@@ -64,8 +65,10 @@ def create_app():
     db.init_db()
 
     app.before_request(auth.load_principal)
+    app.before_request(auth.demo_readonly_guard)
 
-    for bp in (auth_bp, tenancy_bp, schools_bp, meets_bp, xc_bp, track_bp, admin_bp):
+    for bp in (auth_bp, tenancy_bp, schools_bp, meets_bp, xc_bp, track_bp,
+               admin_bp, insights_bp):
         app.register_blueprint(bp)
 
     @app.get("/")

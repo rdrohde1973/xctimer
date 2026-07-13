@@ -11,7 +11,7 @@ from datetime import datetime, timezone
 from markupsafe import escape
 from flask import Blueprint, request, redirect, g, abort, jsonify, Response
 
-from . import db
+from . import db, demo
 from .auth import login_required
 from .tenancy import active_district_id, all_districts
 from .ui import shell, BRAND_HTML, CSS
@@ -402,7 +402,7 @@ def build_results(mid):
 
 
 # ------------------------------- results (HTML) -------------------------------
-def _results_inner(meet, results):
+def _results_inner(meet, results, name_mode=None):
     if not results:
         return '<div class="card muted">No results yet.</div>'
     html = []
@@ -413,8 +413,8 @@ def _results_inner(meet, results):
         rows = "".join(
             f'<tr><td>{"" if i["place"] is None else i["place"]}</td>'
             f'<td>{fmt_time(i["time"])}</td>'
-            f'<td>{"" if i["bib"] is None else i["bib"]}</td>'
-            f'<td>{"<s>" if i["dq"] else ""}{escape(i["name"])}{" (DQ)" if i["dq"] else ""}{"</s>" if i["dq"] else ""}</td>'
+            f'<td>{"" if i["bib"] is None or name_mode else i["bib"]}</td>'
+            f'<td>{"<s>" if i["dq"] else ""}{escape(demo.display(i["name"], name_mode))}{" (DQ)" if i["dq"] else ""}{"</s>" if i["dq"] else ""}</td>'
             f'<td>{escape(i["school"] or "")}</td>'
             f'<td>{i["grade"] or ""}</td></tr>'
             for i in g_["individuals"])
@@ -443,7 +443,7 @@ def results_page(mid):
     m = load_meet(mid)
     if not can_view_meet(m):
         abort(403)
-    inner = _results_inner(m, build_results(mid))
+    inner = _results_inner(m, build_results(mid), name_mode=demo.mode_for(g.principal))
     body = (f'<p class="muted"><a href="/meets/{mid}">← {escape(m["name"])}</a></p>'
             f'<h1>{escape(m["name"])} — Results</h1>'
             f'<div class="row"><a class="btn ghost" href="/r/{m["public_token"]}" target="_blank">'
@@ -459,11 +459,21 @@ def public_results(token):
     conn.close()
     if not m:
         abort(404)
+    import json
+    conn = db.connect()
+    drow = conn.execute("SELECT settings_json FROM districts WHERE id=?",
+                        (m["district_id"],)).fetchone()
+    conn.close()
+    try:
+        masked = bool(json.loads((drow["settings_json"] if drow else None) or "{}").get("mask_public"))
+    except (ValueError, TypeError):
+        masked = False
+    mode = "mask" if masked else None
     if m["sport"] == "track":
         from . import track  # lazy import avoids a circular import at module load
-        inner = track.results_inner(m["id"])
+        inner = track.results_inner(m["id"], name_mode=mode)
     else:
-        inner = _results_inner(m, build_results(m["id"]))
+        inner = _results_inner(m, build_results(m["id"]), name_mode=mode)
     return f"""<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width, initial-scale=1">
 <title>{escape(m['name'])} — Results · XCTimer</title><style>{CSS}
@@ -495,10 +505,11 @@ def results_xlsx(mid):
             continue
         any_tab = True
         ws = wb.create_sheet(title[:31])
+        nm = demo.mode_for(g.principal)
         ws.append(["Place", "Time", "Bib", "Runner", "School", "Grade", "Gender"])
         for i in g_["individuals"]:
-            ws.append([i["place"], fmt_time(i["time"]), i["bib"], i["name"],
-                       i["school"], i["grade"], i["gender"]])
+            ws.append([i["place"], fmt_time(i["time"]), None if nm else i["bib"],
+                       demo.display(i["name"], nm), i["school"], i["grade"], i["gender"]])
         ws.append([])
         ws.append(["Team Rank", "School", "Score", "Top-5 places"])
         for t in g_["teams"]:

@@ -15,7 +15,7 @@ import os
 from markupsafe import escape
 from flask import (Blueprint, request, redirect, g, abort, jsonify, Response)
 
-from . import db, ai, pdfs
+from . import db, ai, pdfs, demo
 from .auth import login_required, role_required
 from .tenancy import (active_district_id, require_district, scoped_district_or_403,
                       all_districts)
@@ -193,17 +193,21 @@ def roster(sid):
     ).fetchall()
     conn.close()
 
+    mode = demo.mode_for(g.principal)
+    ro = g.principal.is_demo
     trs = []
     for a in ath:
+        nm = demo.display(a["name"], mode)
+        delc = "" if ro else (
+            f'<form class="inline" method="post" action="/athletes/{a["id"]}/delete" '
+            f'onsubmit="return confirm(\'Remove {escape(nm)}?\')">'
+            f'<button class="danger" type="submit">✕</button></form>')
         trs.append(
-            f'<tr><td>{"" if a["bib"] is None else a["bib"]}</td>'
-            f'<td><b>{escape(a["name"])}</b></td>'
+            f'<tr><td>{"" if a["bib"] is None or mode=="anon" else a["bib"]}</td>'
+            f'<td><b><a href="/athletes/{a["id"]}/progress">{escape(nm)}</a></b> 📈</td>'
             f'<td>{"" if a["grade"] is None else a["grade"]}</td>'
             f'<td>{a["gender"] or ""}</td>'
-            f'<td style="text-align:right">'
-            f'<form class="inline" method="post" action="/athletes/{a["id"]}/delete" '
-            f'onsubmit="return confirm(\'Remove {escape(a["name"])}?\')">'
-            f'<button class="danger" type="submit">✕</button></form></td></tr>'
+            f'<td style="text-align:right">{delc}</td></tr>'
         )
     table = (f'<div class="card"><table><tr><th>Bib</th><th>Name</th><th>Gr</th>'
              f'<th>Sex</th><th></th></tr>{"".join(trs)}</table></div>'
@@ -223,6 +227,9 @@ def roster(sid):
 </div>
 
 {table}
+"""
+    if not ro:
+        body += f"""
 
 <div class="card"><h2>Add athlete</h2>
 <form method="post" action="/schools/{sid}/athletes">
