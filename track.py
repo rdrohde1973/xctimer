@@ -1378,7 +1378,7 @@ async function postScan(n){{
     if me["unit"] == "metric":
         ex = ('bar heights like <code>4-06</code> or <code>5&#39;3&quot;</code>' if hj
               else 'marks like <code>15-06</code>, <code>5-03</code>, or <code>5&#39;3&quot;</code>')
-        field_note = f'<p class="muted">Enter <b>feet-inches</b> — {ex}. Utah uses feet &amp; inches.</p>'
+        field_note = f'<p class="muted">Enter <b>feet-inches</b> — {ex}.</p>'
     body = (f'<p class="muted"><a href="/meets/{me["meet_id"]}/meet-day">← Meet day</a></p>'
             f'<h1>{escape(ename)}</h1>{err}{field_note}{marks_form}{add}{tools}')
     return shell(g.principal, body, active="meets")
@@ -1468,16 +1468,20 @@ def scan_post(meid):
             unmatched.append(bib)
             continue
         raw = str(mk.get("mark", "")).strip()
+        atts = None
         if me["unit"] == "seconds":
             sec, met = parse_time(raw), None
         else:
             sec, met = None, _parse_ht(raw)   # field marks are feet-inches
+            if met is not None and not _is_hj(me):
+                atts = [met, None, None]      # show the scanned mark in the A1 box
         if sec is None and met is None:
             continue
         conn.execute("DELETE FROM results WHERE entry_id=?", (row["eid"],))
         conn.execute(
-            "INSERT INTO results (entry_id, mark_seconds, mark_metric, dq, snap_name, snap_bib, snap_school) "
-            "VALUES (?,?,?,0,?,?,?)", (row["eid"], sec, met, row["name"], bib, row["sname"]))
+            "INSERT INTO results (entry_id, mark_seconds, mark_metric, attempts_json, dq, "
+            "snap_name, snap_bib, snap_school) VALUES (?,?,?,?,0,?,?,?)",
+            (row["eid"], sec, met, json.dumps(atts) if atts else None, row["name"], bib, row["sname"]))
         applied += 1
     for m2 in meids:
         _recompute_places(conn, load_meet_event(m2))
