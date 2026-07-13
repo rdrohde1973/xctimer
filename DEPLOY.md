@@ -93,3 +93,38 @@ ssh rob@10.0.1.167 'ssh rob@5.78.183.9 "cd ~/xctimer && git pull && \
 ## 7. Cutover (later)
 - Onboard Alpine as district #1 on the new platform (fresh data, decision #3).
 - Once at parity, retire `alpinexc`/`alpinetrack` and repoint if desired.
+
+## 8. Security checklist (from the July 2026 audit)
+
+### Done in the app/origin (shipped in 0.6.1-hardening)
+- [x] Security headers: `X-Frame-Options: DENY`, CSP (`frame-ancestors 'none'`),
+      `X-Content-Type-Options: nosniff`, `Referrer-Policy`, `Permissions-Policy`, HSTS (prod).
+- [x] Cookie hardening: `HttpOnly` + `SameSite=Lax` + `Secure` (prod via `XC_SECURE_COOKIES=1`).
+- [x] Server-side login throttle (5 fails / 15 min → 429).
+- [x] `Cache-Control: no-store` on authenticated responses.
+- [x] `/.well-known/security.txt`.
+
+### Remaining — Cloudflare / DNS (Rob; not doable from the app)
+- [ ] **HIGH-2 email anti-spoofing** (highest value, ~15 min). Add DNS records for `xctimer.com`:
+  ```
+  xctimer.com.          TXT   "v=spf1 -all"
+  _dmarc.xctimer.com.   TXT   "v=DMARC1; p=reject; rua=mailto:rob@shasta.cloud"
+  xctimer.com.          MX    0 "."            # RFC 7505 null MX (declares no mail)
+  ```
+  NOTE: transactional mail is sent from **rohde.cc** (verified in Resend), not
+  `@xctimer.com`, so an SPF `-all` on `xctimer.com` is safe. If you later verify
+  `xctimer.com` in Resend to send from it, replace `-all` with Resend's SPF include
+  + add their DKIM record.
+- [ ] **LOW-2 CAA**: `xctimer.com. CAA 0 issue "letsencrypt.org"` (+ `pki.goog` if using Google Trust).
+- [ ] **MEDIUM-3 edge half**: Cloudflare **Turnstile** on the login form + a **Rate Limiting**
+      rule on `POST /login` (e.g. 5 / 5 min / IP) — complements the server-side throttle.
+- [ ] Confirm **min TLS 1.2** (SSL/TLS → Edge Certificates; disable TLS 1.0/1.1).
+- [ ] Consider **HSTS preload** submission once you're confident (header already sent).
+- [ ] (Optional) Security headers can also be set at the edge via a Cloudflare Transform
+      Rule as defense-in-depth — the origin already sends them.
+
+### Future app work (larger)
+- [ ] Tighten CSP to drop `'unsafe-inline'` by moving inline `<style>`/`<script>` to
+      nonces/external files — real XSS hardening, but a broad refactor.
+- [ ] Commission an authenticated dynamic pen-test (XSS, SQLi, IDOR, auth-bypass) —
+      the passive audit didn't cover application-logic vulnerabilities.
