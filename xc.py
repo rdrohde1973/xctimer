@@ -557,7 +557,7 @@ main{{max-width:960px;margin:0 auto;padding:1.4rem 1rem 4rem}}
 </style></head><body>
 <div class="pubhdr"><span style="font-weight:800;font-size:1.2rem">{BRAND_HTML}</span></div>
 <main><h1>{escape(m['name'])}</h1>
-<p class="sub">{"🏃 Cross-country" if m['sport']=='xc' else "🏟️ Track"} · {escape(m['date'] or '')}</p>
+<p class="sub">{"🏃 Cross-country" if m['sport']=='xc' else "🎽 Track"} · {escape(m['date'] or '')}</p>
 {inner}</main></body></html>"""
 
 

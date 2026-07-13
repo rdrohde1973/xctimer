@@ -21,7 +21,7 @@ from .admin import bp as admin_bp
 from .insights import bp as insights_bp
 from .phone import bp as phone_bp
 
-APP_VERSION = "0.13.4-meetperms"
+APP_VERSION = "0.13.5-trackicon"
 
 LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width, initial-scale=1">

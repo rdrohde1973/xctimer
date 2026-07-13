@@ -127,7 +127,7 @@ def list_meets():
     show_d = p.is_super and did is None
     trs = []
     for m in rows:
-        sport = "🏃 XC" if m["sport"] == "xc" else "🏟️ Track"
+        sport = "🏃 XC" if m["sport"] == "xc" else "🎽 Track"
         dcol = f'<td>{escape(m["dname"])}</td>' if show_d else ""
         trs.append(f'<tr><td><b><a href="/meets/{m["id"]}">{escape(m["name"])}</a></b></td>'
                    f'<td>{sport}</td><td>{escape(m["date"] or "")}</td>{dcol}</tr>')
@@ -382,7 +382,7 @@ def meet_detail(mid):
     body = f"""
 <p class="muted"><a href="/meets">← Meets</a></p>
 <h1>{escape(m['name'])}</h1>
-<p class="sub">{"🏃 Cross-country" if is_xc else "🏟️ Track & Field"} · {escape(m['date'] or '')}
+<p class="sub">{"🏃 Cross-country" if is_xc else "🎽 Track & Field"} · {escape(m['date'] or '')}
  · host: {escape(host['name']) if host else '—'}</p>
 {tabs}
 <div class="row">{''.join(actions)}</div>

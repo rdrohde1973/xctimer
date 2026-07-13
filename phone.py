@@ -37,7 +37,7 @@ def _meet_card(m):
     p = g.principal
     conn = db.connect()
     body = [f'<p class="muted"><a href="/phone">← Meets</a></p>',
-            f'<h1>{"🏃" if m["sport"]=="xc" else "🏟️"} {escape(m["name"])}</h1>',
+            f'<h1>{"🏃" if m["sport"]=="xc" else "🎽"} {escape(m["name"])}</h1>',
             f'<p class="sub">{escape(m["date"] or "")}</p>']
     if m["sport"] == "xc":
         races = conn.execute("SELECT * FROM races WHERE meet_id=? ORDER BY id", (m["id"],)).fetchall()
@@ -127,7 +127,7 @@ def phone_home():
             _install_card(),
             '<h2>Your meets</h2>']
     for m in meets:
-        icon = "🏃" if m["sport"] == "xc" else "🏟️"
+        icon = "🏃" if m["sport"] == "xc" else "🎽"
         body.append(f'<a class="btn" style="{BTN}" href="/phone/meet/{m["id"]}">'
                     f'{icon} {escape(m["name"])} <span class="muted">· {escape(m["date"] or "")}</span></a>')
     if not meets:
