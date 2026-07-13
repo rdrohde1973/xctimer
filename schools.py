@@ -1,33 +1,74 @@
-"""Schools management. Phase 1: CRUD + bib blocks (district-scoped).
+"""Schools + athletes (roster) — Phases 1-2 (handoff §8).
 
-Phase 2 adds athlete rosters, AI import, Google Sheet sync, bib stickers/lists,
-and bib check — see the module TODO history and handoff §8.
+- School CRUD + bib blocks (admins).
+- Roster: athlete CRUD, auto-bib assignment within the school's block.
+- AI document import (Excel/CSV/PDF/Word -> Claude normalize -> preview -> commit).
+- Google Sheet sync (share link -> CSV -> normalize).
+- Bib list + Avery sticker PDFs (with QR).
+- Bib check (scan QR / type bib -> athlete lookup), district-scoped.
+
+Access: super_admin (any), district_admin (own district), coach (own schools).
+Timers get no roster access.
 """
-from markupsafe import escape
-from flask import Blueprint, request, redirect, g, abort
+import os
 
-from . import db
+from markupsafe import escape
+from flask import (Blueprint, request, redirect, g, abort, jsonify, Response)
+
+from . import db, ai, pdfs
 from .auth import login_required, role_required
-from .tenancy import active_district_id, require_district, scoped_district_or_403, all_districts
+from .tenancy import (active_district_id, require_district, scoped_district_or_403,
+                      all_districts)
 from .ui import shell
 
 bp = Blueprint("schools", __name__)
 
 
 def _districts_for_switcher():
+    return all_districts() if g.principal.is_super else None
+
+
+def _can_access_school(school):
     p = g.principal
-    return all_districts() if p.is_super else None
+    if not p or p.role == "timer" or p.meet_scope:
+        return False
+    if p.is_super:
+        return True
+    if p.district_id != school["district_id"]:
+        return False
+    if p.role == "district_admin":
+        return True
+    if p.role == "coach":
+        return school["id"] in p.school_ids()
+    return False
 
 
-@bp.get("/schools")
-@role_required("super_admin", "district_admin")
-def list_schools():
+def _load_school_or_403(sid):
+    conn = db.connect()
+    s = conn.execute("SELECT * FROM schools WHERE id=?", (sid,)).fetchone()
+    conn.close()
+    if not s:
+        abort(404)
+    if not _can_access_school(s):
+        abort(403)
+    return s
+
+
+def _visible_schools():
+    """Schools the current principal may see, newest-context-first."""
+    p = g.principal
     did = active_district_id()
     conn = db.connect()
-    if did is None:  # super admin, all districts
+    if p.role == "coach":
         rows = conn.execute(
-            "SELECT s.*, d.name AS dname FROM schools s "
-            "JOIN districts d ON d.id=s.district_id ORDER BY d.name, s.name"
+            "SELECT s.*, d.name AS dname FROM schools s JOIN districts d ON d.id=s.district_id "
+            "JOIN user_schools us ON us.school_id=s.id WHERE us.user_id=? ORDER BY s.name",
+            (p.id,),
+        ).fetchall()
+    elif p.is_super and did is None:
+        rows = conn.execute(
+            "SELECT s.*, d.name AS dname FROM schools s JOIN districts d ON d.id=s.district_id "
+            "ORDER BY d.name, s.name"
         ).fetchall()
     else:
         rows = conn.execute(
@@ -35,30 +76,59 @@ def list_schools():
             (did,),
         ).fetchall()
     conn.close()
+    return rows
 
-    show_d = did is None
-    head = "<tr><th>School</th>" + ("<th>District</th>" if show_d else "") + \
-           "<th>Bib block</th><th></th></tr>"
-    body_rows = []
+
+def _next_bib(conn, school):
+    """Lowest free bib within the school's block, or None if unset/full."""
+    lo, hi = school["bib_start"], school["bib_end"]
+    if not lo or not hi:
+        return None
+    used = {r[0] for r in conn.execute(
+        "SELECT bib FROM athletes WHERE school_id=? AND bib IS NOT NULL", (school["id"],)
+    ).fetchall()}
+    for b in range(lo, hi + 1):
+        if b not in used:
+            return b
+    return None
+
+
+# ------------------------------- school list -------------------------------
+@bp.get("/schools")
+@login_required
+def list_schools():
+    p = g.principal
+    if p.role == "timer" or p.meet_scope:
+        abort(403)
+    did = active_district_id()
+    rows = _visible_schools()
+    show_d = p.is_super and did is None
+
+    hdr = ("<tr><th>School</th>" + ("<th>District</th>" if show_d else "")
+           + "<th>Athletes</th><th>Bib block</th><th></th></tr>")
+    conn = db.connect()
+    trs = []
     for s in rows:
-        bib = f'{s["bib_start"]}–{s["bib_end"]}' if s["bib_start"] else '<span class="muted">—</span>'
+        n = conn.execute("SELECT COUNT(*) FROM athletes WHERE school_id=?", (s["id"],)).fetchone()[0]
+        bib = f'{s["bib_start"]}&ndash;{s["bib_end"]}' if s["bib_start"] else '<span class="muted">—</span>'
         dcol = f'<td>{escape(s["dname"])}</td>' if show_d else ""
-        body_rows.append(
-            f'<tr><td><b>{escape(s["name"])}</b></td>{dcol}<td>{bib}</td>'
-            f'<td style="text-align:right">'
-            f'<form class="inline" method="post" action="/schools/{s["id"]}/delete" '
-            f'onsubmit="return confirm(\'Delete {escape(s["name"])}?\')">'
-            f'<button class="danger" type="submit">Delete</button></form></td></tr>'
-        )
-    table = (f'<div class="card"><table>{head}{"".join(body_rows)}</table></div>'
+        actions = f'<a class="btn ghost" href="/schools/{s["id"]}">Open roster</a>'
+        if p.is_admin:
+            actions += (f' <form class="inline" method="post" action="/schools/{s["id"]}/delete" '
+                        f'onsubmit="return confirm(\'Delete {escape(s["name"])} and its roster?\')">'
+                        f'<button class="danger" type="submit">Delete</button></form>')
+        trs.append(f'<tr><td><b>{escape(s["name"])}</b></td>{dcol}<td>{n}</td>'
+                   f'<td>{bib}</td><td style="text-align:right">{actions}</td></tr>')
+    conn.close()
+    table = (f'<div class="card"><table>{hdr}{"".join(trs)}</table></div>'
              if rows else '<div class="card muted">No schools yet.</div>')
 
-    create_hint = ""
-    if g.principal.is_super and did is None:
-        create_hint = ('<p class="muted">Pick a district in the header to add a school.</p>')
-        form = ""
-    else:
-        form = """
+    form = ""
+    if p.is_admin:
+        if p.is_super and did is None:
+            form = '<p class="muted">Pick a district in the header to add a school.</p>'
+        else:
+            form = """
 <div class="card"><h2>Add a school</h2>
 <form method="post" action="/schools">
   <label>Name</label><input name="name" required>
@@ -70,8 +140,9 @@ def list_schools():
   <button type="submit" style="margin-top:1rem">Add school</button>
 </form></div>"""
 
-    body = f"<h1>Schools</h1><p class='sub'>Manage schools and their bib blocks.</p>{create_hint}{table}{form}"
-    return shell(g.principal, body, active="schools",
+    heading = "Roster" if p.role == "coach" else "Schools"
+    body = f"<h1>{heading}</h1><p class='sub'>Schools, bib blocks, and rosters.</p>{table}{form}"
+    return shell(p, body, active="schools",
                  active_district=did, districts=_districts_for_switcher())
 
 
@@ -85,7 +156,7 @@ def create_school():
 
     def _int(v):
         v = (v or "").strip()
-        return int(v) if v.isdigit() else None
+        return int(v) if v.lstrip("-").isdigit() else None
 
     conn = db.connect()
     conn.execute(
@@ -101,14 +172,311 @@ def create_school():
 @bp.post("/schools/<int:sid>/delete")
 @role_required("super_admin", "district_admin")
 def delete_school(sid):
+    s = _load_school_or_403(sid)
     conn = db.connect()
-    s = conn.execute("SELECT * FROM schools WHERE id=?", (sid,)).fetchone()
-    if not s:
-        conn.close()
-        abort(404)
-    require_district(s["district_id"])
+    conn.execute("DELETE FROM athletes WHERE school_id=?", (sid,))
     conn.execute("DELETE FROM user_schools WHERE school_id=?", (sid,))
     conn.execute("DELETE FROM schools WHERE id=?", (sid,))
     conn.commit()
     conn.close()
     return redirect("/schools")
+
+
+# ------------------------------- roster -------------------------------
+@bp.get("/schools/<int:sid>")
+@login_required
+def roster(sid):
+    s = _load_school_or_403(sid)
+    conn = db.connect()
+    ath = conn.execute(
+        "SELECT * FROM athletes WHERE school_id=? ORDER BY bib IS NULL, bib, name", (sid,)
+    ).fetchall()
+    conn.close()
+
+    trs = []
+    for a in ath:
+        trs.append(
+            f'<tr><td>{"" if a["bib"] is None else a["bib"]}</td>'
+            f'<td><b>{escape(a["name"])}</b></td>'
+            f'<td>{"" if a["grade"] is None else a["grade"]}</td>'
+            f'<td>{a["gender"] or ""}</td>'
+            f'<td style="text-align:right">'
+            f'<form class="inline" method="post" action="/athletes/{a["id"]}/delete" '
+            f'onsubmit="return confirm(\'Remove {escape(a["name"])}?\')">'
+            f'<button class="danger" type="submit">✕</button></form></td></tr>'
+        )
+    table = (f'<div class="card"><table><tr><th>Bib</th><th>Name</th><th>Gr</th>'
+             f'<th>Sex</th><th></th></tr>{"".join(trs)}</table></div>'
+             if ath else '<div class="card muted">No athletes yet — add or import below.</div>')
+
+    bib_hint = (f'{s["bib_start"]}–{s["bib_end"]}' if s["bib_start"]
+                else "no block set (bibs left blank)")
+    body = f"""
+<p class="muted"><a href="/schools">← Schools</a></p>
+<h1>{escape(s['name'])}</h1>
+<p class="sub">{len(ath)} athletes · bib block {bib_hint}</p>
+
+<div class="row">
+  <a class="btn ghost" href="/schools/{sid}/bibs.pdf">Bib list (PDF)</a>
+  <a class="btn ghost" href="/schools/{sid}/stickers.pdf?template=5160">Avery 5160 stickers</a>
+  <a class="btn ghost" href="/schools/{sid}/stickers.pdf?template=5163">Avery 5163 stickers</a>
+</div>
+
+{table}
+
+<div class="card"><h2>Add athlete</h2>
+<form method="post" action="/schools/{sid}/athletes">
+  <div class="row">
+    <div><label>Name</label><input name="name" required></div>
+    <div style="max-width:110px"><label>Bib</label><input name="bib" type="number" placeholder="auto"></div>
+    <div style="max-width:90px"><label>Grade</label><input name="grade" type="number"></div>
+    <div style="max-width:110px"><label>Sex</label>
+      <select name="gender"><option value="">—</option><option>M</option><option>F</option></select></div>
+  </div>
+  <button type="submit" style="margin-top:1rem">Add</button>
+  <span class="muted">Leave bib blank to auto-assign the next free bib in the block.</span>
+</form></div>
+
+<div class="card"><h2>Import roster</h2>
+<p class="muted">Upload Excel/CSV/PDF/Word, or paste a Google Sheet link. Claude
+normalizes names, then you confirm before anything is saved.</p>
+<div class="row">
+  <div>
+    <label>File</label>
+    <input type="file" id="impfile" accept=".xlsx,.xls,.csv,.tsv,.txt,.pdf,.docx">
+    <button type="button" onclick="uploadImport()" style="margin-top:.6rem">Parse file</button>
+  </div>
+  <div>
+    <label>Google Sheet share link</label>
+    <input id="sheeturl" placeholder="https://docs.google.com/spreadsheets/d/...">
+    <button type="button" onclick="sheetImport()" style="margin-top:.6rem">Pull sheet</button>
+  </div>
+</div>
+<div id="preview"></div>
+</div>
+
+<script>
+let PARSED = [];
+function renderPreview(rows){{
+  PARSED = rows || [];
+  if(!PARSED.length){{ document.getElementById('preview').innerHTML =
+    '<p class="msg err">No athletes found.</p>'; return; }}
+  let h = '<h2>'+PARSED.length+' found — review &amp; import</h2><table>'
+    +'<tr><th>Name</th><th>Gr</th><th>Sex</th></tr>';
+  for(const a of PARSED) h += '<tr><td>'+esc(a.name)+'</td><td>'+esc(a.grade??'')
+    +'</td><td>'+esc(a.gender??'')+'</td></tr>';
+  h += '</table><button type="button" onclick="commitImport()" style="margin-top:1rem">'
+    +'Import '+PARSED.length+' athletes</button>';
+  document.getElementById('preview').innerHTML = h;
+}}
+async function uploadImport(){{
+  const f = document.getElementById('impfile').files[0];
+  if(!f){{ alert('Choose a file'); return; }}
+  document.getElementById('preview').innerHTML = '<p class="muted">Parsing…</p>';
+  const fd = new FormData(); fd.append('file', f);
+  const r = await fetch('/schools/{sid}/import/parse', {{method:'POST', body:fd}});
+  const j = await r.json();
+  if(!r.ok){{ document.getElementById('preview').innerHTML =
+    '<p class="msg err">'+esc(j.error||'Parse failed')+'</p>'; return; }}
+  renderPreview(j.athletes);
+}}
+async function sheetImport(){{
+  const url = document.getElementById('sheeturl').value.trim();
+  if(!url){{ alert('Paste a link'); return; }}
+  document.getElementById('preview').innerHTML = '<p class="muted">Fetching…</p>';
+  try{{ const j = await jpost('/schools/{sid}/import/sheet', {{url}}); renderPreview(j.athletes); }}
+  catch(e){{ document.getElementById('preview').innerHTML =
+    '<p class="msg err">'+esc(e.message)+'</p>'; }}
+}}
+async function commitImport(){{
+  try{{ const j = await jpost('/schools/{sid}/import/commit', {{athletes: PARSED}});
+    location.href = '/schools/{sid}'; }}
+  catch(e){{ alert(e.message); }}
+}}
+</script>
+"""
+    return shell(g.principal, body, active="schools",
+                 active_district=active_district_id(), districts=_districts_for_switcher())
+
+
+@bp.post("/schools/<int:sid>/athletes")
+@login_required
+def add_athlete(sid):
+    s = _load_school_or_403(sid)
+    name = (request.form.get("name") or "").strip()
+    if not name:
+        abort(400)
+    grade = (request.form.get("grade") or "").strip()
+    grade = int(grade) if grade.isdigit() else None
+    gender = (request.form.get("gender") or "").strip().upper() or None
+    if gender not in ("M", "F", None):
+        gender = None
+    bib_raw = (request.form.get("bib") or "").strip()
+    conn = db.connect()
+    bib = int(bib_raw) if bib_raw.isdigit() else _next_bib(conn, s)
+    conn.execute(
+        "INSERT INTO athletes (school_id, bib, name, grade, gender) VALUES (?,?,?,?,?)",
+        (sid, bib, name, grade, gender),
+    )
+    conn.commit()
+    conn.close()
+    return redirect(f"/schools/{sid}")
+
+
+@bp.post("/athletes/<int:aid>/delete")
+@login_required
+def delete_athlete(aid):
+    conn = db.connect()
+    a = conn.execute("SELECT * FROM athletes WHERE id=?", (aid,)).fetchone()
+    if not a:
+        conn.close()
+        abort(404)
+    s = conn.execute("SELECT * FROM schools WHERE id=?", (a["school_id"],)).fetchone()
+    conn.close()
+    if not _can_access_school(s):
+        abort(403)
+    conn = db.connect()
+    conn.execute("DELETE FROM athletes WHERE id=?", (aid,))
+    conn.commit()
+    conn.close()
+    return redirect(f"/schools/{a['school_id']}")
+
+
+# ------------------------------- import -------------------------------
+@bp.post("/schools/<int:sid>/import/parse")
+@login_required
+def import_parse(sid):
+    _load_school_or_403(sid)
+    f = request.files.get("file")
+    if not f:
+        return jsonify(error="No file uploaded"), 400
+    try:
+        text = ai.extract_text(f.filename, f.read())
+        athletes = ai.normalize_roster(text)
+    except Exception as e:  # noqa: BLE001
+        return jsonify(error=f"Could not parse: {e}"), 400
+    return jsonify(athletes=athletes)
+
+
+@bp.post("/schools/<int:sid>/import/sheet")
+@login_required
+def import_sheet(sid):
+    _load_school_or_403(sid)
+    url = (request.get_json(silent=True) or {}).get("url", "")
+    try:
+        text = ai.fetch_google_sheet_text(url)
+        athletes = ai.normalize_roster(text)
+    except Exception as e:  # noqa: BLE001
+        return jsonify(error=f"Could not read sheet: {e}"), 400
+    return jsonify(athletes=athletes)
+
+
+@bp.post("/schools/<int:sid>/import/commit")
+@login_required
+def import_commit(sid):
+    s = _load_school_or_403(sid)
+    rows = (request.get_json(silent=True) or {}).get("athletes", [])
+    if not isinstance(rows, list):
+        return jsonify(error="bad payload"), 400
+    added = 0
+    conn = db.connect()
+    for r in rows:
+        name = str((r or {}).get("name", "")).strip()
+        if not name:
+            continue
+        grade = r.get("grade")
+        grade = int(grade) if isinstance(grade, int) or (isinstance(grade, str) and grade.isdigit()) else None
+        gender = r.get("gender")
+        gender = gender if gender in ("M", "F") else None
+        bib = _next_bib(conn, s)
+        conn.execute(
+            "INSERT INTO athletes (school_id, bib, name, grade, gender) VALUES (?,?,?,?,?)",
+            (sid, bib, name, grade, gender),
+        )
+        added += 1
+    conn.commit()
+    conn.close()
+    return jsonify(added=added)
+
+
+# ------------------------------- PDFs -------------------------------
+def _roster_rows(sid):
+    conn = db.connect()
+    rows = conn.execute(
+        "SELECT bib, name, grade, gender FROM athletes WHERE school_id=? "
+        "ORDER BY bib IS NULL, bib, name", (sid,)
+    ).fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+@bp.get("/schools/<int:sid>/bibs.pdf")
+@login_required
+def bibs_pdf(sid):
+    s = _load_school_or_403(sid)
+    pdf = pdfs.bib_list_pdf(s["name"], _roster_rows(sid))
+    return Response(pdf, mimetype="application/pdf",
+                    headers={"Content-Disposition": f'inline; filename="{s["name"]}-bibs.pdf"'})
+
+
+@bp.get("/schools/<int:sid>/stickers.pdf")
+@login_required
+def stickers_pdf(sid):
+    s = _load_school_or_403(sid)
+    template = request.args.get("template", "5160")
+    prefix = f'{os.environ.get("XC_PUBLIC_URL", "")}/bibcheck?bib='
+    pdf = pdfs.bib_stickers_pdf(s["name"], _roster_rows(sid), template=template,
+                                qr_prefix=prefix)
+    return Response(pdf, mimetype="application/pdf",
+                    headers={"Content-Disposition": f'inline; filename="{s["name"]}-stickers.pdf"'})
+
+
+# ------------------------------- bib check -------------------------------
+@bp.get("/bibcheck")
+@login_required
+def bibcheck():
+    """Type/scan a bib -> athlete lookup, scoped to the principal's district."""
+    p = g.principal
+    bib = (request.args.get("bib") or "").strip()
+    result = None
+    if bib.isdigit():
+        did = active_district_id()
+        conn = db.connect()
+        if p.is_super and did is None:
+            row = conn.execute(
+                "SELECT a.*, s.name AS sname FROM athletes a JOIN schools s ON s.id=a.school_id "
+                "WHERE a.bib=?", (int(bib),)).fetchone()
+        elif p.role == "coach":
+            ids = p.school_ids()
+            if ids:
+                q = ",".join("?" * len(ids))
+                row = conn.execute(
+                    f"SELECT a.*, s.name AS sname FROM athletes a JOIN schools s ON s.id=a.school_id "
+                    f"WHERE a.bib=? AND a.school_id IN ({q})", (int(bib), *ids)).fetchone()
+            else:
+                row = None
+        else:
+            row = conn.execute(
+                "SELECT a.*, s.name AS sname FROM athletes a JOIN schools s ON s.id=a.school_id "
+                "WHERE a.bib=? AND s.district_id=?", (int(bib), did)).fetchone()
+        conn.close()
+        result = dict(row) if row else {}
+    if request.args.get("format") == "json":
+        return jsonify(result or {})
+
+    box = ""
+    if result:
+        box = (f'<div class="card"><div style="font-size:1.6rem;font-weight:700">'
+               f'#{result["bib"]} · {escape(result["name"])}</div>'
+               f'<p class="muted">{escape(result.get("sname",""))} · '
+               f'grade {result.get("grade") or "—"} · {result.get("gender") or "—"}</p></div>')
+    elif bib:
+        box = '<div class="msg err">No athlete with that bib in your scope.</div>'
+    body = f"""
+<h1>Bib check</h1><p class="sub">Scan a sticker QR or type a bib number.</p>
+<div class="card"><form method="get" action="/bibcheck">
+  <label>Bib number</label><input name="bib" type="number" autofocus value="{escape(bib)}">
+  <button type="submit" style="margin-top:1rem">Look up</button>
+</form></div>{box}"""
+    return shell(p, body, active="", active_district=active_district_id(),
+                 districts=_districts_for_switcher())

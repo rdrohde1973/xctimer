@@ -99,6 +99,10 @@ def shell(principal, body, *, active="", active_district=None, districts=None,
     if role in ("super_admin", "district_admin"):
         nav.append(link("/schools", "Schools", "schools"))
         nav.append(link("/users", "Users", "users"))
+    elif role == "coach":
+        nav.append(link("/schools", "Roster", "schools"))
+    if role in ("super_admin", "district_admin", "coach"):
+        nav.append(link("/bibcheck", "Bib check", "bibcheck"))
     if role == "super_admin":
         nav.append(link("/districts", "Districts", "districts"))
 

@@ -19,7 +19,7 @@ from .xc import bp as xc_bp
 from .track import bp as track_bp
 from .admin import bp as admin_bp
 
-APP_VERSION = "0.1.0-phase1"
+APP_VERSION = "0.2.0-phase2"
 
 LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width, initial-scale=1">
