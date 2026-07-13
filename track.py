@@ -427,8 +427,6 @@ def add_entry(meid):
     if not can_setup_meet(m):
         abort(403)
     conn = db.connect()
-    seed = parse_time(request.form.get("seed")) if me["unit"] == "seconds" \
-        else _parse_ht(request.form.get("seed"))   # field seeds are feet-inches
     if me["kind"] == "relay":
         sid = request.form.get("school_id")
         if not (sid or "").isdigit():
@@ -436,25 +434,31 @@ def add_entry(meid):
         label = (request.form.get("relay_label") or "A").strip()
         members = [x.strip() for x in (request.form.get("members") or "").split(",") if x.strip()]
         conn.execute(
-            "INSERT INTO entries (meet_event_id, school_id, relay_label, members_json, seed) "
-            "VALUES (?,?,?,?,?)", (meid, int(sid), label, json.dumps(members), seed))
+            "INSERT INTO entries (meet_event_id, school_id, relay_label, members_json) "
+            "VALUES (?,?,?,?)", (meid, int(sid), label, json.dumps(members)))
     else:
-        aid = request.form.get("runner_id")
-        if not (aid or "").isdigit():
-            conn.close(); abort(400)
-        a = conn.execute("SELECT * FROM athletes a WHERE id=?", (int(aid),)).fetchone()
+        # Add an athlete by bib (any attending school) — the way an official works.
+        raw = (request.form.get("bib") or "").strip()
+        if not raw.isdigit():
+            conn.close()
+            return redirect(f"/meet-events/{meid}?err=bib")
+        a = conn.execute("SELECT a.* FROM athletes a JOIN meet_schools ms ON ms.school_id=a.school_id "
+                         "WHERE ms.meet_id=? AND a.bib=? LIMIT 1", (me["meet_id"], int(raw))).fetchone()
         if not a:
-            conn.close(); abort(404)
-        # Enforce per-athlete event limit across this meet.
+            conn.close()
+            return redirect(f"/meet-events/{meid}?err=nobib")
+        if conn.execute("SELECT 1 FROM entries WHERE meet_event_id=? AND runner_id=?",
+                        (meid, a["id"])).fetchone():
+            conn.close()
+            return redirect(f"/meet-events/{meid}")   # already in — no-op
         used = conn.execute(
             "SELECT COUNT(*) FROM entries en JOIN meet_events me ON me.id=en.meet_event_id "
-            "WHERE me.meet_id=? AND en.runner_id=?", (me["meet_id"], int(aid))).fetchone()[0]
+            "WHERE me.meet_id=? AND en.runner_id=?", (me["meet_id"], a["id"])).fetchone()[0]
         if used >= event_limit(m):
             conn.close()
             return redirect(f"/meet-events/{meid}?err=limit")
-        conn.execute(
-            "INSERT INTO entries (meet_event_id, runner_id, school_id, seed) VALUES (?,?,?,?)",
-            (meid, int(aid), a["school_id"], seed))
+        conn.execute("INSERT INTO entries (meet_event_id, runner_id, school_id) VALUES (?,?,?)",
+                     (meid, a["id"], a["school_id"]))
     conn.commit()
     conn.close()
     return redirect(f"/meet-events/{meid}")
@@ -1242,8 +1246,11 @@ def event_page(meid):
     ename = f'{me["ename"]} — {div}' + (f' (G{me["grade"]})' if me["grade"] else "")
     if combined:
         ename += " · 🔗 combined"
-    err = '<div class="msg err">That athlete has hit the meet event limit.</div>' \
-        if request.args.get("err") == "limit" else ""
+    _errs = {"limit": "That athlete has hit the meet event limit.",
+             "nobib": "No athlete with that bib is at this meet.",
+             "bib": "Enter a bib number to add an athlete."}
+    err = (f'<div class="msg err">{_errs[request.args["err"]]}</div>'
+           if request.args.get("err") in _errs else "")
 
     # Entries + marks form
     def mark_cell(e):
@@ -1308,24 +1315,17 @@ def event_page(meid):
   <div><label>School</label><select name="school_id">{sopts}</select></div>
   <div style="max-width:90px"><label>Squad</label><input name="relay_label" value="A"></div>
   <div><label>Members (comma-sep)</label><input name="members" placeholder="Lee, Cho, Ray, Doe"></div>
-  <div style="max-width:110px"><label>Seed</label><input name="seed" placeholder="mm:ss.t"></div>
   <div style="display:flex;align-items:flex-end"><button type="submit">Add</button></div>
 </form></div>"""
         else:
-            aopt_list = []
-            for a in athletes:
-                bibtxt = f' (bib {a["bib"]})' if a["bib"] else ""
-                aopt_list.append(
-                    f'<option value="{a["id"]}">{escape(a["name"])} — {escape(a["sname"])}{bibtxt}</option>')
-            aopts = "".join(aopt_list)
-            seedph = "mm:ss.t / s.t" if me["unit"] == "seconds" else "15-06 (ft-in)"
             add = f"""
 <div class="card"><h2>Add athlete</h2>
 <form method="post" action="/meet-events/{meid}/entries" class="row">
-  <div><label>Athlete ({div})</label><select name="runner_id">{aopts or '<option disabled>No eligible athletes</option>'}</select></div>
-  <div style="max-width:130px"><label>Seed</label><input name="seed" placeholder="{seedph}"></div>
+  <div style="max-width:180px"><label>Bib number</label>
+    <input name="bib" type="number" inputmode="numeric" autofocus></div>
   <div style="display:flex;align-items:flex-end"><button type="submit">Add</button></div>
-</form></div>"""
+</form>
+<p class="muted">Enter the bib to add that athlete ({div}) to this event.</p></div>"""
 
     # Seed / sheets (setup) + camera scan-back (record)
     seed_part = ""
