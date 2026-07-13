@@ -271,21 +271,25 @@ def roster(sid):
         dis = "disabled" if ro else ""
         xc = "checked" if a["does_xc"] else ""
         tr = "checked" if a["does_track"] else ""
-        delc = "" if ro else (
-            f'<form class="inline" method="post" action="/athletes/{a["id"]}/delete" '
-            f'onsubmit="return confirm(\'Remove {escape(nm)}?\')">'
-            f'<button class="danger" type="submit">✕</button></form>')
+        aid = a["id"]
+        acts = [f'<a class="ic" href="/athletes/{aid}/progress" title="Stats &amp; progress">📈</a>',
+                f'<button class="ic" onclick="openCard({aid})" title="Info">ⓘ</button>']
+        if not ro:
+            acts.append(f'<button class="ic edit" onclick="openCard({aid},true)" title="Edit info">✏️</button>')
+            acts.append(
+                f'<form class="inline" method="post" action="/athletes/{aid}/delete" '
+                f'onsubmit="return confirm(\'Remove {escape(nm)}?\')">'
+                f'<button class="ic del" type="submit" title="Delete">✕</button></form>')
         trs.append(
             f'<tr><td>{"" if a["bib"] is None or mode=="anon" else a["bib"]}</td>'
-            f'<td><b><a href="#" onclick="openCard({a["id"]});return false">{escape(nm)}</a></b> '
-            f'<a href="/athletes/{a["id"]}/progress" title="Progress &amp; stats">📈</a></td>'
+            f'<td><b><a href="#" onclick="openCard({aid});return false">{escape(nm)}</a></b></td>'
             f'<td>{"" if a["grade"] is None else a["grade"]}</td>'
             f'<td>{a["gender"] or ""}</td>'
             f'<td style="text-align:center"><input type="checkbox" style="width:auto" {xc} {dis} '
-            f'onchange="tog({a["id"]},\'xc\',this)"></td>'
+            f'onchange="tog({aid},\'xc\',this)"></td>'
             f'<td style="text-align:center"><input type="checkbox" style="width:auto" {tr} {dis} '
-            f'onchange="tog({a["id"]},\'track\',this)"></td>'
-            f'<td style="text-align:right">{delc}</td></tr>')
+            f'onchange="tog({aid},\'track\',this)"></td>'
+            f'<td><div class="rowacts">{"".join(acts)}</div></td></tr>')
 
     if grad_view:
         head = ('<tr><th>Bib</th><th>Name</th><th>Gr</th><th>Sex</th><th></th></tr>'
@@ -346,12 +350,21 @@ def roster(sid):
 .cbadge.ok{{background:rgba(63,191,127,.18);color:var(--ok)}}
 .cbadge.no{{background:rgba(240,98,91,.16);color:var(--err)}}
 .cbadge.warn{{background:rgba(240,178,75,.16);color:var(--warn)}}
+.rowacts{{display:flex;gap:.35rem;justify-content:flex-end;align-items:center}}
+.rowacts form{{margin:0}}
+.ic{{background:var(--panel2);color:var(--fg);border:1px solid var(--line);border-radius:8px;
+  padding:.32rem .52rem;font-size:.9rem;line-height:1;cursor:pointer;text-decoration:none;
+  display:inline-flex;align-items:center}}
+.ic:hover{{background:var(--line);text-decoration:none}}
+.ic.edit{{color:#6bb0f7}}
+.ic.del{{color:var(--err)}}
 </style>
 <script>
-async function openCard(aid){{
+async function openCard(aid, edit){{
   const m=document.getElementById('cardModal'), b=document.getElementById('cardBody');
   b.innerHTML='<p class="muted">Loading…</p>'; m.style.display='flex';
-  try{{ const r=await fetch('/athletes/'+aid+'/card'); b.innerHTML=await r.text(); }}
+  try{{ const r=await fetch('/athletes/'+aid+'/card'); b.innerHTML=await r.text();
+    if(edit && document.getElementById('cardEdit')) editInfo(); }}
   catch(e){{ b.innerHTML='<p class="msg err">Could not load.</p>'; }}
 }}
 function closeCard(){{ document.getElementById('cardModal').style.display='none'; }}
