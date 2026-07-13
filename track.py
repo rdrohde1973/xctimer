@@ -1776,11 +1776,25 @@ def results_page(mid):
     m = load_meet(mid)
     if not can_view_meet(m):
         abort(403)
+    import os
+    import base64
+    import qrcode
+    base = os.environ.get("XC_PUBLIC_URL", request.host_url.rstrip("/"))
+    url = f"{base}/r/{m['public_token']}"
+    b = io.BytesIO()
+    qrcode.make(url).save(b, format="PNG")
+    qr_uri = "data:image/png;base64," + base64.b64encode(b.getvalue()).decode()
+    qr_card = (f'<div class="card" style="display:flex;gap:1rem;align-items:center;flex-wrap:wrap">'
+               f'<img src="{qr_uri}" width="128" height="128" '
+               f'style="background:#fff;padding:8px;border-radius:10px">'
+               f'<div><b>Public results</b><br>'
+               f'<span class="muted">Scan to open the live public results page — share on the big screen '
+               f'or a flyer.</span><br><a href="{url}" target="_blank">{escape(url)}</a></div></div>')
     body = (f'<p class="muted"><a href="/meets/{mid}">← {escape(m["name"])}</a></p>'
             f'<h1>{escape(m["name"])} — Results</h1>{_track_tabs(mid, "results")}'
             f'<div class="row"><a class="btn ghost" href="/r/{m["public_token"]}" target="_blank">'
             f'Public page ↗</a> <a class="btn ghost" href="/meets/{mid}/track-results.xlsx">Export xlsx</a></div>'
-            f'{results_inner(mid, name_mode=demo.mode_for(g.principal))}')
+            f'{qr_card}{results_inner(mid, name_mode=demo.mode_for(g.principal))}')
     return shell(g.principal, body, active="meets")
 
 
