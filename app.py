@@ -22,7 +22,7 @@ from .insights import bp as insights_bp
 from .phone import bp as phone_bp
 from .waivers import bp as waivers_bp
 
-APP_VERSION = "0.23.0-landing"
+APP_VERSION = "0.23.1-contact"
 
 LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width, initial-scale=1">
@@ -166,7 +166,7 @@ LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
   <p class="lead" style="margin:.4rem auto 1.4rem">Sign in to get started, or reach out to bring XCTimer to your district.</p>
   <div class="cta" style="display:flex;gap:.8rem;justify-content:center;flex-wrap:wrap">
     <a class="btn" href="/login">Sign in</a>
-    <a class="btn ghost" href="mailto:rob@shasta.cloud?subject=XCTimer%20for%20our%20district">Get in touch</a>
+    <a class="btn ghost" href="mailto:rob@xctimer.com?subject=XCTimer%20for%20our%20district">Get in touch</a>
   </div>
 </div></section>
 
