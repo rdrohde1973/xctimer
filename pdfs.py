@@ -233,6 +233,17 @@ def _fit_font(c, text, font, size, max_w, min_size=6):
     return size
 
 
+def _fit_text(c, text, font, size, max_w, min_size=6):
+    """Shrink font, then truncate with an ellipsis so it can never exceed max_w."""
+    text = text or ""
+    size = _fit_font(c, text, font, size, max_w, min_size)
+    if c.stringWidth(text, font, size) > max_w:
+        while text and c.stringWidth(text + "…", font, size) > max_w:
+            text = text[:-1]
+        text = (text + "…") if text else ""
+    return text, size
+
+
 def _draw_label(c, t, slot, ph, a, school_name, qr_prefix, logo=None):
     """One sticker: [logo] [big bib] [name / school / event(s)] [QR].
 
@@ -270,6 +281,7 @@ def _draw_label(c, t, slot, ph, a, school_name, qr_prefix, logo=None):
         pass
 
     # Big navy bib number (left column)
+    rx = x + lw - pad - qr_sz - 0.08 * inch  # right edge of the text area (before QR)
     big = min(lh * 0.42, 34)
     c.setFont("Helvetica-Bold", big)
     c.setFillColorRGB(*NAVY)
@@ -278,33 +290,36 @@ def _draw_label(c, t, slot, ph, a, school_name, qr_prefix, logo=None):
     bib_w = c.stringWidth(bib, "Helvetica-Bold", big)
     c.setFillGray(0)
 
-    # Text column: right of the bib, ending before the QR
-    nx = left + bib_w + 0.1 * inch
-    text_w = max(0.5 * inch, (x + lw - pad - qr_sz - 0.08 * inch) - nx)
-    ny = top
+    # Name/school beside the bib if there's room, else stacked below it (small labels).
+    beside_nx = left + bib_w + 0.1 * inch
+    beside_w = rx - beside_nx
+    if beside_w >= 1.0 * inch:
+        nx, text_w, ny = beside_nx, beside_w, top
+    else:
+        nx, text_w, ny = left, rx - left, top - big - 0.04 * inch
 
-    name = (a["name"] or "")
-    nsz = _fit_font(c, name, "Helvetica-Bold", min(lh * 0.16, 15), text_w)
+    ntext, nsz = _fit_text(c, a["name"] or "", "Helvetica-Bold", min(lh * 0.16, 15), text_w)
     c.setFont("Helvetica-Bold", nsz)
     ny -= nsz
-    c.drawString(nx, ny, name)
+    c.drawString(nx, ny, ntext)
 
-    ssz = min(lh * 0.11, 10)
+    stext, ssz = _fit_text(c, school_name or "", "Helvetica", min(lh * 0.11, 10), text_w)
     c.setFont("Helvetica", ssz)
     c.setFillGray(0.42)
     ny -= ssz + 0.06 * inch
-    c.drawString(nx, ny, (school_name or "")[:34])
+    c.drawString(nx, ny, stext)
     c.setFillGray(0)
 
     events = a.get("events") if isinstance(a, dict) else None
     if events:
-        esz = min(lh * 0.13, 11)
-        c.setFont("Helvetica-Bold", esz)
+        esz0 = min(lh * 0.13, 11)
         for ev in events[:4]:
+            etext, esz = _fit_text(c, ev, "Helvetica-Bold", esz0, text_w)
             ny -= esz + 0.07 * inch
             if ny < bottom:
                 break
-            c.drawString(nx, ny, ev[:34])
+            c.setFont("Helvetica-Bold", esz)
+            c.drawString(nx, ny, etext)
 
 
 def meet_stickers_pdf(groups, *, template="5160", qr_prefix=""):

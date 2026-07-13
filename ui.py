@@ -111,13 +111,11 @@ def _flashes(msg=None, err=None):
 
 
 def _brand(principal):
-    """Top-left brand: super admin -> XCTimer; district admin -> district logo;
-    coach -> their school logo. Falls back to the XCTimer wordmark."""
+    """Top-left brand: super admin -> XCTimer wordmark; district admin -> district
+    logo; coach -> their school logo. Falls back to the XCTimer wordmark."""
     role = getattr(principal, "role", None)
     logo = None
-    if getattr(principal, "meet_scope", None) or role == "super_admin":
-        logo = LOGO_URL
-    elif role == "district_admin" and getattr(principal, "district_id", None):
+    if role == "district_admin" and getattr(principal, "district_id", None):
         from . import db
         conn = db.connect()
         r = conn.execute("SELECT logo_path FROM districts WHERE id=?",
