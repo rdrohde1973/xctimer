@@ -74,6 +74,32 @@ def progress(aid):
         "FROM finishers f JOIN races ra ON ra.id=f.race_id JOIN meets m ON m.id=ra.meet_id "
         "WHERE f.bib=? AND f.snap_school=? AND m.district_id=? AND f.elapsed_seconds IS NOT NULL "
         "ORDER BY m.date", (a["bib"], a["sname"], a["district_id"])).fetchall()
+
+    # Season points (track): sum the points-table value at each placed finish
+    import json as _json
+    default_pt = conn.execute(
+        "SELECT id FROM points_tables WHERE name='Invitational 10-8-6-4-2-1'").fetchone()
+    ptcache = {}
+
+    def _tbl(pid):
+        if pid not in ptcache:
+            row = conn.execute("SELECT point_values_json, relay_multiplier FROM points_tables WHERE id=?",
+                               (pid,)).fetchone()
+            ptcache[pid] = (_json.loads(row["point_values_json"]) if row else [],
+                            (row["relay_multiplier"] if row else 1.0) or 1.0)
+        return ptcache[pid]
+
+    season_pts = 0.0
+    for r in conn.execute(
+        "SELECT r.place, m.points_table_id, e.kind FROM results r JOIN entries en ON en.id=r.entry_id "
+        "JOIN meet_events me ON me.id=en.meet_event_id JOIN meets m ON m.id=me.meet_id "
+        "JOIN events e ON e.id=me.event_id WHERE en.runner_id=? AND r.place IS NOT NULL "
+        "AND m.sport='track'", (aid,)).fetchall():
+        pid = r["points_table_id"] or (default_pt[0] if default_pt else None)
+        vals, mult = _tbl(pid)
+        p = r["place"]
+        if p and p - 1 < len(vals):
+            season_pts += vals[p - 1] * (mult if r["kind"] == "relay" else 1)
     conn.close()
 
     mode = demo.mode_for(g.principal)
@@ -115,10 +141,12 @@ def progress(aid):
               f'<th>PR</th></tr>{pr_html}</table></div>' if pr_html else "")
 
     bib = f' · bib {a["bib"]}' if a["bib"] and mode != "anon" else ""
+    spts = ("" if not season_pts else
+            f' · {int(season_pts) if float(season_pts).is_integer() else round(season_pts, 1)} season pts')
     body = (f'<p class="muted"><a href="/schools/{a["school_id"]}">← Roster</a></p>'
             f'<h1>📈 {escape(who)}</h1>'
             f'<p class="sub">{escape(demo.display(a["sname"], "anon") if mode=="anon" else a["sname"])}'
-            f' · grade {a["grade"] or "—"} · {a["gender"] or "—"}{bib}</p>'
+            f' · grade {a["grade"] or "—"} · {a["gender"] or "—"}{bib}{spts}</p>'
             f'{pr_tbl}{perf_tbl}')
     return shell(g.principal, body, active="", active_district=active_district_id(),
                  districts=_districts_for_switcher())

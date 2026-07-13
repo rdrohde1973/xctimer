@@ -867,9 +867,17 @@ def _recompute_places(conn, me):
         scored.append((mark, r["id"]))
     reverse = me["scoring_order"] == "desc"
     scored.sort(key=lambda x: x[0], reverse=reverse)
-    for i, (_, rid) in enumerate(scored):
-        conn.execute("UPDATE results SET place=? WHERE id=?", (i + 1, rid))
-    # Clear place on DQ/no-mark rows
+    # Standard competition ranking with ties: equal marks share the lower place
+    # (e.g. 1, 1, 3). Points are split across the tied positions in build_results.
+    i = 0
+    n = len(scored)
+    while i < n:
+        j = i
+        while j < n and scored[j][0] == scored[i][0]:
+            j += 1
+        for k in range(i, j):
+            conn.execute("UPDATE results SET place=? WHERE id=?", (i + 1, scored[k][1]))
+        i = j
     keep = {rid for _, rid in scored}
     for r in rows:
         if r["id"] not in keep:
@@ -1229,9 +1237,20 @@ def build_results(mid):
         rows = conn.execute(
             "SELECT r.*, en.school_id FROM results r JOIN entries en ON en.id=r.entry_id "
             "WHERE en.meet_event_id=? AND r.place IS NOT NULL ORDER BY r.place", (me["id"],)).fetchall()
+        # Tie-aware points: athletes sharing a place split the sum of the positions
+        # they occupy (e.g. two tied for 1st split points for places 1+2).
+        place_counts = {}
+        for r in rows:
+            place_counts[r["place"]] = place_counts.get(r["place"], 0) + 1
+
+        def pts_for(place):
+            k = place_counts[place]
+            total = sum(table[p - 1] if p - 1 < len(table) else 0 for p in range(place, place + k))
+            return total / k
+
         items = []
         for r in rows:
-            pts = table[r["place"] - 1] if r["place"] - 1 < len(table) else 0
+            pts = pts_for(r["place"])
             mark = fmt_time(r["mark_seconds"]) if me["unit"] == "seconds" else fmt_metric(r["mark_metric"])
             items.append({"place": r["place"], "mark": mark, "name": r["snap_name"],
                           "school": r["snap_school"], "points": pts})
@@ -1239,7 +1258,8 @@ def build_results(mid):
                 key = (r["snap_school"], me["gender"] or "U")
                 team_pts[key] = team_pts.get(key, 0) + pts
         div = {"M": "Boys", "F": "Girls"}.get(me["gender"], "Open")
-        events_out.append({"name": f'{me["ename"]} — {div}', "items": items})
+        events_out.append({"name": f'{me["ename"]} — {div}', "items": items,
+                           "gkey": me["gender"] or "U"})
     conn.close()
     # Team totals by gender
     totals = {"M": {}, "F": {}, "U": {}}
@@ -1249,32 +1269,58 @@ def build_results(mid):
     return {"events": events_out, "totals": totals}
 
 
+def _fmt_pts(x):
+    if x in (None, 0):
+        return ""
+    return str(int(x)) if float(x).is_integer() else f"{x:.1f}"
+
+
 def results_inner(mid, name_mode=None):
     data = build_results(mid)
     if not data["events"]:
         return '<div class="card muted">No events yet.</div>'
-    html = []
-    # Team scores first
+    html = ['<div class="card">'
+            '<input id="rsearch" placeholder="Search athlete / school / event…" oninput="rfilter()" '
+            'style="max-width:320px"> '
+            '<select id="rgender" onchange="rfilter()" style="max-width:120px;margin-left:.4rem">'
+            '<option value="">All</option><option value="M">Boys</option>'
+            '<option value="F">Girls</option></select></div>']
     for key, label in (("M", "Boys"), ("F", "Girls"), ("U", "Open")):
         t = data["totals"].get(key) or {}
         if not t:
             continue
         ranked = sorted(t.items(), key=lambda x: -x[1])
-        trs = "".join(f'<tr><td>{i+1}</td><td>{escape(s)}</td><td><b>{p}</b></td></tr>'
+        trs = "".join(f'<tr data-text="{escape((s or "").lower())}"><td>{i+1}</td>'
+                      f'<td>{escape(s)}</td><td><b>{_fmt_pts(p)}</b></td></tr>'
                       for i, (s, p) in enumerate(ranked))
-        html.append(f'<div class="card"><h2>{label} — Team scores</h2>'
-                    f'<table><tr><th>Rank</th><th>School</th><th>Points</th></tr>{trs}</table></div>')
-    # Per-event
+        html.append(f'<div class="card rcard" data-gender="{key}" data-title="{label.lower()} team scores">'
+                    f'<h2>{label} — Team scores</h2><table><tr><th>Rank</th><th>School</th>'
+                    f'<th>Points</th></tr>{trs}</table></div>')
     for ev in data["events"]:
         if not ev["items"]:
             continue
-        trs = "".join(
-            f'<tr><td>{i["place"]}</td><td>{escape(demo.display(i["name"] or "", name_mode))}</td>'
-            f'<td>{escape(i["school"] or "")}</td><td>{escape(i["mark"])}</td>'
-            f'<td>{i["points"] or ""}</td></tr>' for i in ev["items"])
-        html.append(f'<div class="card"><h2>{escape(ev["name"])}</h2>'
+        trs = ""
+        for i in ev["items"]:
+            nm = demo.display(i["name"] or "", name_mode)
+            txt = f'{nm} {i["school"] or ""}'.lower()
+            trs += (f'<tr data-text="{escape(txt)}"><td>{i["place"]}</td>'
+                    f'<td>{escape(nm)}</td><td>{escape(i["school"] or "")}</td>'
+                    f'<td>{escape(i["mark"])}</td><td>{_fmt_pts(i["points"])}</td></tr>')
+        html.append(f'<div class="card rcard" data-gender="{ev["gkey"]}" '
+                    f'data-title="{escape(ev["name"].lower())}"><h2>{escape(ev["name"])}</h2>'
                     f'<table><tr><th>Pl</th><th>Competitor</th><th>School</th>'
                     f'<th>Mark</th><th>Pts</th></tr>{trs}</table></div>')
+    html.append("""<script>
+function _v(id){var e=document.getElementById(id);return e?e.value:'';}
+function rfilter(){var q=_v('rsearch').toLowerCase(),g=_v('rgender');
+ document.querySelectorAll('.rcard').forEach(function(c){
+  var gok=!g||c.dataset.gender===g||c.dataset.gender==='U';
+  var titleHit=q&&(c.dataset.title||'').indexOf(q)>=0,any=false;
+  c.querySelectorAll('tr[data-text]').forEach(function(tr){
+   var show=gok&&(!q||titleHit||tr.dataset.text.indexOf(q)>=0);
+   tr.style.display=show?'':'none';if(show)any=true;});
+  c.style.display=(gok&&any)?'':'none';});}
+</script>""")
     return "".join(html)
 
 
@@ -1287,5 +1333,46 @@ def results_page(mid):
     body = (f'<p class="muted"><a href="/meets/{mid}">← {escape(m["name"])}</a></p>'
             f'<h1>{escape(m["name"])} — Results</h1>{_track_tabs(mid, "results")}'
             f'<div class="row"><a class="btn ghost" href="/r/{m["public_token"]}" target="_blank">'
-            f'Public page ↗</a></div>{results_inner(mid, name_mode=demo.mode_for(g.principal))}')
+            f'Public page ↗</a> <a class="btn ghost" href="/meets/{mid}/track-results.xlsx">Export xlsx</a></div>'
+            f'{results_inner(mid, name_mode=demo.mode_for(g.principal))}')
     return shell(g.principal, body, active="meets")
+
+
+@bp.get("/meets/<int:mid>/track-results.xlsx")
+@login_required
+def results_xlsx(mid):
+    m = load_meet(mid)
+    if not can_view_meet(m):
+        abort(403)
+    import io as _io
+    import openpyxl
+    data = build_results(mid)
+    wb = openpyxl.Workbook()
+    wb.remove(wb.active)
+    ws = wb.create_sheet("Team Scores")
+    for key, label in (("M", "Boys"), ("F", "Girls"), ("U", "Open")):
+        t = data["totals"].get(key) or {}
+        if not t:
+            continue
+        ws.append([f"{label} — Team Scores"])
+        ws.append(["Rank", "School", "Points"])
+        for i, (s, p) in enumerate(sorted(t.items(), key=lambda x: -x[1])):
+            ws.append([i + 1, s, _fmt_pts(p)])
+        ws.append([])
+    ws2 = wb.create_sheet("Results")
+    for ev in data["events"]:
+        if not ev["items"]:
+            continue
+        ws2.append([ev["name"]])
+        ws2.append(["Place", "Competitor", "School", "Mark", "Points"])
+        for i in ev["items"]:
+            ws2.append([i["place"], i["name"], i["school"], i["mark"], _fmt_pts(i["points"])])
+        ws2.append([])
+    if not wb.sheetnames:
+        wb.create_sheet("Results").append(["No results yet"])
+    buf = _io.BytesIO()
+    wb.save(buf)
+    fname = (m["name"] or "results").replace(" ", "_")
+    return Response(buf.getvalue(),
+                    mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition": f'attachment; filename="{fname}.xlsx"'})

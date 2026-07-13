@@ -312,8 +312,8 @@ def meet_detail(mid):
 
     actions = [f'<a class="btn" href="{results_url}">📊 Results</a>',
                f'<a class="btn ghost" href="/r/{m["public_token"]}" target="_blank">Public ↗</a>']
-    if is_xc:
-        actions.append(f'<a class="btn ghost" href="/meets/{mid}/results.xlsx">Export xlsx</a>')
+    xlsx_url = f"/meets/{mid}/results.xlsx" if is_xc else f"/meets/{mid}/track-results.xlsx"
+    actions.append(f'<a class="btn ghost" href="{xlsx_url}">Export xlsx</a>')
 
     hs = (f' <a class="btn ghost" href="/meets/{mid}/heatsheets.pdf">Heat sheets</a>'
           if not is_xc else "")
