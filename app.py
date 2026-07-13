@@ -22,12 +22,12 @@ from .insights import bp as insights_bp
 from .phone import bp as phone_bp
 from .waivers import bp as waivers_bp
 
-APP_VERSION = "0.23.2-coachcopy"
+APP_VERSION = "0.23.3-ms-ai"
 
 LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width, initial-scale=1">
-<title>XCTimer — meet timing &amp; coach management for junior high XC &amp; track</title>
-<meta name="description" content="Affordable, simple cross-country and track & field meet timing and roster management built for junior high — by a coach with 7 years of timing experience.">
+<title>XCTimer — meet timing &amp; coach management for junior high &amp; middle school XC &amp; track</title>
+<meta name="description" content="Affordable, simple cross-country and track & field meet timing and roster management built for junior high & middle school — AI roster import and athlete insights, by a coach with 7 years of timing experience.">
 <style>
   :root{--navy:#164271;--navy-d:#0f3157;--orange:#ea6a2d;--orange-d:#cf5a22;
         --gray:#868686;--ink:#20303f;--bg:#f5f8fc;--card:#ffffff;--line:#e3e9f1}
@@ -99,10 +99,10 @@ LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
 
 <header class="hero"><div class="wrap">
   <img class="logo" src="/static/branding/xctimer.png" alt="XCTimer">
-  <div class="pill">Built for <b>junior high</b> cross country &amp; track</div>
-  <h1>Meet timing &amp; coach management, made for junior high.</h1>
+  <div class="pill">Built for <b>junior high &amp; middle school</b> cross country &amp; track</div>
+  <h1>Meet timing &amp; coach management, made for junior high &amp; middle school.</h1>
   <p class="sub">Rosters, live timing, field events, and instant results — everything a
-     jr-high XC or track meet needs, and nothing it doesn't.</p>
+     junior high or middle school XC or track meet needs, and nothing it doesn't.</p>
   <div class="cta">
     <a class="btn" href="/login">Sign in</a>
     <a class="btn ghost" href="#features">See what it does</a>
@@ -111,7 +111,7 @@ LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
 
 <section><div class="wrap split">
   <div>
-    <h2>Made for jr high — not a hand-me-down from high school.</h2>
+    <h2>Made for jr high &amp; middle school — not a hand-me-down from high school.</h2>
     <p class="lead">The big timing systems are built for high school and college programs, and
     they're priced and complicated to match. Coaches end up paying for enterprise features
     they'll never use and fighting menus on meet day. XCTimer does what a junior high meet
@@ -132,8 +132,8 @@ LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
   <h2>Everything meet day needs</h2>
   <p class="lead">From the roster to the results table — one tool for cross country and track &amp; field.</p>
   <div class="grid">
-    <div class="card"><div class="ic">📋</div><h3>Rosters &amp; bib stickers</h3>
-      <p>Import your team, auto-assign bibs, and print Avery bib stickers with a scannable code.</p></div>
+    <div class="card"><div class="ic">📋</div><h3>AI roster intake &amp; bib stickers</h3>
+      <p>Drop in a spreadsheet, PDF, or even a photo of a roster — AI reads and cleans up the names — then auto-assign bibs and print Avery stickers with a scannable code.</p></div>
     <div class="card"><div class="ic">⏱️</div><h3>Live timing from your phone</h3>
       <p>Tap finishers for cross country, time heats and lanes for track — right from a phone at the line.</p></div>
     <div class="card"><div class="ic">📏</div><h3>Field events in feet &amp; inches</h3>
@@ -144,6 +144,8 @@ LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
       <p>A public results page with a QR to share, team scoring by grade &amp; gender, and an Excel export.</p></div>
     <div class="card"><div class="ic">📱</div><h3>Meet-day made easy</h3>
       <p>A phone app for coaches and a no-login QR for helpers — everyone can pitch in without an account.</p></div>
+    <div class="card"><div class="ic">🤖</div><h3>AI athlete insights</h3>
+      <p>Just ask — an athlete's PRs and season progress, or a district record — and get an answer pulled straight from your own results.</p></div>
   </div>
 </div></section>
 
