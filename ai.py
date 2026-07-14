@@ -161,18 +161,22 @@ def vision_read_field(image_bytes, media_type="image/jpeg"):
 
 
 _HJ_SYS = (
-    "You read a photographed HIGH JUMP results sheet. Each row has a PRINTED bib number and "
-    "name, then a set of small boxes (one per bar height, where the official marked O/X/P for "
-    "clears and misses), and finally a wide 'BEST' box on the FAR RIGHT where the official "
-    "HANDWROTE the athlete's best height cleared in feet-inches (e.g. 4-08, 5-02; sometimes "
-    "5'2\"). Read the printed bib and, from the rightmost BEST box, the handwritten best height. "
-    "Ignore the O/X grid boxes. In the TOP-RIGHT corner a sheet code is printed next to a QR "
-    "like 'XCTSHEET E123' — read it exactly. "
+    "You read a photographed HIGH JUMP results sheet (usually landscape). The HEADER row prints "
+    "a series of bar HEIGHTS in feet-inches (e.g. 4-02, 4-04, 4-06 ... up to ~6-02), then a "
+    "final 'BEST' column on the far right. Each athlete row has a PRINTED bib and name, then a "
+    "handwritten mark in each height column:\n"
+    "  O = cleared that height. XO or XXO = missed then cleared (still CLEARED).\n"
+    "  X = a miss. XXX (or X then blanks) = three misses, failed out.\n"
+    "For EACH athlete, determine BEST = the HIGHEST printed column height whose mark contains an "
+    "'O' (i.e. the highest bar they cleared). Read the column heights from the header to know "
+    "each column's value. If the far-right BEST box has a height handwritten in it, use THAT "
+    "instead of computing. In the TOP-RIGHT corner (may appear rotated) a sheet code prints next "
+    "to a QR like 'XCTSHEET E123' — read it exactly. "
     'Return ONLY JSON, no prose: {"sheet_code": "<code exactly as printed, or null>", '
     '"rows": [{"bib": <int or null>, "name": "<string or null>", '
-    '"height": "<best height in feet-inches from the BEST box, or empty>", '
-    '"misses": <int or null>}]}. Skip rows with no best height written. Do NOT convert, round, '
-    "or invent a height; copy exactly what is written in the BEST box."
+    '"height": "<best CLEARED height in feet-inches (a header value like 5-02), or empty if the '
+    'athlete cleared nothing>"}]}. Copy the height exactly as the header prints it. Skip rows '
+    "with no bib and no cleared height. Do NOT round or invent heights."
 )
 
 

@@ -67,7 +67,7 @@ def bib_stickers_pdf(school_name, athletes, *, template="5160", qr_prefix="", lo
 _HOWTO = {
     "track": "HOW TO RECORD: write each athlete's finish TIME (e.g. 1:02.34), then photograph this sheet on the Scan tab.",
     "field": "HOW TO RECORD: write each of the 3 attempts (F = foul); the best legal mark scores. Then scan this sheet.",
-    "hj": "HOW TO RECORD: mark each bar (O=clear, X=miss, P=pass); write the BEST height cleared in the last box. Then scan.",
+    "hj": "HOW TO RECORD: mark each bar — O=clear, X=miss (XO/XXO), XXX=out. Highest bar cleared scores (BEST box optional). Then scan.",
 }
 
 
