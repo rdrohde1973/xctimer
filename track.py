@@ -2013,8 +2013,8 @@ function render(){{
     let opts='<option value="">— pick —</option>';
     ENTS.forEach(function(e){{
       const mine=t.entry_id==e.id, used=(taken[e.id]&&taken[e.id]!=t.id);
-      opts+='<option value="'+e.id+'"'+(mine?' selected':'')+(used?' disabled':'')
-        +'>'+esc2(e.label)+(used?'  \\u2713 taken':'')+'</option>';
+      if(used) return;                       // already assigned elsewhere -> drop from this picker
+      opts+='<option value="'+e.id+'"'+(mine?' selected':'')+'>'+esc2(e.label)+'</option>';
     }});
     h+='<tr><td>'+(i+1)+'</td><td style="font-variant-numeric:tabular-nums">'+fmt(t.elapsed)+'</td>'
       +'<td><select onfocus="PICKING=true" onblur="setTimeout(function(){{PICKING=false}},350)" onchange="assign('+t.id+',this.value)">'+opts+'</select></td>'
