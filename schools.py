@@ -541,6 +541,20 @@ async function commitImport(){{
   catch(e){{ alert(e.message); }}
 }}
 </script>
+
+<div class="card" style="border:1px solid #b5451f">
+<h2>🧹 End of season — clear roster</h2>
+<p class="muted">When the season's over, permanently delete this school's athletes and all of
+their personal details — contact info, parent &amp; emergency contacts, date of birth,
+physical dates, and signed waivers. <b>Meet results and times are kept</b> for records and
+history. This can't be undone, so export anything you want to keep first.</p>
+<form method="post" action="/schools/{sid}/end-season"
+  onsubmit="return confirm('Delete ALL athletes and their personal data for this school? Results are kept. This CANNOT be undone.')">
+  <label>Type <b>DELETE</b> to confirm</label>
+  <input name="confirm" placeholder="DELETE" autocomplete="off" autocapitalize="characters"
+    style="max-width:170px">
+  <button class="danger" type="submit" style="margin-top:.6rem">Clear roster &amp; personal data</button>
+</form></div>
 """
     if g.principal.is_admin and not ro:
         body += f"""
@@ -690,6 +704,33 @@ def restore_athlete(aid):
     conn.commit()
     conn.close()
     return redirect(f"/schools/{a['school_id']}?show=grad")
+
+
+@bp.post("/schools/<int:sid>/end-season")
+@login_required
+def end_season(sid):
+    """End-of-season cleanup (data minimization): permanently delete this school's
+    athletes and their personal data. Meet results/times are kept — they carry name
+    snapshots, so records and history survive. Irreversible; requires typed confirm."""
+    s = _load_school_or_403(sid)
+    if g.principal.is_demo:
+        abort(403)
+    if (request.form.get("confirm") or "").strip().upper() != "DELETE":
+        return redirect(f"/schools/{sid}?err=Type+DELETE+to+confirm+the+roster+cleanup")
+    conn = db.connect()
+    ids = [r[0] for r in conn.execute(
+        "SELECT id FROM athletes WHERE school_id=?", (sid,)).fetchall()]
+    n = len(ids)
+    if ids:
+        qm = ",".join("?" * len(ids))
+        # waiver records (PII) reference athletes -> delete first
+        conn.execute(f"DELETE FROM athlete_waivers WHERE athlete_id IN ({qm})", ids)
+        # detach meet entries from the athlete so results (with snapshot names) survive
+        conn.execute(f"UPDATE entries SET runner_id=NULL WHERE runner_id IN ({qm})", ids)
+        conn.execute(f"DELETE FROM athletes WHERE id IN ({qm})", ids)
+    conn.commit()
+    conn.close()
+    return redirect(f"/schools/{sid}?msg=Cleared+{n}+athlete(s)+and+their+personal+data.+Results+kept.")
 
 
 @bp.post("/athletes/<int:aid>/delete")
