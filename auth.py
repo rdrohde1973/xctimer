@@ -333,7 +333,15 @@ def send_email(to, subject, html):
 
 
 def _public_url():
-    return os.environ.get("XC_PUBLIC_URL", request.host_url.rstrip("/"))
+    # Lazy fallback: request.host_url must not be evaluated eagerly (as a .get()
+    # default it would raise outside a request context, e.g. in admin scripts).
+    url = os.environ.get("XC_PUBLIC_URL")
+    if url:
+        return url
+    try:
+        return request.host_url.rstrip("/")
+    except RuntimeError:
+        return "https://xctimer.com"
 
 
 def send_setup_email(email, token, *, reset=False):
