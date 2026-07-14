@@ -436,6 +436,45 @@ def meet_detail(mid):
                  active_district=active_district_id(), districts=_districts_for_switcher())
 
 
+@bp.get("/results")
+def public_directory():
+    """Public, no-login directory of meets — parents can find results without a QR."""
+    conn = db.connect()
+    rows = conn.execute(
+        "SELECT m.name, m.date, m.sport, m.public_token, d.name AS dname "
+        "FROM meets m JOIN districts d ON d.id=m.district_id "
+        "WHERE m.public_token IS NOT NULL ORDER BY d.name, m.date DESC, m.id DESC").fetchall()
+    conn.close()
+    groups, order = {}, []
+    for r in rows:
+        if r["dname"] not in groups:
+            groups[r["dname"]] = []
+            order.append(r["dname"])
+        icon = "🏃" if r["sport"] == "xc" else "🎽"
+        groups[r["dname"]].append(
+            f'<a class="mrow" href="/r/{r["public_token"]}"><span>{icon} {escape(r["name"])}</span>'
+            f'<span class="md">{escape(r["date"] or "")}</span></a>')
+    secs = "".join(f'<div class="sec"><h2>{escape(d)}</h2>{"".join(groups[d])}</div>'
+                   for d in order) or '<p class="mut">No meets published yet.</p>'
+    return f"""<!doctype html><html lang=en><head><meta charset=utf-8>
+<meta name=viewport content="width=device-width, initial-scale=1">
+<title>Meet results · XCTimer</title><style>
+*{{box-sizing:border-box}}body{{margin:0;font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+background:#eef1f5;color:#1b2b3a}}
+.top{{background:#12385f;color:#fff;padding:1rem 1.2rem;font-size:1.3rem;font-weight:800}}
+main{{max-width:640px;margin:0 auto;padding:1rem 1rem 3rem}}
+.sec{{background:#fff;border:1px solid #d9e0e8;border-radius:12px;overflow:hidden;margin:0 0 1.1rem}}
+.sec h2{{background:#12385f;color:#fff;margin:0;padding:.6rem 1rem;font-size:1rem}}
+.mrow{{display:flex;justify-content:space-between;gap:1rem;padding:.7rem 1rem;color:#1b2b3a;
+text-decoration:none;border-top:1px solid #edf1f5;font-weight:600}}
+.mrow:hover{{background:#f4f7fa}}
+.md{{color:#7c8b9a;font-weight:400;white-space:nowrap}}
+.mut{{color:#7c8b9a;text-align:center;padding:2rem}}
+</style></head><body>
+<div class="top">XCTimer — Meet results</div>
+<main>{secs}</main></body></html>"""
+
+
 @bp.post("/meets/<int:mid>/edit")
 @login_required
 def edit_meet(mid):
@@ -505,15 +544,17 @@ def _attending_groups(mid):
     return groups
 
 
-def _sticker_groups(mid, with_events, fill_to=0):
+def _sticker_groups(mid, with_events, fill_to=0, only_sid=None):
     """[(school_name, logo_path, [athlete dicts])]. For track, attach each
     athlete's events (name + heat/lane) and include only entered athletes.
     fill_to = labels per sheet: pad each school's last sheet with blank stickers
-    on the next open bibs (for last-minute adds)."""
+    on the next open bibs (for last-minute adds). only_sid = one school's packet."""
     conn = db.connect()
     schools = conn.execute(
         "SELECT s.id, s.name, s.logo_path, s.bib_start, s.bib_end FROM schools s "
         "JOIN meet_schools ms ON ms.school_id=s.id WHERE ms.meet_id=? ORDER BY s.name", (mid,)).fetchall()
+    if only_sid is not None:
+        schools = [s for s in schools if s["id"] == only_sid]
     groups = []
     for s in schools:
         ath = conn.execute("SELECT id, bib, name, grade, gender FROM athletes WHERE school_id=? "
@@ -581,6 +622,45 @@ def meet_biblist(mid):
     m = load_meet(mid)
     if not can_view_meet(m):
         abort(403)
-    pdf = pdfs.meet_biblist_pdf(f'{m["name"]} — bib lists', _attending_groups(mid))
+    if m["sport"] == "track":  # include each athlete's events — the day-of checklist
+        groups = [(nm, arr) for nm, _logo, arr in _sticker_groups(mid, with_events=True)]
+    else:
+        groups = _attending_groups(mid)
+    pdf = pdfs.meet_biblist_pdf(f'{m["name"]} — bib lists', groups)
     return Response(pdf, mimetype="application/pdf",
                     headers={"Content-Disposition": 'inline; filename="meet-biblist.pdf"'})
+
+
+@bp.get("/meets/<int:mid>/school/<int:sid>/stickers.pdf")
+@login_required
+def school_meet_stickers(mid, sid):
+    """One school's meet packet: just their stickers (with events), padded with blanks."""
+    m = load_meet(mid)
+    if not can_view_meet(m):
+        abort(403)
+    template = request.args.get("template", "5160")
+    groups = _sticker_groups(mid, with_events=(m["sport"] == "track"),
+                             fill_to=pdfs.per_page(template), only_sid=sid)
+    pdf = pdfs.meet_stickers_pdf(groups, template=template, qr_prefix="")
+    return Response(pdf, mimetype="application/pdf",
+                    headers={"Content-Disposition": 'inline; filename="school-stickers.pdf"'})
+
+
+@bp.get("/meets/<int:mid>/school/<int:sid>/biblist.pdf")
+@login_required
+def school_meet_biblist(mid, sid):
+    m = load_meet(mid)
+    if not can_view_meet(m):
+        abort(403)
+    if m["sport"] == "track":
+        groups = [(nm, arr) for nm, _logo, arr in
+                  _sticker_groups(mid, with_events=True, only_sid=sid)]
+    else:
+        groups = [(nm, arr) for nm, arr in _attending_groups(mid)]
+        conn = db.connect()
+        srow = conn.execute("SELECT name FROM schools WHERE id=?", (sid,)).fetchone()
+        conn.close()
+        groups = [g for g in groups if srow and g[0] == srow["name"]]
+    pdf = pdfs.meet_biblist_pdf(f'{m["name"]} — bib list', groups)
+    return Response(pdf, mimetype="application/pdf",
+                    headers={"Content-Disposition": 'inline; filename="school-biblist.pdf"'})

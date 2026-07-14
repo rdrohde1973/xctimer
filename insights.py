@@ -424,23 +424,33 @@ def insights_page():
 <p class="sub">Ask about {escape(scope_lbl)} — rosters, meet results, PRs. Answers use your data only.</p>
 <div class="card">
   <div id="log" style="min-height:60px"></div>
+  <div id="chips" style="display:flex;flex-wrap:wrap;gap:.4rem;margin-top:.5rem"></div>
   <div class="row" style="margin-top:.6rem">
     <div style="flex:1"><input id="q" placeholder="e.g. Who are my fastest boys this season?"
       onkeydown="if(event.key==='Enter')ask()"></div>
     <div style="display:flex;align-items:flex-end"><button onclick="ask()">Ask</button></div>
   </div>
 </div>
-<div class="card muted">Examples: “Who's my fastest 200m runner?” · “Top 5 girls in the 1600m” ·
-“What's Grayson Young's 200m time?” · “Which school has the best shot put?” ·
-“What's the district record for the 100m?”</div>
+<style>.aichip{{background:var(--panel2);border:1px solid var(--line);color:var(--fg);
+  border-radius:999px;padding:.3rem .8rem;font-size:.85rem;cursor:pointer}}
+.aichip:hover{{border-color:var(--acc)}}</style>
 <script>
+const SUGGEST=["Who is my fastest 200m runner?","Top 5 girls in the 1600m",
+  "What's the district record for the 100m?","Which school has the best shot put?",
+  "Who has the best high jump this season?"];
+document.getElementById('chips').innerHTML =
+  SUGGEST.map(s=>'<button class="aichip" onclick="askQ(this.textContent)">'+esc(s)+'</button>').join('');
+let HIST=[];
+function askQ(q){{ document.getElementById('q').value=q; ask(); }}
 async function ask(){{
   const q=document.getElementById('q').value.trim(); if(!q)return;
   const log=document.getElementById('log');
   log.innerHTML+='<p><b>You:</b> '+esc(q)+'</p><p class="muted" id="pend">Thinking…</p>';
   document.getElementById('q').value='';
-  try{{ const j=await jpost('/api/insights/ask',{{question:q}});
-    document.getElementById('pend').outerHTML='<p><b>Insights:</b> '+esc(j.answer).replace(/\\n/g,'<br>')+'</p>'; }}
+  try{{ const j=await jpost('/api/insights/ask',{{question:q,history:HIST}});
+    document.getElementById('pend').outerHTML='<p><b>Insights:</b> '+esc(j.answer).replace(/\\n/g,'<br>')+'</p>';
+    HIST.push({{role:'user',content:q}},{{role:'assistant',content:j.answer}});
+    HIST=HIST.slice(-8); }}
   catch(e){{ document.getElementById('pend').outerHTML='<p class="msg err">'+esc(e.message)+'</p>'; }}
   log.scrollTop=log.scrollHeight;
 }}
@@ -458,9 +468,11 @@ def insights_ask():
     q = (request.get_json(silent=True) or {}).get("question", "").strip()
     if not q:
         return jsonify(error="Ask a question"), 400
+    history = (request.get_json(silent=True) or {}).get("history") or []
     try:
         digest = _digest(p, q)
-        answer = ai.claude_chat(_SYS, f"DATA DIGEST:\n{digest}\n\nQUESTION: {q}", max_tokens=1000)
+        answer = ai.claude_chat(_SYS, f"DATA DIGEST:\n{digest}\n\nQUESTION: {q}",
+                                max_tokens=1000, history=history)
     except Exception as e:  # noqa: BLE001
         return jsonify(error=f"Insights unavailable: {e}"), 500
     return jsonify(answer=answer)

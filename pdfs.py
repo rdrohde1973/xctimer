@@ -449,6 +449,14 @@ def meet_biblist_pdf(title, groups):
             bib = "" if a["bib"] is None else str(a["bib"])
             gr = "" if a["grade"] is None else f"  gr {a['grade']}"
             c.drawString(left + 0.2 * inch, y, f"{bib:>6}  {(a['name'] or '')[:38]}{gr}  {a['gender'] or ''}")
+            evs = a.get("events") if isinstance(a, dict) else None
+            if evs:  # the coach's day-of checklist: what each athlete is entered in
+                c.setFont("Helvetica", 8)
+                c.setFillGray(0.4)
+                c.drawString(left + 1.15 * inch, y - 0.15 * inch, ("; ".join(evs))[:110])
+                c.setFillGray(0)
+                c.setFont("Helvetica", 10)
+                y -= 0.16 * inch
             y -= 0.22 * inch
         y -= 0.2 * inch
     c.showPage()

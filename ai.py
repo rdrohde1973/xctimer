@@ -23,13 +23,19 @@ def _client():
     return anthropic.Anthropic(api_key=key)
 
 
-def claude_chat(system, user, *, max_tokens=4000, model=None):
-    """Single-turn helper. Returns the text of the first content block."""
+def claude_chat(system, user, *, max_tokens=4000, model=None, history=None):
+    """Chat helper. `history` = optional prior [{role, content}] turns so follow-up
+    questions ("what about the girls?") keep their context."""
+    msgs = []
+    for h in (history or [])[-8:]:
+        if isinstance(h, dict) and h.get("role") in ("user", "assistant") and h.get("content"):
+            msgs.append({"role": h["role"], "content": str(h["content"])[:4000]})
+    msgs.append({"role": "user", "content": user})
     msg = _client().messages.create(
         model=model or CLAUDE_MODEL,
         max_tokens=max_tokens,
         system=system,
-        messages=[{"role": "user", "content": user}],
+        messages=msgs,
     )
     return "".join(b.text for b in msg.content if getattr(b, "type", None) == "text")
 

@@ -504,7 +504,8 @@ normalizes names, then you confirm before anything is saved.</p>
   </div>
   <div>
     <label>Google Sheet share link</label>
-    <input id="sheeturl" placeholder="https://docs.google.com/spreadsheets/d/...">
+    <input id="sheeturl" placeholder="https://docs.google.com/spreadsheets/d/..."
+      value="{escape(s['sheet_url'] or '')}">
     <button type="button" onclick="sheetImport()" style="margin-top:.6rem">Pull sheet</button>
   </div>
 </div>
@@ -907,6 +908,14 @@ def athlete_edit(aid):
     conn = db.connect()
     conn.execute("UPDATE athletes SET name=?, grade=?, gender=? WHERE id=?",
                  (name, grade, gender, aid))
+    # Resync recorded snapshots so a post-race typo fix reaches results/exports:
+    # track results link by entries.runner_id; XC finishers match bib + school.
+    conn.execute("UPDATE results SET snap_name=? WHERE entry_id IN "
+                 "(SELECT id FROM entries WHERE runner_id=?)", (name, aid))
+    if a["bib"] is not None:
+        conn.execute(
+            "UPDATE finishers SET snap_name=?, snap_grade=?, snap_gender=? "
+            "WHERE bib=? AND snap_school=?", (name, grade, gender, a["bib"], s["name"]))
     conn.commit()
     conn.close()
     return jsonify(ok=True)
@@ -960,7 +969,13 @@ def import_sheet(sid):
         text = ai.fetch_google_sheet_text(url)
         athletes = ai.normalize_roster(text)
     except Exception as e:  # noqa: BLE001
-        return jsonify(error=f"Could not read sheet: {e}"), 400
+        return jsonify(error=f"Could not read sheet: {e}. Make sure the sheet is shared "
+                             "as 'Anyone with the link — Viewer'."), 400
+    # Remember the sheet per school so re-syncs are one click next time.
+    conn = db.connect()
+    conn.execute("UPDATE schools SET sheet_url=? WHERE id=?", (url.strip(), sid))
+    conn.commit()
+    conn.close()
     return jsonify(athletes=athletes)
 
 
@@ -1058,16 +1073,10 @@ def bibcheck():
             row = conn.execute(
                 "SELECT a.*, s.name AS sname FROM athletes a JOIN schools s ON s.id=a.school_id "
                 "WHERE a.bib=?", (int(bib),)).fetchone()
-        elif p.role == "coach":
-            ids = p.school_ids()
-            if ids:
-                q = ",".join("?" * len(ids))
-                row = conn.execute(
-                    f"SELECT a.*, s.name AS sname FROM athletes a JOIN schools s ON s.id=a.school_id "
-                    f"WHERE a.bib=? AND a.school_id IN ({q})", (int(bib), *ids)).fetchone()
-            else:
-                row = None
         else:
+            # District-wide for everyone (incl. coaches): the host coach at the timing
+            # tent needs to verify VISITING schools' stickers, not just their own.
+            did = did if did is not None else p.district_id
             row = conn.execute(
                 "SELECT a.*, s.name AS sname FROM athletes a JOIN schools s ON s.id=a.school_id "
                 "WHERE a.bib=? AND s.district_id=?", (int(bib), did)).fetchone()

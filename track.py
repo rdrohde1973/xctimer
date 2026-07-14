@@ -678,6 +678,11 @@ def assign_page(mid):
 <h1>{escape(m['name'])}</h1>{_track_tabs(mid, 'assign')}
 <div class="card" style="display:flex;flex-wrap:wrap;gap:.45rem;align-items:center">
   <b style="margin-right:.2rem">School:</b> {picker}</div>
+<div class="card" style="display:flex;flex-wrap:wrap;gap:.45rem;align-items:center">
+  <b style="margin-right:.2rem">🖨 {escape(school['name'])} packet:</b>
+  <a class="btn ghost" href="/meets/{mid}/school/{sid}/stickers.pdf?template=5160">Stickers 5160</a>
+  <a class="btn ghost" href="/meets/{mid}/school/{sid}/stickers.pdf?template=5163">Stickers 5163</a>
+  <a class="btn ghost" href="/meets/{mid}/school/{sid}/biblist.pdf">Bib list + events</a></div>
 <form method="post" action="/meets/{mid}/assign?school={sid}">
   <div class="card"><h2>{escape(school['name'])} — assign athletes</h2>{filter_bar}{ath_tbl}</div>
   {relay_block}
@@ -868,6 +873,24 @@ def _draw(conn, me, m, mode, entries=None, laned_override=None):
         for idx, e in enumerate(grp):
             conn.execute("UPDATE entries SET heat=?, lane=? WHERE id=?",
                          (heat_no, lanes[idx], e["id"]))
+
+
+@bp.post("/meet-events/<int:meid>/clear-draw")
+@login_required
+def clear_draw(meid):
+    """Undo the heat/lane draw (entries stay) — for events re-declared day-of."""
+    me = load_meet_event(meid)
+    m = load_meet(me["meet_id"])
+    if not can_setup_meet(m):
+        abort(403)
+    conn = db.connect()
+    meids = _combine_meids(conn, me)
+    qm = ",".join("?" * len(meids))
+    conn.execute(f"UPDATE entries SET heat=NULL, lane=NULL WHERE meet_event_id IN ({qm})",
+                 tuple(meids))
+    conn.commit()
+    conn.close()
+    return redirect(f"/meet-events/{meid}")
 
 
 @bp.post("/meet-events/<int:meid>/seed")
@@ -1575,6 +1598,9 @@ def event_page(meid):
     <input type="hidden" name="mode" value="seeded"><button type="submit">Seed by season best</button></form>
   <form class="inline" method="post" action="/meet-events/{meid}/seed">
     <input type="hidden" name="mode" value="random"><button class="ghost" type="submit">Random draw</button></form>
+  <form class="inline" method="post" action="/meet-events/{meid}/clear-draw"
+    onsubmit="return confirm('Clear heats/lanes for this event (entries stay)?')">
+    <button class="ghost" type="submit">Clear draw</button></form>
   <a class="btn ghost" href="/meet-events/{meid}/heatsheet.pdf">Heat sheet (PDF)</a>
 </div>"""
     scan_part = ""
