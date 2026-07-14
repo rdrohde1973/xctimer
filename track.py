@@ -2476,6 +2476,36 @@ def _fmt_pts(x):
     return str(int(x)) if float(x).is_integer() else f"{x:.1f}"
 
 
+def public_live(mid, name_mode=None):
+    """Data for the public 'live now' panel: track heats whose clock is currently
+    running, with the finishers tapped so far. Read-only; polled by the results page."""
+    conn = db.connect()
+    rows = conn.execute(
+        "SELECT tc.meet_event_id AS meid, tc.heat AS heat, tc.start_time "
+        "FROM track_clocks tc JOIN meet_events me ON me.id=tc.meet_event_id "
+        "WHERE me.meet_id=? AND tc.start_time IS NOT NULL AND tc.stop_time IS NULL "
+        "ORDER BY tc.start_time", (mid,)).fetchall()
+    heats = []
+    for r in rows:
+        me = load_meet_event(r["meid"])
+        label = _div_grade(me["gender"], me["grade"])
+        name = f'{me["ename"]} · {label}' + (f' · Heat {r["heat"]}' if r["heat"] else "")
+        taps = conn.execute("SELECT * FROM track_taps WHERE meet_event_id=? AND heat=? ORDER BY seq",
+                            (r["meid"], r["heat"])).fetchall()
+        fin = []
+        for i, t in enumerate(taps):
+            who = school = None
+            if t["entry_id"]:
+                e = conn.execute("SELECT * FROM entries WHERE id=?", (t["entry_id"],)).fetchone()
+                if e:
+                    nm, _bib, sch = _entry_label(conn, e)
+                    who, school = demo.display(nm, name_mode), sch
+            fin.append({"n": i + 1, "elapsed": t["elapsed_seconds"], "who": who, "school": school})
+        heats.append({"name": name, "start_ms": _t_ms(_t_parse(r["start_time"])), "finishers": fin})
+    conn.close()
+    return {"server_ms": _t_ms(_t_now()), "heats": heats}
+
+
 def results_inner(mid, name_mode=None):
     data = build_results(mid)
     if not data["events"]:

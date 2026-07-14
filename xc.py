@@ -5,6 +5,7 @@ snapshotting, DQ, reorder (times stay in slots), combined results across races b
 gender, MileSplit-style team scoring, xlsx export, and a public results page.
 """
 import io
+import json
 from collections import defaultdict
 from datetime import datetime, timezone
 
@@ -1056,19 +1057,85 @@ def public_results(token):
 main{{max-width:960px;margin:0 auto;padding:1.4rem 1rem 4rem}}
 .pubhdr{{display:flex;align-items:center;gap:.7rem;padding:1rem;border-bottom:1px solid var(--line)}}
 .pubhdr .hostlogo{{height:48px;width:auto;max-width:80px;object-fit:contain;background:#fff;border-radius:8px;padding:4px}}
+.livecard{{border:2px solid #e8622a;box-shadow:0 0 0 4px rgba(232,98,42,.12)}}
+.livehd{{font-weight:800;font-size:1.05rem;color:#e8622a;display:flex;align-items:center;gap:.5rem;margin-bottom:.2rem}}
+.livedot{{width:.7rem;height:.7rem;border-radius:50%;background:#e8622a;animation:lblink 1s infinite}}
+@keyframes lblink{{50%{{opacity:.2}}}}
+.liveclock{{font-size:2.6rem;font-weight:800;font-variant-numeric:tabular-nums;text-align:center;margin:.1rem 0 .6rem;letter-spacing:.5px}}
+.livescroll{{max-height:300px;overflow-y:auto;border-top:1px solid var(--line)}}
+.livescroll table{{width:100%}}
+.livescroll td{{padding:.35rem .4rem}}
 </style></head><body>
 <div class="pubhdr">{_host_logo_tag(m)}<span style="font-weight:800;font-size:1.2rem">{BRAND_HTML}</span></div>
 <main><h1>{escape(m['name'])}</h1>
 <p class="sub">🎽 Track · {escape(m['date'] or '')}</p>
+<div id="livebox"></div>
 {inner}</main>
 <script>
-// Live scoreboard: refresh while visible — but never yank an active search/filter.
+const TOKEN={json.dumps(token)};
+let LOFFSET=0;
+function lfmt(sec){{ if(sec==null)return''; sec=Math.max(0,sec);
+  const h=Math.floor(sec/3600), m=Math.floor((sec%3600)/60), s=sec-3600*h-60*m;
+  return h+':'+String(m).padStart(2,'0')+':'+s.toFixed(1).padStart(4,'0'); }}
+function lesc(s){{ return String(s==null?'':s).replace(/[&<>"]/g,c=>({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}}[c])); }}
+async function pollLive(){{
+  try{{
+    const r=await fetch('/r/'+TOKEN+'/live'); const d=await r.json();
+    LOFFSET=d.server_ms-Date.now();
+    window.__LIVE_ACTIVE=!!(d.heats&&d.heats.length);
+    renderLive(d.heats||[]);
+  }}catch(e){{}}
+}}
+function renderLive(heats){{
+  const box=document.getElementById('livebox');
+  if(!heats.length){{ box.innerHTML=''; return; }}
+  let h='';
+  heats.forEach(function(ht){{
+    let rows='';
+    ht.finishers.forEach(function(f){{
+      rows+='<tr><td style="width:2.4rem;color:#e8622a;font-weight:700">'+f.n+'</td>'
+        +'<td style="font-variant-numeric:tabular-nums;width:6rem">'+lfmt(f.elapsed)+'</td>'
+        +'<td>'+(f.who?lesc(f.who)+(f.school?' <span class=muted>· '+lesc(f.school)+'</span>':'')
+                     :'<span class=muted>… crossing</span>')+'</td></tr>';
+    }});
+    if(!rows) rows='<tr><td class="muted">Waiting for the first finisher…</td></tr>';
+    h+='<div class="card livecard">'
+      +'<div class="livehd"><span class="livedot"></span> LIVE · '+lesc(ht.name)+'</div>'
+      +'<div class="liveclock" data-start="'+ht.start_ms+'">0:00:00.0</div>'
+      +'<div class="livescroll"><table>'+rows+'</table></div></div>';
+  }});
+  box.innerHTML=h;
+  document.querySelectorAll('.livescroll').forEach(function(s){{ s.scrollTop=s.scrollHeight; }});
+}}
+function tickLive(){{
+  const now=Date.now()+LOFFSET;
+  document.querySelectorAll('.liveclock').forEach(function(c){{
+    const st=parseInt(c.getAttribute('data-start'),10);
+    if(st) c.textContent=lfmt((now-st)/1000);
+  }});
+}}
+setInterval(tickLive,100);
+setInterval(pollLive,1500);
+pollLive();
+// Full-page refresh keeps the static results fresh — but pause it during a live race
+// (the live panel updates itself) and never yank an active search/filter.
 setInterval(function(){{
+  if(window.__LIVE_ACTIVE) return;
   const q=document.getElementById('rsearch'), g=document.getElementById('rgender');
   if(!document.hidden && (!q||!q.value) && (!g||!g.value)) location.reload();
 }}, 20000);
 </script></body></html>"""
     return _public_xc(m, mode)
+
+
+@bp.get("/r/<token>/live")
+def public_live_json(token):
+    """Live scoreboard feed for the public results page (currently-running track heats)."""
+    m = _meet_by_token(token)
+    if m["sport"] != "track":
+        return jsonify(server_ms=0, heats=[])
+    from . import track
+    return jsonify(track.public_live(m["id"], name_mode=_public_mask(m)))
 
 
 @bp.get("/r/<token>/results.xlsx")
