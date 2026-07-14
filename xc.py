@@ -1035,7 +1035,11 @@ function tab(n){{
     document.getElementById('v-'+k).style.display = k===n?'':'none';
     document.getElementById('t-'+k).className = 'tab'+(k===n?' on':'');
   }});
+  try{{ sessionStorage.setItem('xctab', n); }}catch(e){{}}
 }}
+try{{ const t=sessionStorage.getItem('xctab'); if(t) tab(t); }}catch(e){{}}
+// Live scoreboard: refresh every 20s while the page is visible (tab is remembered).
+setInterval(function(){{ if(!document.hidden) location.reload(); }}, 20000);
 </script>
 </body></html>"""
 
@@ -1057,7 +1061,14 @@ main{{max-width:960px;margin:0 auto;padding:1.4rem 1rem 4rem}}
 <div class="pubhdr">{_host_logo_tag(m)}<span style="font-weight:800;font-size:1.2rem">{BRAND_HTML}</span></div>
 <main><h1>{escape(m['name'])}</h1>
 <p class="sub">🎽 Track · {escape(m['date'] or '')}</p>
-{inner}</main></body></html>"""
+{inner}</main>
+<script>
+// Live scoreboard: refresh while visible — but never yank an active search/filter.
+setInterval(function(){{
+  const q=document.getElementById('rsearch'), g=document.getElementById('rgender');
+  if(!document.hidden && (!q||!q.value) && (!g||!g.value)) location.reload();
+}}, 20000);
+</script></body></html>"""
     return _public_xc(m, mode)
 
 

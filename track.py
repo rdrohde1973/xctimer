@@ -509,7 +509,8 @@ def add_entry(meid):
         used = conn.execute(
             "SELECT COUNT(*) FROM entries en JOIN meet_events me ON me.id=en.meet_event_id "
             "WHERE me.meet_id=? AND en.runner_id=?", (me["meet_id"], a["id"])).fetchone()[0]
-        if used >= event_limit(m):
+        # Meet directors approve day-of substitutions past the cap — allow an explicit override.
+        if used >= event_limit(m) and not request.form.get("force"):
             conn.close()
             return redirect(f"/meet-events/{meid}?err=limit")
         conn.execute("INSERT INTO entries (meet_event_id, runner_id, school_id) VALUES (?,?,?)",
@@ -883,6 +884,121 @@ def seed_event(meid):
     return redirect(f"/meet-events/{meid}")
 
 
+# ------------------------------- open pit console -------------------------------
+@bp.get("/meets/<int:mid>/pit")
+@login_required
+def pit_console(mid):
+    """Open-pit field entry: the pit official records ANY athlete by bib — the mark
+    is auto-filed into that athlete's own gender×grade division (created if needed).
+    This is how a real jr-high pit runs: whoever steps up, one console."""
+    m = load_meet(mid)
+    if not can_record_meet(m) or m["sport"] != "track":
+        abort(403)
+    conn = db.connect()
+    evs = conn.execute(
+        "SELECT DISTINCT e.id, e.name FROM events e JOIN meet_events me ON me.event_id=e.id "
+        "WHERE me.meet_id=? AND e.kind='field' AND e.name!='High Jump' ORDER BY e.sort",
+        (mid,)).fetchall()
+    conn.close()
+    opts = "".join(f'<option value="{e["id"]}">{escape(e["name"])}</option>' for e in evs)
+    if not opts:
+        opts = '<option value="">— no field events at this meet —</option>'
+    body = f"""
+<p class="muted"><a href="/meets/{mid}/meet-day">← Meet day</a></p>
+<h1>🏖 Open pit — {escape(m['name'])}</h1>
+<p class="sub">Record whoever steps up, by bib. The mark files into the athlete's own
+division automatically (Long Jump / Shot Put, feet-inches, F = foul).</p>
+<div class="card">
+  <div class="row" style="flex-wrap:wrap;gap:.6rem">
+    <div style="max-width:200px"><label>Event</label><select id="pev">{opts}</select></div>
+    <div style="max-width:120px"><label>Bib</label>
+      <input id="pbib" inputmode="numeric" autocomplete="off"
+        onkeydown="if(event.key==='Enter')document.getElementById('pa0').focus()"></div>
+    <div style="max-width:110px"><label>Att 1</label><input id="pa0" placeholder="12-06"></div>
+    <div style="max-width:110px"><label>Att 2</label><input id="pa1" placeholder="F"></div>
+    <div style="max-width:110px"><label>Att 3</label><input id="pa2"
+      onkeydown="if(event.key==='Enter')pitPost()"></div>
+    <div style="display:flex;align-items:flex-end"><button onclick="pitPost()">✔ Record</button></div>
+  </div>
+  <div id="pmsg" style="margin-top:.5rem"></div>
+</div>
+<div class="card"><h2>Recorded this session</h2><table id="plog">
+  <tr><th>Bib</th><th>Athlete</th><th>Division</th><th>Attempts</th><th>Best</th></tr></table></div>
+<script>
+async function pitPost(){{
+  const ev=document.getElementById('pev').value, bib=document.getElementById('pbib').value.trim();
+  const atts=[0,1,2].map(k=>document.getElementById('pa'+k).value.trim());
+  const box=document.getElementById('pmsg');
+  if(!ev){{box.innerHTML='<p class="msg err">No field events at this meet.</p>';return;}}
+  if(!bib){{box.innerHTML='<p class="msg err">Enter a bib.</p>';return;}}
+  if(!atts.some(a=>a)){{box.innerHTML='<p class="msg err">Enter at least one attempt.</p>';return;}}
+  try{{
+    const j=await jpost('/meets/{mid}/pit/post',{{event_id:ev,bib:bib,attempts:atts}});
+    box.innerHTML='<p class="msg ok">✔ '+esc(j.name)+' — '+esc(j.division)+' — best '+esc(j.best||'—')+'</p>';
+    const t=document.getElementById('plog');
+    t.insertAdjacentHTML('afterbegin','<tr><td>'+esc(bib)+'</td><td>'+esc(j.name)+'</td><td>'+esc(j.division)
+      +'</td><td>'+esc(atts.filter(a=>a).join(', '))+'</td><td><b>'+esc(j.best||'')+'</b></td></tr>');
+    ['pbib','pa0','pa1','pa2'].forEach(k=>document.getElementById(k).value='');
+    document.getElementById('pbib').focus();
+  }}catch(e){{ box.innerHTML='<p class="msg err">'+esc(e.message)+'</p>'; }}
+}}
+</script>"""
+    return shell(g.principal, body, active="meets")
+
+
+@bp.post("/meets/<int:mid>/pit/post")
+@login_required
+def pit_post(mid):
+    m = load_meet(mid)
+    if not can_record_meet(m) or m["sport"] != "track":
+        abort(403)
+    d = request.get_json(silent=True) or {}
+    try:
+        event_id, bib = int(d.get("event_id")), int(str(d.get("bib")).strip())
+    except (TypeError, ValueError):
+        return jsonify(error="Pick an event and enter a bib number"), 400
+    atts = [str(a or "").strip() for a in (d.get("attempts") or [])][:3]
+    atts += [""] * (3 - len(atts))
+    legal = [v for v in (_parse_ht(a) for a in atts) if v is not None]
+    if not any(atts):
+        return jsonify(error="Enter at least one attempt"), 400
+    conn = db.connect()
+    a = conn.execute(
+        "SELECT a.*, s.name AS sname FROM athletes a JOIN schools s ON s.id=a.school_id "
+        "JOIN meet_schools ms ON ms.school_id=s.id WHERE ms.meet_id=? AND a.bib=? AND a.active=1",
+        (mid, bib)).fetchone()
+    if not a:
+        conn.close()
+        return jsonify(error=f"No athlete with bib {bib} at this meet"), 400
+    # The athlete's own division event — created on the fly if it wasn't set up.
+    me = conn.execute(
+        "SELECT me.id FROM meet_events me WHERE me.meet_id=? AND me.event_id=? "
+        "AND me.gender=? AND me.grade=?", (mid, event_id, a["gender"] or "", a["grade"])).fetchone()
+    if me:
+        meid = me["id"]
+    else:
+        meid = conn.execute("INSERT INTO meet_events (meet_id, event_id, gender, grade) "
+                            "VALUES (?,?,?,?)",
+                            (mid, event_id, a["gender"] or "", a["grade"])).lastrowid
+    en = conn.execute("SELECT id FROM entries WHERE meet_event_id=? AND runner_id=?",
+                      (meid, a["id"])).fetchone()
+    eid = en["id"] if en else conn.execute(
+        "INSERT INTO entries (meet_event_id, runner_id, school_id) VALUES (?,?,?)",
+        (meid, a["id"], a["school_id"])).lastrowid
+    best = max(legal) if legal else None
+    conn.execute("DELETE FROM results WHERE entry_id=?", (eid,))
+    conn.execute("INSERT INTO results (entry_id, mark_metric, attempts_json, dq, snap_name, "
+                 "snap_bib, snap_school) VALUES (?,?,?,0,?,?,?)",
+                 (eid, best, json.dumps(atts), a["name"], bib, a["sname"]))
+    _recompute_places(conn, load_meet_event(meid))
+    conn.commit()
+    conn.close()
+    gword = {"M": "Boys", "F": "Girls"}.get(a["gender"], "Open")
+    division = f"{gword}" + (f" {a['grade']}th" if a["grade"] else "")
+    return jsonify(ok=True, name=a["name"], division=division,
+                   best=_fmt_ht(best) if best is not None else None)
+
+
 @bp.get("/meets/<int:mid>/meet-day")
 @login_required
 def meet_day_page(mid):
@@ -986,8 +1102,13 @@ def meet_day_page(mid):
               f'<tbody id="evbody">{"".join(rows)}</tbody></table>{ev_js}</div>'
               if mes else '<div class="card muted">No events yet.</div>')
 
+    pit = (f'<div class="card"><b>🏖 Field pits:</b> '
+           f'<a class="btn" href="/meets/{mid}/pit">Open-pit console</a> '
+           f'<span class="muted">— record any athlete by bib at the LJ/SP pit; marks file '
+           f'into their own division automatically.</span></div>'
+           if can_record_meet(m) else "")
     body = (f'<p class="muted"><a href="/meets">← Meets</a></p><h1>{escape(m["name"])}</h1>'
-            f'{_track_tabs(mid, "meetday")}{draw}{packet}{ev_tbl}{combine}')
+            f'{_track_tabs(mid, "meetday")}{pit}{draw}{packet}{ev_tbl}{combine}')
     return shell(g.principal, body, active="meets")
 
 
@@ -1436,10 +1557,12 @@ def event_page(meid):
         else:
             add = f"""
 <div class="card"><h2>Add athlete</h2>
-<form method="post" action="/meet-events/{meid}/entries" class="row">
+<form method="post" action="/meet-events/{meid}/entries" class="row" style="flex-wrap:wrap">
   <div style="max-width:180px"><label>Bib number</label>
     <input name="bib" type="number" inputmode="numeric" autofocus></div>
   <div style="display:flex;align-items:flex-end"><button type="submit">Add</button></div>
+  <label style="display:flex;gap:.4rem;align-items:center;font-size:.9rem;margin-top:1.4rem">
+    <input type="checkbox" name="force" style="width:auto"> Meet-day sub — override event limit</label>
 </form>
 <p class="muted">Enter the bib to add that athlete ({div}) to this event.</p></div>"""
 
@@ -1477,37 +1600,41 @@ async function scan(){{
   if(!r.ok){{document.getElementById('scanout').innerHTML='<p class="msg err">'+esc(j.error||'Failed')+'</p>';return;}}
   if(!j.marks||!j.marks.length){{document.getElementById('scanout').innerHTML='<p class="msg err">No marks read.</p>';return;}}
   window.SCANFIELD=!!j.field; window.SCANHJ=!!j.hj;
-  let h='<p class="muted">Review &amp; edit, then post. Matches to athletes by bib.</p><table>';
+  let h='<p class="muted">Review &amp; edit, then post. Matches to athletes by bib; unknown bibs at this meet are entered automatically.</p><table>';
+  const dqtd=i=>'<td><input type="checkbox" id="sd'+i+'" style="width:auto"></td>';
   if(SCANHJ){{
-    h+='<tr><th>Bib</th><th>Best height</th><th>Misses</th></tr>';
+    h+='<tr><th>Bib</th><th>Best height</th><th>Misses</th><th>DQ</th></tr>';
     j.marks.forEach((m,i)=>{{ h+='<tr><td><input id="sb'+i+'" value="'+esc(m.bib==null?'':m.bib)+'" style="width:64px"></td>'
       +'<td><input id="sh'+i+'" value="'+esc(m.height==null?'':m.height)+'" placeholder="4-08" style="width:100px"></td>'
-      +'<td><input id="sx'+i+'" value="'+esc(m.misses==null?'':m.misses)+'" style="width:56px"></td></tr>'; }});
+      +'<td><input id="sx'+i+'" value="'+esc(m.misses==null?'':m.misses)+'" style="width:56px"></td>'+dqtd(i)+'</tr>'; }});
   }} else if(SCANFIELD){{
-    h+='<tr><th>Bib</th><th>A1</th><th>A2</th><th>A3</th></tr>';
+    h+='<tr><th>Bib</th><th>A1</th><th>A2</th><th>A3</th><th>DQ</th></tr>';
     j.marks.forEach((m,i)=>{{ const a=m.attempts||['','',''];
       h+='<tr><td><input id="sb'+i+'" value="'+esc(m.bib==null?'':m.bib)+'" style="width:64px"></td>'
-        +[0,1,2].map(k=>'<td><input id="sa'+i+'_'+k+'" value="'+esc(a[k]||'')+'" style="width:74px"></td>').join('')+'</tr>'; }});
+        +[0,1,2].map(k=>'<td><input id="sa'+i+'_'+k+'" value="'+esc(a[k]||'')+'" style="width:74px"></td>').join('')+dqtd(i)+'</tr>'; }});
   }} else {{
-    h+='<tr><th>Bib</th><th>Mark</th></tr>';
+    h+='<tr><th>Bib</th><th>Mark</th><th>DQ</th></tr>';
     j.marks.forEach((m,i)=>{{ h+='<tr><td><input id="sb'+i+'" value="'+esc(m.bib==null?'':m.bib)+'" style="width:70px"></td>'
-      +'<td><input id="sm'+i+'" value="'+esc(m.mark==null?'':m.mark)+'" style="width:120px"></td></tr>'; }});
+      +'<td><input id="sm'+i+'" value="'+esc(m.mark==null?'':m.mark)+'" style="width:120px"></td>'+dqtd(i)+'</tr>'; }});
   }}
   h+='</table><button type="button" onclick="postScan('+j.marks.length+')" style="margin-top:.6rem">Post marks</button>';
   document.getElementById('scanout').innerHTML=h;
 }}
 async function postScan(n){{
   const marks=[];
+  const dqv=i=>{{const el=document.getElementById('sd'+i);return !!(el&&el.checked);}};
   for(let i=0;i<n;i++){{ const b=document.getElementById('sb'+i).value.trim(); if(!b)continue;
     if(SCANHJ){{ const ht=document.getElementById('sh'+i).value.trim(); const mi=document.getElementById('sx'+i).value.trim();
-      if(ht) marks.push({{bib:b,height:ht,misses:mi?parseInt(mi):null}}); }}
+      if(ht) marks.push({{bib:b,height:ht,misses:mi?parseInt(mi):null,dq:dqv(i)}}); }}
     else if(SCANFIELD){{ const a=[0,1,2].map(k=>document.getElementById('sa'+i+'_'+k).value.trim());
-      if(a.some(x=>x)) marks.push({{bib:b,attempts:a}}); }}
-    else {{ const mk=document.getElementById('sm'+i).value.trim(); if(mk) marks.push({{bib:b,mark:mk}}); }}
+      if(a.some(x=>x)) marks.push({{bib:b,attempts:a,dq:dqv(i)}}); }}
+    else {{ const mk=document.getElementById('sm'+i).value.trim(); if(mk) marks.push({{bib:b,mark:mk,dq:dqv(i)}}); }}
   }}
   try{{ const j=await jpost('/meet-events/{meid}/scan/post',{{marks}});
-    alert('Posted '+j.applied+' marks'+(j.unmatched&&j.unmatched.length?'; unmatched bibs: '+j.unmatched.join(', '):''));
-    location.reload(); }}
+    let msg='Posted '+j.applied+' marks';
+    if(j.added&&j.added.length) msg+='; added last-minute: '+j.added.join(', ');
+    if(j.unmatched&&j.unmatched.length) msg+='; unknown bibs: '+j.unmatched.join(', ');
+    alert(msg); location.reload(); }}
   catch(e){{ alert(e.message); }}
 }}
 </script>"""
@@ -1657,7 +1784,7 @@ def scan_post(meid):
         f"JOIN athletes a ON a.id=en.runner_id JOIN schools s ON s.id=a.school_id "
         f"WHERE en.meet_event_id IN ({qm}) AND a.bib IS NOT NULL", tuple(meids)).fetchall():
         entrymap[r["bib"]] = r
-    applied, unmatched = 0, []
+    applied, unmatched, added = 0, [], []
     for mk in marks:
         try:
             bib = int(str(mk.get("bib")).strip())
@@ -1665,8 +1792,21 @@ def scan_post(meid):
             continue
         row = entrymap.get(bib)
         if not row:
-            unmatched.append(bib)
-            continue
+            # Last-minute athlete on the sheet but not entered: if that bib belongs to
+            # an athlete at this meet, enter them on the spot (a real sheet is truth).
+            a = conn.execute(
+                "SELECT a.id, a.name, a.bib, s.name AS sname, a.school_id FROM athletes a "
+                "JOIN schools s ON s.id=a.school_id JOIN meet_schools ms ON ms.school_id=s.id "
+                "WHERE ms.meet_id=? AND a.bib=? AND a.active=1", (m["id"], bib)).fetchone()
+            if not a:
+                unmatched.append(bib)
+                continue
+            eid = conn.execute("INSERT INTO entries (meet_event_id, runner_id, school_id) "
+                               "VALUES (?,?,?)", (me["id"], a["id"], a["school_id"])).lastrowid
+            row = {"eid": eid, "bib": bib, "name": a["name"], "sname": a["sname"]}
+            entrymap[bib] = row
+            added.append(bib)
+        dq = 1 if mk.get("dq") else 0
         if "height" in mk:   # High Jump: single best cleared height (+ optional misses)
             met = _parse_ht(str(mk.get("height", "")).strip())
             if met is None:
@@ -1680,8 +1820,8 @@ def scan_post(meid):
             conn.execute("DELETE FROM results WHERE entry_id=?", (row["eid"],))
             conn.execute(
                 "INSERT INTO results (entry_id, mark_metric, attempts_json, dq, "
-                "snap_name, snap_bib, snap_school) VALUES (?,?,?,0,?,?,?)",
-                (row["eid"], met, aj, row["name"], bib, row["sname"]))
+                "snap_name, snap_bib, snap_school) VALUES (?,?,?,?,?,?,?)",
+                (row["eid"], met, aj, dq, row["name"], bib, row["sname"]))
             applied += 1
             continue
         if "attempts" in mk and me["unit"] != "seconds":   # LJ / SP: keep all 3, verbatim
@@ -1694,8 +1834,8 @@ def scan_post(meid):
             conn.execute("DELETE FROM results WHERE entry_id=?", (row["eid"],))
             conn.execute(
                 "INSERT INTO results (entry_id, mark_metric, attempts_json, dq, "
-                "snap_name, snap_bib, snap_school) VALUES (?,?,?,0,?,?,?)",
-                (row["eid"], best, json.dumps(atts), row["name"], bib, row["sname"]))
+                "snap_name, snap_bib, snap_school) VALUES (?,?,?,?,?,?,?)",
+                (row["eid"], best, json.dumps(atts), dq, row["name"], bib, row["sname"]))
             applied += 1
             continue
         raw = str(mk.get("mark", "")).strip()
@@ -1708,14 +1848,14 @@ def scan_post(meid):
         conn.execute("DELETE FROM results WHERE entry_id=?", (row["eid"],))
         conn.execute(
             "INSERT INTO results (entry_id, mark_seconds, mark_metric, dq, "
-            "snap_name, snap_bib, snap_school) VALUES (?,?,?,0,?,?,?)",
-            (row["eid"], sec, met, row["name"], bib, row["sname"]))
+            "snap_name, snap_bib, snap_school) VALUES (?,?,?,?,?,?,?)",
+            (row["eid"], sec, met, dq, row["name"], bib, row["sname"]))
         applied += 1
     for m2 in meids:
         _recompute_places(conn, load_meet_event(m2))
     conn.commit()
     conn.close()
-    return jsonify(applied=applied, unmatched=unmatched)
+    return jsonify(applied=applied, unmatched=unmatched, added=added)
 
 
 # ------------------------------- live tap timer (distance / relay) -------------------------------
@@ -1792,7 +1932,11 @@ function startRace(){{ if(START&&!STOP)return; START=Date.now(); STOP=null; sync
 function stopRace(){{ if(START&&!STOP){{ STOP=Date.now(); syncUI(); }} }}
 function resetRace(){{ if(!confirm('Reset clears the clock and all taps. Continue?'))return;
   START=null; STOP=null; taps=[]; syncUI(); render(); }}
-function tap(){{ if(!START||STOP)return; taps.push({{t:((STOP||Date.now())-START)/1000, entry:''}}); render(); }}
+function tap(){{ if(!START||STOP)return; try{{navigator.vibrate&&navigator.vibrate(35);}}catch(e){{}}
+  taps.push({{t:((STOP||Date.now())-START)/1000, entry:''}}); render(); }}
+let WL=null; async function wlock(){{ try{{ WL=await navigator.wakeLock.request('screen'); }}catch(e){{}} }}
+document.addEventListener('visibilitychange',()=>{{ if(document.visibilityState==='visible')wlock(); }});
+wlock();
 function assign(i,v){{ taps[i].entry=v; render(); }}
 function removeTap(i){{ taps.splice(i,1); render(); }}
 function render(){{
@@ -1992,12 +2136,14 @@ def build_results(mid):
         events_out.append({"name": f'{me["ename"]} — {_div_grade(me["gender"], me["grade"])}',
                            "items": items, "gkey": me["gender"] or "U"})
     conn.close()
-    # Team totals broken down by gender × grade.
-    totals = {}
+    # Team totals broken down by gender × grade, plus a combined whole-meet total
+    # (what gets announced at a dual: one school ranking across every division).
+    totals, overall = {}, {}
     for (school, gender, grade), pts in team_pts.items():
         d = totals.setdefault((gender, grade), {})
         d[school] = d.get(school, 0) + pts
-    return {"events": events_out, "totals": totals}
+        overall[school] = overall.get(school, 0) + pts
+    return {"events": events_out, "totals": totals, "overall": overall}
 
 
 def _div_grade(gender, grade):
@@ -2028,6 +2174,15 @@ def results_inner(mid, name_mode=None):
             '<select id="rgender" onchange="rfilter()" style="max-width:120px;margin-left:.4rem">'
             '<option value="">All</option><option value="M">Boys</option>'
             '<option value="F">Girls</option></select></div>']
+    # Combined whole-meet team score first (announced at duals) when >1 division scored.
+    if data.get("overall") and len(data["totals"]) > 1:
+        ranked = sorted(data["overall"].items(), key=lambda x: -x[1])
+        trs = "".join(f'<tr data-text="{escape((s or "").lower())}"><td>{i+1}</td>'
+                      f'<td>{escape(s)}</td><td><b>{_fmt_pts(p)}</b></td></tr>'
+                      for i, (s, p) in enumerate(ranked))
+        html.append(f'<div class="card rcard" data-gender="U" data-title="overall team scores">'
+                    f'<h2>🏆 Overall — Team scores (all divisions)</h2>'
+                    f'<table><tr><th>Rank</th><th>School</th><th>Points</th></tr>{trs}</table></div>')
     for (gender, grade) in sorted(data["totals"], key=_grp_sort):
         t = data["totals"][(gender, grade)]
         if not t:
@@ -2122,6 +2277,12 @@ def track_workbook(mid, name_mode=None):
     wb = openpyxl.Workbook()
     wb.remove(wb.active)
     ws = wb.create_sheet("Team Scores")
+    if data.get("overall") and len(data["totals"]) > 1:
+        ws.append(["Overall — Team Scores (all divisions)"])
+        ws.append(["Rank", "School", "Points"])
+        for i, (s, p) in enumerate(sorted(data["overall"].items(), key=lambda x: -x[1])):
+            ws.append([i + 1, s, _fmt_pts(p)])
+        ws.append([])
     for (gender, grade) in sorted(data["totals"], key=_grp_sort):
         t = data["totals"][(gender, grade)]
         if not t:

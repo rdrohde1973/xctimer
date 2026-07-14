@@ -406,11 +406,24 @@ def meet_detail(mid):
     # XC: heats above the schools card; track keeps its meet-setup form first.
     mid_block = f"{section}\n{setup_card}" if is_xc else f"{setup_card}\n{section}"
 
+    edit_card = ""
+    if setup:
+        edit_card = (
+            f'<details style="margin:.2rem 0 .8rem"><summary class="muted" style="cursor:pointer">'
+            f'✏️ Rename meet / change date</summary>'
+            f'<form method="post" action="/meets/{mid}/edit" class="row" '
+            f'style="gap:.6rem;flex-wrap:wrap;margin-top:.5rem">'
+            f'<div><label>Name</label><input name="name" value="{escape(m["name"])}"></div>'
+            f'<div style="max-width:180px"><label>Date</label>'
+            f'<input name="date" type="date" value="{escape(m["date"] or "")}"></div>'
+            f'<div style="display:flex;align-items:flex-end"><button type="submit">Save</button></div>'
+            f'</form></details>')
     body = f"""
 <p class="muted"><a href="/meets">← Meets</a></p>
 <h1>{escape(m['name'])}</h1>
 <p class="sub">{"🏃 Cross-country" if is_xc else "🎽 Track & Field"} · {escape(m['date'] or '')}
  · host: {escape(host['name']) if host else '—'}</p>
+{edit_card}
 {tabs}
 {print_bar}
 {mid_block}
@@ -421,6 +434,25 @@ def meet_detail(mid):
 """
     return shell(g.principal, body, active="meets",
                  active_district=active_district_id(), districts=_districts_for_switcher())
+
+
+@bp.post("/meets/<int:mid>/edit")
+@login_required
+def edit_meet(mid):
+    """Rename a meet / fix its date — without delete-and-recreate."""
+    m = load_meet(mid)
+    if not can_setup_meet(m):
+        abort(403)
+    name = (request.form.get("name") or "").strip()
+    date = (request.form.get("date") or "").strip()
+    conn = db.connect()
+    if name:
+        conn.execute("UPDATE meets SET name=? WHERE id=?", (name, mid))
+    if date:
+        conn.execute("UPDATE meets SET date=? WHERE id=?", (date, mid))
+    conn.commit()
+    conn.close()
+    return redirect(f"/meets/{mid}")
 
 
 @bp.post("/meets/<int:mid>/scoring")

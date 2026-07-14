@@ -196,6 +196,10 @@ def phone_race(rid):
     <input id="sbib" inputmode="numeric" autocomplete="off" placeholder="bib #"
       onkeydown="if(event.key==='Enter')rec()">
     <button class="bigbtn tap" onclick="rec()">RECORD</button>
+    <button class="bigbtn" style="background:#5b4a9e;padding:.9rem 0;font-size:1.1rem"
+      onclick="toggleCam()">📷 SCAN STICKER QR</button>
+    <video id="cam" playsinline muted
+      style="display:none;width:100%;border-radius:14px;max-height:38vh;object-fit:cover"></video>
   </div>
   <div id="banner" class="banner" style="display:none"></div>
   <div id="flist" class="flist" style="display:none">
@@ -257,11 +261,45 @@ async function startRace(){{
   if(STOPPED&&FIN.length){{ if(!confirm('Race ended with '+FIN.length+' finisher(s). Restarting CLEARS them. Continue?'))return; body.clear=true; }}
   try{{ await jpost('/races/'+RID+'/start',body); }}catch(e){{ alert(e.message); }} load(); }}
 async function stopRace(){{ if(!confirm('Stop the race clock?'))return; await jpost('/races/'+RID+'/stop',{{}}); load(); }}
-async function tap(){{ try{{ await jpost('/races/'+RID+'/tap',{{}}); }}catch(e){{}} load(); }}
-async function undo(){{ try{{ await jpost('/races/'+RID+'/untap',{{}}); }}catch(e){{ alert(e.message); }} load(); }}
-async function rec(){{ const el=document.getElementById('sbib'); const v=el.value.trim(); if(!v)return;
-  try{{ await jpost('/races/'+RID+'/finish',{{bib:v}}); el.value=''; el.focus(); }}
-  catch(e){{ alert(e.message); }} load(); }}
+function buzz(ms){{ try{{ navigator.vibrate && navigator.vibrate(ms); }}catch(e){{}} }}
+async function tap(){{ buzz(35); try{{ await jpost('/races/'+RID+'/tap',{{}}); }}catch(e){{}} load(); }}
+async function undo(){{ buzz([20,40,20]); try{{ await jpost('/races/'+RID+'/untap',{{}}); }}catch(e){{ alert(e.message); }} load(); }}
+async function rec(v){{ const el=document.getElementById('sbib'); v=(v||el.value).toString().trim(); if(!v)return;
+  try{{ await jpost('/races/'+RID+'/finish',{{bib:v}}); buzz(35); el.value=''; }}
+  catch(e){{ buzz([60,60,60]); alert(e.message); }} load(); }}
+// Screen wake lock: a timing phone that sleeps mid-race silently loses finishers.
+let WL=null;
+async function wlock(){{ try{{ WL=await navigator.wakeLock.request('screen'); }}catch(e){{}} }}
+document.addEventListener('visibilitychange',()=>{{ if(document.visibilityState==='visible')wlock(); }});
+wlock();
+// Camera QR scan of bib stickers (QR encodes the bib number). 3s dedupe window.
+let CAMON=false, CSTREAM=null, LASTQ={{}};
+async function toggleCam(){{
+  const v=document.getElementById('cam');
+  if(CAMON){{ CAMON=false; v.style.display='none';
+    if(CSTREAM){{ CSTREAM.getTracks().forEach(t=>t.stop()); CSTREAM=null; }} return; }}
+  if(!('BarcodeDetector' in window)){{ alert('QR scanning needs a newer browser — type bibs instead.'); return; }}
+  try{{
+    CSTREAM=await navigator.mediaDevices.getUserMedia({{video:{{facingMode:'environment'}}}});
+    v.srcObject=CSTREAM; v.style.display=''; await v.play(); CAMON=true;
+    const det=new BarcodeDetector({{formats:['qr_code']}});
+    (async function loop(){{
+      while(CAMON){{
+        try{{
+          const codes=await det.detect(v);
+          for(const c of codes){{
+            const bib=(c.rawValue||'').trim();
+            if(/^\\d+$/.test(bib)){{
+              const now=Date.now();
+              if(!LASTQ[bib] || now-LASTQ[bib]>3000){{ LASTQ[bib]=now; rec(bib); }}
+            }}
+          }}
+        }}catch(e){{}}
+        await new Promise(r=>setTimeout(r,250));
+      }}
+    }})();
+  }}catch(e){{ alert('Camera unavailable: '+e.message); }}
+}}
 setInterval(tick,60);
 setInterval(load,3000);
 load();
@@ -387,21 +425,22 @@ async function doScan(){{
   if(!r.ok){{document.getElementById('scanout').innerHTML='<p class="msg err">'+esc(j.error||'Could not read the sheet')+'</p>';return;}}
   SCAN_MEID=j.meid; window.SCAN_FIELD=!!j.field; window.SCAN_HJ=!!j.hj;
   if(!(j.marks||[]).length){{document.getElementById('scanout').innerHTML='<p class="msg err">Read <b>'+esc(j.label)+'</b> but found no marks — retake the photo.</p>';return;}}
-  let h='<p><b>Detected:</b> '+esc(j.label)+'</p><p class="muted">Review, then post.</p><table>';
+  let h='<p><b>Detected:</b> '+esc(j.label)+'</p><p class="muted">Review, then post. Unknown bibs at this meet are entered automatically.</p><table>';
+  const dqtd=i=>'<td><input type="checkbox" id="sd'+i+'" style="width:auto"></td>';
   if(SCAN_HJ){{
-    h+='<tr><th>Bib</th><th>Best height</th><th>Misses</th></tr>';
+    h+='<tr><th>Bib</th><th>Best height</th><th>Misses</th><th>DQ</th></tr>';
     j.marks.forEach(function(m,i){{h+='<tr><td><input id="sb'+i+'" value="'+esc(m.bib==null?'':m.bib)+'" style="width:56px"></td>'
       +'<td><input id="sh'+i+'" value="'+esc(m.height==null?'':m.height)+'" placeholder="4-08" style="width:80px"></td>'
-      +'<td><input id="sx'+i+'" value="'+esc(m.misses==null?'':m.misses)+'" style="width:50px"></td></tr>';}});
+      +'<td><input id="sx'+i+'" value="'+esc(m.misses==null?'':m.misses)+'" style="width:50px"></td>'+dqtd(i)+'</tr>';}});
   }} else if(SCAN_FIELD){{
-    h+='<tr><th>Bib</th><th>A1</th><th>A2</th><th>A3</th></tr>';
+    h+='<tr><th>Bib</th><th>A1</th><th>A2</th><th>A3</th><th>DQ</th></tr>';
     j.marks.forEach(function(m,i){{ var a=m.attempts||['','',''];
       h+='<tr><td><input id="sb'+i+'" value="'+esc(m.bib==null?'':m.bib)+'" style="width:56px"></td>'
-        +[0,1,2].map(function(k){{return '<td><input id="sa'+i+'_'+k+'" value="'+esc(a[k]||'')+'" style="width:62px"></td>';}}).join('')+'</tr>';}});
+        +[0,1,2].map(function(k){{return '<td><input id="sa'+i+'_'+k+'" value="'+esc(a[k]||'')+'" style="width:62px"></td>';}}).join('')+dqtd(i)+'</tr>';}});
   }} else {{
-    h+='<tr><th>Bib</th><th>Mark</th></tr>';
+    h+='<tr><th>Bib</th><th>Mark</th><th>DQ</th></tr>';
     j.marks.forEach(function(m,i){{h+='<tr><td><input id="sb'+i+'" value="'+esc(m.bib==null?'':m.bib)+'" style="width:70px"></td>'
-      +'<td><input id="sm'+i+'" value="'+esc(m.mark==null?'':m.mark)+'" style="width:120px"></td></tr>';}});
+      +'<td><input id="sm'+i+'" value="'+esc(m.mark==null?'':m.mark)+'" style="width:120px"></td>'+dqtd(i)+'</tr>';}});
   }}
   h+='</table><button onclick="postScan('+j.marks.length+')" style="margin-top:.6rem">Post to '+esc(j.label)+'</button>';
   document.getElementById('scanout').innerHTML=h;
@@ -409,14 +448,19 @@ async function doScan(){{
 async function postScan(n){{
   if(!SCAN_MEID)return;
   const marks=[];
+  const dqv=i=>{{const el=document.getElementById('sd'+i);return !!(el&&el.checked);}};
   for(let i=0;i<n;i++){{const b=document.getElementById('sb'+i).value.trim();if(!b)continue;
     if(window.SCAN_HJ){{var ht=document.getElementById('sh'+i).value.trim();var mi=document.getElementById('sx'+i).value.trim();
-      if(ht)marks.push({{bib:b,height:ht,misses:mi?parseInt(mi):null}});}}
+      if(ht)marks.push({{bib:b,height:ht,misses:mi?parseInt(mi):null,dq:dqv(i)}});}}
     else if(window.SCAN_FIELD){{var a=[0,1,2].map(function(k){{return document.getElementById('sa'+i+'_'+k).value.trim();}});
-      if(a.some(function(x){{return x;}})) marks.push({{bib:b,attempts:a}});}}
-    else {{const mk=document.getElementById('sm'+i).value.trim();if(mk)marks.push({{bib:b,mark:mk}});}}
+      if(a.some(function(x){{return x;}})) marks.push({{bib:b,attempts:a,dq:dqv(i)}});}}
+    else {{const mk=document.getElementById('sm'+i).value.trim();if(mk)marks.push({{bib:b,mark:mk,dq:dqv(i)}});}}
   }}
-  try{{const j=await jpost('/meet-events/'+SCAN_MEID+'/scan/post',{{marks}});alert('Posted '+j.applied+' marks'+(j.unmatched&&j.unmatched.length?'; unmatched: '+j.unmatched.join(', '):''));location.reload();}}
+  try{{const j=await jpost('/meet-events/'+SCAN_MEID+'/scan/post',{{marks}});
+    let msg='Posted '+j.applied+' marks';
+    if(j.added&&j.added.length)msg+='; added last-minute: '+j.added.join(', ');
+    if(j.unmatched&&j.unmatched.length)msg+='; unknown bibs: '+j.unmatched.join(', ');
+    alert(msg);location.reload();}}
   catch(e){{alert(e.message);}}
 }}
 </script>"""
