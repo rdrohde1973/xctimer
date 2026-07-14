@@ -1948,8 +1948,6 @@ def time_console(meid):
   <div id="status" class="tc-status wait">Not started.</div>
   <button id="tapbtn" onclick="tap()" disabled
     style="font-size:1.7rem;padding:1.1rem;width:100%;max-width:440px;margin:.7rem auto 0;display:block">TAP finisher</button>
-  <input type="checkbox" id="hapt" switch aria-hidden="true"
-    style="position:fixed;left:-9999px;opacity:0;pointer-events:none">
 </div>
 <div class="card"><h2>Finishers (<span id="cnt">0</span>)</h2>
   <table id="rows"></table>
@@ -1977,8 +1975,7 @@ function startRace(){{ if(START&&!STOP)return; START=Date.now(); STOP=null; sync
 function stopRace(){{ if(START&&!STOP){{ STOP=Date.now(); syncUI(); }} }}
 function resetRace(){{ if(!confirm('Reset clears the clock and all taps. Continue?'))return;
   START=null; STOP=null; taps=[]; syncUI(); render(); }}
-function buzz(){{ try{{ if(navigator.vibrate){{ navigator.vibrate(35); return; }} }}catch(e){{}}
-  try{{ document.getElementById('hapt').click(); }}catch(e){{}} }}   // iOS 17.4+ switch haptic
+function buzz(){{ try{{ navigator.vibrate && navigator.vibrate(35); }}catch(e){{}} }}
 function tap(){{ if(!START||STOP)return; buzz();
   taps.push({{t:((STOP||Date.now())-START)/1000, entry:''}}); render(); }}
 let WL=null; async function wlock(){{ try{{ WL=await navigator.wakeLock.request('screen'); }}catch(e){{}} }}

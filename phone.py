@@ -192,8 +192,6 @@ def phone_race(rid):
 <div class="tmain">
   <button id="startb" class="bigbtn start" onclick="startRace()">START</button>
   <button id="tapb" class="bigbtn tap" onclick="tap()" style="display:none">FINISHER</button>
-  <input type="checkbox" id="hapt" switch aria-hidden="true"
-    style="position:fixed;left:-9999px;opacity:0;pointer-events:none">
   <div id="scanbox" class="scanbox" style="display:none">
     <input id="sbib" inputmode="numeric" autocomplete="off" placeholder="scan or type bib #"
       onkeydown="if(event.key==='Enter')rec()">
@@ -259,12 +257,7 @@ async function startRace(){{
   if(STOPPED&&FIN.length){{ if(!confirm('Race ended with '+FIN.length+' finisher(s). Restarting CLEARS them. Continue?'))return; body.clear=true; }}
   try{{ await jpost('/races/'+RID+'/start',body); }}catch(e){{ alert(e.message); }} load(); }}
 async function stopRace(){{ if(!confirm('Stop the race clock?'))return; await jpost('/races/'+RID+'/stop',{{}}); load(); }}
-function buzz(ms){{
-  try{{ if(navigator.vibrate){{ navigator.vibrate(ms); return; }} }}catch(e){{}}
-  // iOS Safari has no Vibration API — toggling a hidden <input switch> plays a
-  // system haptic (iOS 17.4+). Fires within the tap's user gesture.
-  try{{ document.getElementById('hapt').click(); }}catch(e){{}}
-}}
+function buzz(ms){{ try{{ navigator.vibrate && navigator.vibrate(ms); }}catch(e){{}} }}
 async function tap(){{ buzz(35); try{{ await jpost('/races/'+RID+'/tap',{{}}); }}catch(e){{}} load(); }}
 async function undo(){{ buzz([20,40,20]); try{{ await jpost('/races/'+RID+'/untap',{{}}); }}catch(e){{ alert(e.message); }} load(); }}
 async function rec(v){{ const el=document.getElementById('sbib'); v=(v||el.value).toString().trim(); if(!v)return;
