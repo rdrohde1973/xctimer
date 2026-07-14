@@ -162,7 +162,76 @@ def _scope(principal):
     return principal.district_id, None  # district_admin
 
 
-def _digest(principal):
+def _mark_str(unit, sec, metric):
+    """Format a track time or a field feet-inches mark for the digest."""
+    if unit == "seconds":
+        return _fmt_t(sec)
+    if metric is None:
+        return ""
+    from .track import _fmt_ht  # feet-inches; lazy import avoids a load-time cycle
+    return _fmt_ht(metric)
+
+
+def _athlete_focus(conn, did, school_ids, question, mode):
+    """If the question names one or more athletes in scope, return each one's full
+    track + XC result history — so 'what is X's 200m time?' can be answered."""
+    q = (question or "").lower()
+    if len(q) < 3:
+        return ""
+    if school_ids is not None:
+        if not school_ids:
+            return ""
+        rows = conn.execute(
+            f"SELECT a.id, a.name, a.bib, s.name AS sname, s.district_id "
+            f"FROM athletes a JOIN schools s ON s.id=a.school_id "
+            f"WHERE a.school_id IN ({','.join('?'*len(school_ids))})", tuple(school_ids)).fetchall()
+    elif did is not None:
+        rows = conn.execute(
+            "SELECT a.id, a.name, a.bib, s.name AS sname, s.district_id "
+            "FROM athletes a JOIN schools s ON s.id=a.school_id WHERE s.district_id=?", (did,)).fetchall()
+    else:
+        return ""
+    matched = [a for a in rows if a["name"] and a["name"].lower() in q]
+    if not matched:  # fall back to a unique last-name match
+        by_last = {}
+        for a in rows:
+            parts = (a["name"] or "").lower().split()
+            if parts:
+                by_last.setdefault(parts[-1], []).append(a)
+        for last, group in by_last.items():
+            if len(last) >= 4 and last in q and len(group) == 1:
+                matched.append(group[0])
+    if not matched:
+        return ""
+    out = []
+    for a in matched[:4]:
+        who = demo.display(a["name"], mode)
+        trk = conn.execute(
+            "SELECT m.name AS meet, m.date, e.name AS event, e.unit, r.mark_seconds, "
+            "r.mark_metric, r.place FROM results r JOIN entries en ON en.id=r.entry_id "
+            "JOIN meet_events me ON me.id=en.meet_event_id JOIN events e ON e.id=me.event_id "
+            "JOIN meets m ON m.id=me.meet_id WHERE en.runner_id=? "
+            "AND (r.mark_seconds IS NOT NULL OR r.mark_metric IS NOT NULL) "
+            "ORDER BY e.sort, m.date", (a["id"],)).fetchall()
+        xc = conn.execute(
+            "SELECT m.name AS meet, m.date, ra.name AS race, f.elapsed_seconds "
+            "FROM finishers f JOIN races ra ON ra.id=f.race_id JOIN meets m ON m.id=ra.meet_id "
+            "WHERE f.bib=? AND f.snap_school=? AND m.district_id=? AND f.elapsed_seconds IS NOT NULL "
+            "ORDER BY m.date", (a["bib"], a["sname"], a["district_id"])).fetchall()
+        out.append(f"ATHLETE FOCUS — {who} ({a['sname']}):")
+        if not trk and not xc:
+            out.append("  (no results recorded yet)")
+        for r in trk:
+            pl = f", place {r['place']}" if r["place"] else ""
+            out.append(f"  {r['event']}: {_mark_str(r['unit'], r['mark_seconds'], r['mark_metric'])}"
+                       f"{pl} — {r['meet']} ({r['date'] or ''})")
+        for r in xc:
+            out.append(f"  XC {r['race'] or ''}: {_fmt_t(r['elapsed_seconds'])} — {r['meet']} ({r['date'] or ''})")
+        out.append("")
+    return "\n".join(out)
+
+
+def _digest(principal, question=""):
     did, school_ids = _scope(principal)
     mode = demo.mode_for(principal)
     conn = db.connect()
@@ -180,7 +249,12 @@ def _digest(principal):
     d = conn.execute("SELECT name FROM districts WHERE id=?", (did,)).fetchone()
     lines.append(f"DISTRICT: {d['name'] if d else did}")
 
-    # District record board first (so it survives truncation) — key for
+    # Named-athlete history first — most specific to the question, so it survives truncation.
+    focus = _athlete_focus(conn, did, school_ids, question, mode)
+    if focus:
+        lines.append("\n" + focus)
+
+    # District record board (so it survives truncation) — key for
     # "what's the district record for the 100m?" questions.
     recs = conn.execute(
         "SELECT gender, grade, event, mark, athlete, school, year FROM district_records "
@@ -293,7 +367,7 @@ def insights_ask():
     if not q:
         return jsonify(error="Ask a question"), 400
     try:
-        digest = _digest(p)
+        digest = _digest(p, q)
         answer = ai.claude_chat(_SYS, f"DATA DIGEST:\n{digest}\n\nQUESTION: {q}", max_tokens=1000)
     except Exception as e:  # noqa: BLE001
         return jsonify(error=f"Insights unavailable: {e}"), 500
