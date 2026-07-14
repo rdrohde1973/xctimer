@@ -1183,7 +1183,7 @@ function genSchedule(){{
   const inc=parseFloat(document.getElementById('hjinc').value);
   if(s==null){{alert('Enter a start height in ft-in, e.g. 4-00');return;}}
   if(isNaN(inc)||inc<=0){{alert('Enter an increment in inches, e.g. 2');return;}}
-  const n=Math.max(8, Math.min(14, Math.round(24/inc)+1));   // cover ~2 ft of bars
+  const n=Math.max(8, Math.min(12, Math.round(18/inc)+1));   // ~1.5 ft of bars above the opener
   BARS=[]; for(let k=0;k<n;k++) BARS.push(fmtht(s+Math.round(k*inc)));
   render(); save();
 }}
