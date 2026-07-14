@@ -327,6 +327,8 @@ def migrate(conn):
         conn.execute("ALTER TABLE meets ADD COLUMN points_table_id INTEGER")
     if "team_scoring" not in mcols:     # xc: team-score tab on/off
         conn.execute("ALTER TABLE meets ADD COLUMN team_scoring INTEGER DEFAULT 1")
+    if "public_names" not in mcols:     # public results: 'full' | 'initials' | 'bib'
+        conn.execute("ALTER TABLE meets ADD COLUMN public_names TEXT")
 
     mecols = _column_names(conn, "meet_events")
     if "combine_id" not in mecols:

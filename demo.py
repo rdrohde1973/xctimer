@@ -24,10 +24,11 @@ def anon_name(real):
 
 
 def mask_name(real):
+    """'Robert Rohde' -> 'r.rohd' (first initial + first 4 of surname, lowercased)."""
     parts = (real or "").split()
     if not parts:
         return ""
-    return f"{parts[0][0].upper()} {parts[-1][:4]}"
+    return f"{parts[0][0].lower()}.{parts[-1][:4].lower()}"
 
 
 def display(name, mode):
@@ -36,6 +37,14 @@ def display(name, mode):
     if mode == "mask":
         return mask_name(name)
     return name or ""
+
+
+def public_ident(name, bib, mode):
+    """How to identify an athlete on public results, per the meet's setting.
+    mode: 'bib' -> '#247' | 'mask' -> 'r.rohd' | 'anon' -> fake | None -> full name."""
+    if mode == "bib":
+        return f"#{bib}" if bib else "—"
+    return display(name, mode)
 
 
 def mode_for(principal):

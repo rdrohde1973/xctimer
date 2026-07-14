@@ -408,14 +408,24 @@ def meet_detail(mid):
 
     edit_card = ""
     if setup:
+        pn = m["public_names"] if "public_names" in m.keys() else None
+
+        def _o(v, lbl):
+            sel = " selected" if (pn == v or (v == "full" and not pn)) else ""
+            return f'<option value="{v}"{sel}>{lbl}</option>'
+        name_opts = (_o("full", "Full name")
+                     + _o("initials", "Initial . last (e.g. r.rohd)")
+                     + _o("bib", "Bib number only"))
         edit_card = (
             f'<details style="margin:.2rem 0 .8rem"><summary class="muted" style="cursor:pointer">'
-            f'✏️ Rename meet / change date</summary>'
+            f'✏️ Rename meet / date / public results</summary>'
             f'<form method="post" action="/meets/{mid}/edit" class="row" '
             f'style="gap:.6rem;flex-wrap:wrap;margin-top:.5rem">'
             f'<div><label>Name</label><input name="name" value="{escape(m["name"])}"></div>'
             f'<div style="max-width:180px"><label>Date</label>'
             f'<input name="date" type="date" value="{escape(m["date"] or "")}"></div>'
+            f'<div style="max-width:230px"><label>Public results show</label>'
+            f'<select name="public_names">{name_opts}</select></div>'
             f'<div style="display:flex;align-items:flex-end"><button type="submit">Save</button></div>'
             f'</form></details>')
     body = f"""
@@ -489,6 +499,9 @@ def edit_meet(mid):
         conn.execute("UPDATE meets SET name=? WHERE id=?", (name, mid))
     if date:
         conn.execute("UPDATE meets SET date=? WHERE id=?", (date, mid))
+    pn = (request.form.get("public_names") or "").strip()
+    if pn in ("full", "initials", "bib"):
+        conn.execute("UPDATE meets SET public_names=? WHERE id=?", (pn, mid))
     conn.commit()
     conn.close()
     return redirect(f"/meets/{mid}")

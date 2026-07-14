@@ -2434,7 +2434,8 @@ def build_results(mid):
                     except (ValueError, TypeError):
                         atts = ""
             items.append({"place": r["place"], "mark": mark, "attempts": atts,
-                          "name": r["snap_name"], "school": r["snap_school"], "points": pts})
+                          "name": r["snap_name"], "bib": r["snap_bib"],
+                          "school": r["snap_school"], "points": pts})
             if r["snap_school"]:
                 key = (r["snap_school"], me["gender"] or "U", me["grade"])
                 team_pts[key] = team_pts.get(key, 0) + pts
@@ -2445,7 +2446,8 @@ def build_results(mid):
                 "WHERE en.meet_event_id=? AND r.dq=1", (me["id"],)).fetchall():
             mark = fmt_time(r["mark_seconds"]) if me["unit"] == "seconds" else _fmt_ht(r["mark_metric"])
             items.append({"place": "DQ", "mark": mark or "", "attempts": "",
-                          "name": r["snap_name"], "school": r["snap_school"], "points": 0})
+                          "name": r["snap_name"], "bib": r["snap_bib"],
+                          "school": r["snap_school"], "points": 0})
         events_out.append({"name": f'{me["ename"]} — {_div_grade(me["gender"], me["grade"])}',
                            "items": items, "gkey": me["gender"] or "U"})
     conn.close()
@@ -2524,7 +2526,7 @@ def _live_heats(mid, name_mode=None):
                 e = conn.execute("SELECT * FROM entries WHERE id=?", (t["entry_id"],)).fetchone()
                 if e:
                     nm, _bib, sch = _entry_label(conn, e)
-                    who, school = demo.display(nm, name_mode), sch
+                    who, school = demo.public_ident(nm, _bib, name_mode), sch
             fin.append({"n": i + 1, "elapsed": t["elapsed_seconds"], "who": who, "school": school})
         heats.append({"name": name, "start_ms": _t_ms(_t_parse(r["start_time"])),
                       "stop_ms": _t_ms(stop) if stop else None, "ended": bool(stop),
@@ -2571,7 +2573,7 @@ def results_inner(mid, name_mode=None):
         any_att = any(i.get("attempts") for i in ev["items"])
         trs = ""
         for i in ev["items"]:
-            nm = demo.display(i["name"] or "", name_mode)
+            nm = demo.public_ident(i["name"] or "", i.get("bib"), name_mode)
             txt = f'{nm} {i["school"] or ""}'.lower()
             att_td = (f'<td class="muted">{escape(i.get("attempts") or "")}</td>' if any_att else "")
             trs += (f'<tr data-text="{escape(txt)}"><td>{i["place"]}</td>'
@@ -2668,7 +2670,7 @@ def track_workbook(mid, name_mode=None):
         ws2.append([ev["name"]])
         ws2.append(["Place", "Competitor", "School", "Best", "Attempts", "Points"])
         for i in ev["items"]:
-            ws2.append([i["place"], demo.display(i["name"] or "", name_mode), i["school"],
+            ws2.append([i["place"], demo.public_ident(i["name"] or "", i.get("bib"), name_mode), i["school"],
                         i["mark"], i.get("attempts") or "", _fmt_pts(i["points"])])
         ws2.append([])
     if not wb.sheetnames:

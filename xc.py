@@ -821,6 +821,15 @@ def _meet_by_token(token):
 
 
 def _public_mask(m):
+    # Per-meet setting wins: 'bib' -> bib-only, 'initials' -> r.rohd, 'full' -> names.
+    pn = m["public_names"] if "public_names" in m.keys() else None
+    if pn == "bib":
+        return "bib"
+    if pn == "initials":
+        return "mask"
+    if pn == "full":
+        return None
+    # Unset (older meets): fall back to the district-wide mask_public toggle.
     import json
     conn = db.connect()
     drow = conn.execute("SELECT settings_json FROM districts WHERE id=?",
@@ -882,10 +891,10 @@ def _pub_rows(individuals, mode, show_grade):
     out = []
     for i in individuals:
         nm = i["name"]
-        if i["bib"] and (not nm or nm == f"Bib {i['bib']}"):
+        if mode != "bib" and i["bib"] and (not nm or nm == f"Bib {i['bib']}"):
             disp = "Bib not found"
         else:
-            disp = demo.display(nm, mode)
+            disp = demo.public_ident(nm, i["bib"], mode)
         pl = "" if i["place"] is None else i["place"]
         dq = " (DQ)" if i["dq"] else ""
         grcell = f'<td>{i["grade"] or ""}</td>' if show_grade else ""
@@ -1272,7 +1281,7 @@ def _results_workbook(mid, name_mode):
         ws.append(["Place", "Time", "Bib", "Runner", "School", "Grade", "Gender"])
         for i in g_["individuals"]:
             ws.append([i["place"], fmt_time(i["time"]), None if name_mode else i["bib"],
-                       demo.display(i["name"], name_mode), i["school"], i["grade"], i["gender"]])
+                       demo.public_ident(i["name"], i["bib"], name_mode), i["school"], i["grade"], i["gender"]])
         ws.append([])
         ws.append(["Team Rank", "School", "Score", "Top-5 places"])
         for t in g_["teams"]:
