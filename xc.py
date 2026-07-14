@@ -1078,14 +1078,20 @@ function lfmt(sec){{ if(sec==null)return''; sec=Math.max(0,sec);
   const h=Math.floor(sec/3600), m=Math.floor((sec%3600)/60), s=sec-3600*h-60*m;
   return h+':'+String(m).padStart(2,'0')+':'+s.toFixed(1).padStart(4,'0'); }}
 function lesc(s){{ return String(s==null?'':s).replace(/[&<>"]/g,c=>({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}}[c])); }}
+let LTIMER=null;
 async function pollLive(){{
+  if(LTIMER){{ clearTimeout(LTIMER); LTIMER=null; }}   // single chain, never stacked
   try{{
     const r=await fetch('/r/'+TOKEN+'/live'); const d=await r.json();
     LOFFSET=d.server_ms-Date.now();
     window.__LIVE_ACTIVE=!!(d.heats&&d.heats.length);
     renderLive(d.heats||[]);
   }}catch(e){{}}
+  // poll fast only while a race runs; back off when idle or the tab is hidden
+  const gap = document.hidden ? 15000 : (window.__LIVE_ACTIVE ? 2500 : 8000);
+  LTIMER=setTimeout(pollLive, gap);
 }}
+document.addEventListener('visibilitychange',function(){{ if(!document.hidden) pollLive(); }});
 function renderLive(heats){{
   const box=document.getElementById('livebox');
   if(!heats.length){{ box.innerHTML=''; return; }}
@@ -1115,7 +1121,6 @@ function tickLive(){{
   }});
 }}
 setInterval(tickLive,100);
-setInterval(pollLive,1500);
 pollLive();
 // Full-page refresh keeps the static results fresh — but pause it during a live race
 // (the live panel updates itself) and never yank an active search/filter.

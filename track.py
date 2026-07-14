@@ -12,6 +12,7 @@ full bar-by-bar HJ make/miss grid (we record best height cleared).
 import io
 import json
 import random
+import time
 from datetime import datetime, timezone
 
 from markupsafe import escape
@@ -2476,9 +2477,27 @@ def _fmt_pts(x):
     return str(int(x)) if float(x).is_integer() else f"{x:.1f}"
 
 
+_LIVE_CACHE = {}       # (mid, name_mode) -> (expires_monotonic, heats_list)
+_LIVE_TTL = 1.0        # recompute the DB snapshot at most once/sec no matter the crowd
+
+
 def public_live(mid, name_mode=None):
-    """Data for the public 'live now' panel: track heats whose clock is currently
-    running, with the finishers tapped so far. Read-only; polled by the results page."""
+    """Public 'live now' feed. server_ms is always fresh (spectator clocks stay
+    accurate), but the heats snapshot is micro-cached ~1s so a crowd of spectators
+    polling can't hammer the DB — 1 read/sec instead of one read per request."""
+    key = (mid, name_mode)
+    nowm = time.monotonic()
+    hit = _LIVE_CACHE.get(key)
+    if hit and hit[0] > nowm:
+        heats = hit[1]
+    else:
+        heats = _live_heats(mid, name_mode)
+        _LIVE_CACHE[key] = (nowm + _LIVE_TTL, heats)
+    return {"server_ms": _t_ms(_t_now()), "heats": heats}
+
+
+def _live_heats(mid, name_mode=None):
+    """Track heats whose clock is currently running, with the finishers tapped so far."""
     conn = db.connect()
     rows = conn.execute(
         "SELECT tc.meet_event_id AS meid, tc.heat AS heat, tc.start_time "
@@ -2503,7 +2522,7 @@ def public_live(mid, name_mode=None):
             fin.append({"n": i + 1, "elapsed": t["elapsed_seconds"], "who": who, "school": school})
         heats.append({"name": name, "start_ms": _t_ms(_t_parse(r["start_time"])), "finishers": fin})
     conn.close()
-    return {"server_ms": _t_ms(_t_now()), "heats": heats}
+    return heats
 
 
 def results_inner(mid, name_mode=None):
