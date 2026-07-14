@@ -288,7 +288,12 @@ def list_users():
 
     show_d = p.is_super and did is None
     hdr = ("<tr><th>User</th><th>Role</th>" + ("<th>District</th>" if show_d else "")
-           + "<th>Status</th><th></th></tr>")
+           + "<th>Status</th><th>Last login</th><th></th></tr>")
+
+    def _fmt_login(iso):
+        if not iso:
+            return '<span class="muted">never</span>'
+        return f'<span class="muted">{escape(str(iso).replace("T", " ")[:16])} UTC</span>'
     trs = []
     for u in rows:
         status = ('<span class="muted">pending setup</span>' if not u["password_hash"]
@@ -325,6 +330,7 @@ def list_users():
             f'<span class="muted">{escape(u["email"])}</span></td>'
             f'<td>{role_cell}</td>'
             f'{dcol}<td>{status}</td>'
+            f'<td>{_fmt_login(u["last_login"])}</td>'
             f'<td style="text-align:right">{resend}'
             f'<form class="inline" method="post" action="/users/{u["id"]}/delete" '
             f'onsubmit="return confirm(\'Delete {escape(u["email"])}?\')">'
