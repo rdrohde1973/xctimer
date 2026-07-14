@@ -22,7 +22,7 @@ from .insights import bp as insights_bp
 from .phone import bp as phone_bp
 from .waivers import bp as waivers_bp
 
-APP_VERSION = "0.53.2-threads24"
+APP_VERSION = "0.54.0-marketing-live"
 
 LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width, initial-scale=1">
@@ -146,6 +146,55 @@ LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
       <p>A phone app for coaches and a no-login QR for helpers — everyone can pitch in without an account.</p></div>
     <div class="card"><div class="ic">🤖</div><h3>AI athlete insights</h3>
       <p>Just ask — an athlete's PRs and season progress, or a district record — and get an answer pulled straight from your own results.</p></div>
+  </div>
+</div></section>
+
+<style>
+#live{background:linear-gradient(180deg,#ffffff 0%,#eaf1f9 100%);border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+#live .pill{background:#fff}
+#live .livelist{list-style:none;padding:0;margin:1.3rem 0 0;display:grid;gap:.65rem}
+#live .livelist li{display:flex;gap:.6rem;align-items:flex-start;color:#3a4f63;font-size:1.02rem}
+#live .livelist .ck{color:#2e8b57;font-weight:800;flex-shrink:0}
+.livedemo{background:#fff;border:2px solid var(--orange);border-radius:18px;padding:1.2rem 1.3rem;
+          box-shadow:0 16px 38px rgba(22,66,113,.18);max-width:340px;margin:0 auto}
+.livedemo .hd{display:flex;align-items:center;gap:.5rem;font-weight:800;color:var(--orange);font-size:.92rem}
+.livedemo .dot{width:.7rem;height:.7rem;border-radius:50%;background:#2e9e5b;animation:livepulse 1.1s infinite}
+@keyframes livepulse{50%{opacity:.22}}
+.livedemo .clk{font-size:2.8rem;font-weight:800;text-align:center;color:var(--navy);
+               font-variant-numeric:tabular-nums;margin:.25rem 0 .55rem;letter-spacing:.5px}
+.livedemo table{width:100%;border-collapse:collapse;font-size:.95rem}
+.livedemo td{padding:.42rem .2rem;border-top:1px solid var(--line)}
+.livedemo .pl{color:var(--orange);font-weight:800;width:1.7rem}
+.livedemo .tm{text-align:right;font-variant-numeric:tabular-nums;color:#3a4f63}
+.livedemo .mut{color:var(--gray)}
+</style>
+<section id="live"><div class="wrap split">
+  <div>
+    <div class="pill">🟢 Live results — everyone's favorite feature</div>
+    <h2>The whole crowd follows every race — live.</h2>
+    <p class="lead">Share one link or QR code and families watch results roll in
+    <b>the instant each runner crosses the line</b> — from the fence, the bleachers, or grandparents
+    watching from three states away. A live race clock, finishers appearing in order, updated in
+    real time. No app to install, no account to create — just tap the link. It turns a quiet finish
+    chute into a scoreboard the whole meet is glued to.</p>
+    <ul class="livelist">
+      <li><span class="ck">✓</span> Live race clock, in sync on every phone in the stands</li>
+      <li><span class="ck">✓</span> Finishers pop in the moment they're timed</li>
+      <li><span class="ck">✓</span> One QR code — hundreds can watch at once</li>
+      <li><span class="ck">✓</span> No app, no login, works on any phone</li>
+    </ul>
+  </div>
+  <div>
+    <div class="livedemo">
+      <div class="hd"><span class="dot"></span> LIVE · Girls 7th Grade 1600m</div>
+      <div class="clk">5:38.2</div>
+      <table>
+        <tr><td class="pl">1</td><td>Ava Ramirez <span class="mut">· Maple</span></td><td class="tm">5:31.4</td></tr>
+        <tr><td class="pl">2</td><td>Sofia Chen <span class="mut">· Ridgeline</span></td><td class="tm">5:33.9</td></tr>
+        <tr><td class="pl">3</td><td>Harper Diaz <span class="mut">· Maple</span></td><td class="tm">5:36.1</td></tr>
+        <tr><td class="pl">4</td><td class="mut">… crossing</td><td class="tm"></td></tr>
+      </table>
+    </div>
   </div>
 </div></section>
 
