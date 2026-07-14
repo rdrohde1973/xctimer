@@ -150,7 +150,7 @@ def list_schools():
         abort(403)
     # A coach has one school — "Roster" should open it directly, not a 1-row list.
     if p.role == "coach":
-        ids = p.school_ids()
+        ids = list(p.school_ids())
         if len(ids) == 1:
             return redirect(f"/schools/{ids[0]}")
     did = active_district_id()
