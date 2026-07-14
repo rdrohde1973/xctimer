@@ -207,6 +207,8 @@ def shell(principal, body, *, active="", active_district=None, districts=None,
         nav.append(link("/meets", "Meets", "meets"))
         if role in ("super_admin", "district_admin", "coach"):
             nav.append(link("/insights", "Insights", "insights"))
+        if role == "super_admin":
+            nav.append(link("/admin/console", "Console", "console"))
 
     # District switcher (super admin) or fixed label
     switch = ""

@@ -22,7 +22,7 @@ from .insights import bp as insights_bp
 from .phone import bp as phone_bp
 from .waivers import bp as waivers_bp
 
-APP_VERSION = "0.38.0-dob-medical"
+APP_VERSION = "0.39.0-console"
 
 LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width, initial-scale=1">
@@ -198,6 +198,30 @@ def create_app():
     for bp in (auth_bp, tenancy_bp, schools_bp, meets_bp, xc_bp, track_bp,
                admin_bp, insights_bp, phone_bp, waivers_bp):
         app.register_blueprint(bp)
+
+    # Access log -> journald: one parseable line per request, for the Super-Admin console.
+    import logging as _logging
+    from flask import request as _request
+    _acc = _logging.getLogger("xctimer.access")
+    if not _acc.handlers:
+        _h = _logging.StreamHandler()
+        _h.setFormatter(_logging.Formatter("%(message)s"))
+        _acc.addHandler(_h)
+        _acc.setLevel(_logging.INFO)
+        _acc.propagate = False
+
+    @app.after_request
+    def _access_log(resp):
+        try:
+            p = _request.path or "-"
+            if not p.startswith("/admin/console"):   # console must not log itself
+                ip = (_request.headers.get("CF-Connecting-IP")
+                      or _request.headers.get("X-Forwarded-For", "").split(",")[0].strip()
+                      or _request.remote_addr or "-")
+                _acc.info(f"XCLOG REQ {ip} {resp.status_code} {_request.method} {p}")
+        except Exception:  # noqa: BLE001
+            pass
+        return resp
 
     @app.get("/")
     def landing():

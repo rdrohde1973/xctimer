@@ -367,9 +367,15 @@ def login_submit():
     if _login_throttled(email):
         return auth_page("Sign in", "Cross-country & track timing", _login_body(nxt=nxt),
                          err="Too many attempts. Please wait a few minutes and try again."), 429
+    import logging
+    _log = logging.getLogger("xctimer.access")
+    ip = (request.headers.get("CF-Connecting-IP")
+          or request.headers.get("X-Forwarded-For", "").split(",")[0].strip()
+          or request.remote_addr or "-")
     u = find_user_by_email(email)
     if not u or not verify_password(pw, u["password_hash"]):
         _record_login_fail(email)
+        _log.info(f"XCLOG LOGIN fail {email or '-'} - {ip}")
         return auth_page("Sign in", "Cross-country & track timing", _login_body(email, nxt),
                          err="Invalid email or password."), 401
     _LOGIN_FAILS.pop(email, None)
@@ -377,6 +383,7 @@ def login_submit():
     conn.execute("UPDATE users SET last_login=? WHERE id=?", (_iso(_now()), u["id"]))
     conn.commit()
     conn.close()
+    _log.info(f"XCLOG LOGIN ok {email} {u['role']} {ip}")
     token = create_session(u["id"])
     return _set_session_cookie(make_response(redirect(nxt or "/dashboard")), token)
 

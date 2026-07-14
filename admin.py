@@ -5,9 +5,10 @@ Districts: super admin only. Users: super admin (any district) and district admi
 """
 import json
 import re
+import subprocess
 
 from markupsafe import escape
-from flask import Blueprint, request, redirect, g, abort
+from flask import Blueprint, request, redirect, g, abort, jsonify, Response
 
 from . import db
 from .auth import (login_required, role_required, create_user, issue_reset_token,
@@ -547,3 +548,143 @@ def delete_user(uid):
     conn.commit()
     conn.close()
     return redirect("/users")
+
+
+# ============================ super-admin console ============================
+_CONSOLE_RANGES = {"1h": ("1 hour", "1 hour ago"), "24h": ("24 hours", "1 day ago"),
+                   "7d": ("7 days", "7 days ago")}
+
+
+def _read_journal(since, cap=20000):
+    """XCLOG lines from this service's journal since `since` (newest last)."""
+    try:
+        out = subprocess.run(
+            ["journalctl", "--user", "-u", "xctimer", "--since", since,
+             "-o", "short-iso", "--no-pager"],
+            capture_output=True, text=True, timeout=12).stdout
+    except Exception:  # noqa: BLE001
+        return []
+    return [ln for ln in out.splitlines() if "XCLOG " in ln][-cap:]
+
+
+def _parse_journal(lines):
+    reqs, logins = [], []
+    for ln in lines:
+        ts = ln.split(" ", 1)[0]
+        parts = ln[ln.find("XCLOG "):].split()
+        if len(parts) < 3:
+            continue
+        if parts[1] == "REQ" and len(parts) >= 6:
+            try:
+                status = int(parts[3])
+            except ValueError:
+                continue
+            reqs.append({"ts": ts, "ip": parts[2], "status": status,
+                         "method": parts[4], "path": parts[5]})
+        elif parts[1] == "LOGIN" and len(parts) >= 6:
+            logins.append({"ts": ts, "result": parts[2], "email": parts[3],
+                           "role": parts[4], "ip": parts[5]})
+    return reqs, logins
+
+
+@bp.get("/admin/console")
+@role_required("super_admin")
+def console():
+    rng = request.args.get("range", "1h")
+    label, since = _CONSOLE_RANGES.get(rng, _CONSOLE_RANGES["1h"])
+    reqs, logins = _parse_journal(_read_journal(since))
+
+    buckets = {2: 0, 3: 0, 4: 0, 5: 0}
+    ips, p404 = {}, {}
+    for r in reqs:
+        b = r["status"] // 100
+        if b in buckets:
+            buckets[b] += 1
+        d = ips.setdefault(r["ip"], {"n": 0, 2: 0, 3: 0, 4: 0, 5: 0})
+        d["n"] += 1
+        if b in d:
+            d[b] += 1
+        if r["status"] == 404:
+            pp = p404.setdefault(r["path"], set())
+            pp.add(r["ip"])
+    total = len(reqs)
+
+    def tab(k, lbl):
+        on = "background:var(--acc);color:#04101f;border-color:var(--acc)" if k == rng else ""
+        return (f'<a href="/admin/console?range={k}" class="btn ghost" '
+                f'style="padding:.4rem 1rem;{on}">{lbl}</a>')
+    tabs = tab("1h", "1 hour") + " " + tab("24h", "24 hours") + " " + tab("7d", "7 days")
+
+    def tile(lbl, val, color=""):
+        return (f'<div class="card" style="flex:1;min-width:120px;text-align:center">'
+                f'<div class="muted" style="font-size:.72rem;letter-spacing:.08em">{lbl}</div>'
+                f'<div style="font-size:1.8rem;font-weight:800;{color}">{val}</div></div>')
+    tiles = ('<div style="display:flex;gap:.6rem;flex-wrap:wrap;margin:.6rem 0">'
+             + tile("TOTAL REQUESTS", total)
+             + tile("UNIQUE IPS", len(ips))
+             + tile("2XX SUCCESS", buckets[2], "color:var(--ok)")
+             + tile("3XX REDIRECT", buckets[3])
+             + tile("4XX CLIENT", buckets[4], "color:var(--warn)" if buckets[4] else "")
+             + tile("5XX SERVER", buckets[5], "color:var(--err)" if buckets[5] else "")
+             + '</div>')
+
+    top_ips = sorted(ips.items(), key=lambda kv: -kv[1]["n"])[:12]
+    ip_rows = "".join(
+        f'<tr><td><b>{escape(ip)}</b></td><td style="text-align:right">{d["n"]}</td>'
+        f'<td class="muted" style="font-size:.85rem">'
+        f'{d[2]} ok · {d[3]} → · {d[4]} 4xx{(" · " + str(d[5]) + " 5xx") if d[5] else ""}</td></tr>'
+        for ip, d in top_ips) or '<tr><td colspan=3 class="muted">No requests in range.</td></tr>'
+    ip_card = (f'<div class="card"><h2>Top IPs by request count</h2>'
+               f'<table><tr><th>IP</th><th style="text-align:right">Requests</th>'
+               f'<th>Status mix</th></tr>{ip_rows}</table></div>')
+
+    p404_rows = "".join(
+        f'<tr><td>{escape(path)}</td><td style="text-align:right">{len(ipset)}</td></tr>'
+        for path, ipset in sorted(p404.items(), key=lambda kv: -len(kv[1]))[:20]) \
+        or '<tr><td colspan=2 class="muted">No 404s — good.</td></tr>'
+    p404_card = (f'<div class="card"><h2>Top 404 paths <span class="muted">— wordlist scans '
+                 f'surface here</span></h2><table><tr><th>Path</th>'
+                 f'<th style="text-align:right">Distinct IPs</th></tr>{p404_rows}</table></div>')
+
+    lg_rows = "".join(
+        f'<tr><td>{escape(l["ts"][:19].replace("T", " "))}</td><td>{escape(l["email"])}</td>'
+        f'<td>{escape(l["role"])}</td>'
+        f'<td>{"✓ ok" if l["result"] == "ok" else "<span style=color:var(--err)>✕ fail</span>"}</td>'
+        f'<td>{escape(l["ip"])}</td></tr>'
+        for l in list(reversed(logins))[:50]) or '<tr><td colspan=5 class="muted">No logins in range.</td></tr>'
+    login_card = (f'<div class="card"><h2>Login events <span class="muted">— last 50</span></h2>'
+                  f'<table><tr><th>When</th><th>Email</th><th>Role</th><th>Status</th><th>IP</th></tr>'
+                  f'{lg_rows}</table></div>')
+
+    stream_seed = "\n".join(_read_journal(since, cap=200)[-200:])
+    stream_card = f"""<div class="card"><h2>Raw log stream <span class="muted">— live tail</span>
+<button class="ghost" onclick="PAUSED=!PAUSED;this.textContent=PAUSED?'▶ Resume':'⏸ Pause'"
+  style="float:right">⏸ Pause</button></h2>
+<pre id="stream" style="background:#04101f;color:#cfe;border-radius:10px;padding:.7rem;
+  height:340px;overflow:auto;font-size:.74rem;line-height:1.35;white-space:pre-wrap">{escape(stream_seed)}</pre></div>
+<script>
+let PAUSED=false; const seen=new Set(({json.dumps(stream_seed.splitlines())}));
+const el=document.getElementById('stream');
+async function tail(){{ if(PAUSED)return;
+  try{{ const j=await (await fetch('/admin/console/tail')).json();
+    let add=''; (j.lines||[]).forEach(function(ln){{ if(!seen.has(ln)){{ seen.add(ln); add+=ln+'\\n'; }} }});
+    if(add){{ const atBottom = el.scrollTop+el.clientHeight >= el.scrollHeight-30;
+      el.textContent += add; if(atBottom) el.scrollTop = el.scrollHeight; }}
+  }}catch(e){{}} }}
+el.scrollTop = el.scrollHeight;
+setInterval(tail, 3000);
+</script>"""
+
+    body = (f'<div class="row" style="justify-content:space-between;align-items:center">'
+            f'<div><h1>Console <span class="pill">SUPER ADMIN</span></h1>'
+            f'<p class="sub">Cross-tenant operational view — request firehose, errors, login events. '
+            f'Showing the last {label}.</p></div><div>{tabs}</div></div>'
+            f'{tiles}{ip_card}{p404_card}{login_card}{stream_card}')
+    return shell(g.principal, body, active="console",
+                 active_district=active_district_id(), districts=_districts_for_switcher())
+
+
+@bp.get("/admin/console/tail")
+@role_required("super_admin")
+def console_tail():
+    return jsonify(lines=_read_journal("15 minutes ago", cap=200)[-200:])
