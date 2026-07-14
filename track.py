@@ -1109,10 +1109,15 @@ def _hj_grid_html(meid, me, entries, res, labels, setup, record):
                           "marks": grid, "dq": bool(r and r["dq"]),
                           "place": (r["place"] if r and r["place"] else "")})
     add_h = ("" if not record else
-             '<div class="hjrow"><input id="newht" placeholder="Next height (ft-in, e.g. 4-02)" '
-             'style="max-width:280px"><button type="button" onclick="addHeight()">+ Add height</button></div>'
-             '<p class="muted" style="margin:.2rem 0 .6rem">Start at the opening height and add each new '
-             'height as you raise the bar — go up until no one clears. Per height: '
+             '<div class="hjrow"><b>Bar schedule:</b>'
+             '<input id="hjstart" placeholder="Start height (ft-in, e.g. 4-00)" style="max-width:190px">'
+             '<input id="hjinc" type="number" min="1" step="1" placeholder="increment (in)" style="max-width:130px">'
+             '<button type="button" onclick="genSchedule()">Generate</button></div>'
+             '<div class="hjrow"><input id="newht" placeholder="…or add one height (ft-in)" '
+             'style="max-width:220px"><button type="button" class="ghost" onclick="addHeight()">+ Add height</button></div>'
+             '<p class="muted" style="margin:.2rem 0 .6rem">The meet director sets the opening height and '
+             'increment in advance (jr-high openers are usually low-4-foot for boys, high-3/low-4 for girls; '
+             'bars often rise 2&Prime; early, then 1&Prime; near the top). Per height: '
              '<b>O</b>=clear, <b>X</b>=miss (XO, XXO), <b>P</b>=pass, <b>XXX</b>=out.</p>')
     add_bib = ("" if not record else
                '<div class="hjrow"><b>Last-minute add by bib:</b> '
@@ -1169,6 +1174,15 @@ async function save(){{ try{{ const j=await jpost('/meet-events/'+MEID+'/hj-save
   ROWS.forEach(function(r,ri){{ const c=document.getElementById('pl'+ri); if(c)c.textContent=r.place||''; }});
  }}catch(e){{}} }}
 function addHeight(){{ const el=document.getElementById('newht'),v=el.value.trim(); if(inches(v)==null){{alert('Use ft-in, e.g. 4-02');return;}} BARS.push(v); el.value=''; render(); save(); }}
+function genSchedule(){{
+  const s=inches(document.getElementById('hjstart').value.trim());
+  const inc=parseFloat(document.getElementById('hjinc').value);
+  if(s==null){{alert('Enter a start height in ft-in, e.g. 4-00');return;}}
+  if(isNaN(inc)||inc<=0){{alert('Enter an increment in inches, e.g. 2');return;}}
+  const n=Math.max(8, Math.min(14, Math.round(24/inc)+1));   // cover ~2 ft of bars
+  BARS=[]; for(let k=0;k<n;k++) BARS.push(fmtht(s+Math.round(k*inc)));
+  render(); save();
+}}
 async function addBib(){{ const el=document.getElementById('addbib'),v=el.value.trim(); if(!v)return;
   try{{ await jpost('/meet-events/'+MEID+'/add-bib',{{bib:v}}); location.reload(); }}catch(e){{ alert(e.message); }} }}
 async function delRow(eid){{ if(!confirm('Remove this athlete from the event?'))return;

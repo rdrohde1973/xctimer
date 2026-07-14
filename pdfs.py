@@ -67,7 +67,7 @@ def bib_stickers_pdf(school_name, athletes, *, template="5160", qr_prefix="", lo
 _HOWTO = {
     "track": "HOW TO RECORD: write each athlete's finish TIME (e.g. 1:02.34), then photograph this sheet on the Scan tab.",
     "field": "HOW TO RECORD: write each of the 3 attempts (F = foul); the best legal mark scores. Then scan this sheet.",
-    "hj": "HOW TO RECORD: write each athlete's BEST height cleared (e.g. 4-08). Then scan this sheet.",
+    "hj": "HOW TO RECORD: mark each bar (O=clear, X=miss, P=pass); write the BEST height cleared in the last box. Then scan.",
 }
 
 
@@ -153,39 +153,40 @@ def _draw_field_section(c, ph, pw, left, title, rows, hj, token=None, bars=None)
     c.setFillGray(0)
 
     if hj:
-        # High Jump: one line per athlete — write the BEST height cleared (+ optional
-        # misses). No O/X grid: a single written height per row scans far more reliably.
-        if bars:
-            y -= 0.22 * inch
-            c.setFont("Helvetica", 8)
-            c.setFillGray(0.4)
-            c.drawString(left, y, "Bar progression (low → high): " + "   ".join(bars))
-            c.setFillGray(0)
-        name_x = left + 0.7 * inch
-        best_x = pw - 3.1 * inch
-        miss_x = pw - 1.25 * inch
-        y -= 0.42 * inch
-        c.setFont("Helvetica-Bold", 9)
+        # High Jump jury grid: the pre-set bar heights print as columns (mark O/X/P
+        # per height); a wide BEST box on the right is what the scanner reads.
+        name_x = left + 0.5 * inch
+        hx = name_x + 1.55 * inch
+        best_w = 0.85 * inch
+        right_edge = pw - 0.5 * inch
+        hcols = bars[:11]
+        avail = right_edge - best_w - 0.15 * inch - hx
+        cw = max(0.34 * inch, min(0.46 * inch, avail / len(hcols))) if hcols else 0.4 * inch
+        best_x = hx + len(hcols) * cw + 0.15 * inch
+        y -= 0.36 * inch
+        c.setFont("Helvetica-Bold", 8)
         c.setFillGray(0.35)
         c.drawString(left, y, "BIB")
         c.drawString(name_x, y, "NAME")
-        c.drawString(best_x, y, "BEST HEIGHT (ft-in)")
-        c.drawString(miss_x, y, "MISSES")
+        for i, b in enumerate(hcols):
+            c.drawCentredString(hx + i * cw + cw / 2, y, b)
+        c.drawString(best_x, y, "BEST")
         c.setFillGray(0)
-        y -= 0.14 * inch
-        c.line(left, y, pw - 0.5 * inch, y)
-        y -= 0.46 * inch
+        y -= 0.12 * inch
+        c.line(left, y, right_edge, y)
+        y -= 0.4 * inch
         for r in list(rows) + [None] * 3:
             if y < 0.9 * inch:
                 c.showPage()
                 y = ph - 0.9 * inch
-            c.setFont("Helvetica", 11)
+            c.setFont("Helvetica", 10)
             if r:
                 c.drawString(left, y, "" if r["bib"] is None else str(r["bib"]))
-                c.drawString(name_x, y, (r["name"] or "")[:34])
-            c.rect(best_x, y - 0.14 * inch, 1.55 * inch, 0.42 * inch)
-            c.rect(miss_x, y - 0.14 * inch, 0.7 * inch, 0.42 * inch)
-            y -= 0.6 * inch
+                c.drawString(name_x, y, (r["name"] or "")[:20])
+            for i in range(len(hcols)):
+                c.rect(hx + i * cw, y - 0.1 * inch, cw - 0.04 * inch, 0.32 * inch)
+            c.rect(best_x, y - 0.1 * inch, best_w, 0.32 * inch)
+            y -= 0.5 * inch
         c.showPage()
         return
 
