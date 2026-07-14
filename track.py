@@ -1944,7 +1944,6 @@ def time_console(meid):
     <button id="btn-start" onclick="startRace()">🚦 Start</button>
     <button id="btn-stop" onclick="stopRace()">⏹ Stop</button>
     <button class="ghost" onclick="resetRace()">🔄 Reset</button>
-    <a class="btn ghost" href="/meets/{me['meet_id']}/results">📊 Results</a>
   </div>
   <div id="status" class="tc-status wait">Not started.</div>
   <button id="tapbtn" onclick="tap()" disabled
