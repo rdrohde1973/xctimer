@@ -4,8 +4,12 @@ Districts: super admin only. Users: super admin (any district) and district admi
 (own district). Every write is district-scoped server-side.
 """
 import json
+import os
 import re
+import shutil
 import subprocess
+import time
+import urllib.request
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
@@ -628,6 +632,153 @@ def _parse_journal(lines):
     return reqs, logins
 
 
+# ------------------------------- server vitals (Console) -------------------------------
+# Live host stats are read locally (load/mem/disk/uptime) — richer and cheaper than the
+# Hetzner API, which can't report memory or disk-space-used. Monthly outbound traffic vs.
+# the included quota is the one thing worth the API; it activates when a token is present.
+_HZ_CACHE = {"exp": 0.0, "data": None}
+
+
+def _fmt_bytes(n):
+    n = float(n or 0)
+    for unit in ("B", "KB", "MB", "GB", "TB", "PB"):
+        if n < 1024 or unit == "PB":
+            return (f"{int(n)} {unit}" if unit == "B" else f"{n:.1f} {unit}")
+        n /= 1024
+
+
+def _fmt_dur(sec):
+    sec = int(sec or 0)
+    d, sec = divmod(sec, 86400)
+    h, sec = divmod(sec, 3600)
+    m, _ = divmod(sec, 60)
+    if d:
+        return f"{d}d {h}h"
+    if h:
+        return f"{h}h {m}m"
+    return f"{m}m"
+
+
+def _meminfo():
+    info = {}
+    with open("/proc/meminfo") as f:
+        for line in f:
+            k, _, rest = line.partition(":")
+            parts = rest.strip().split()
+            if parts:
+                info[k] = int(parts[0]) * 1024   # kB -> bytes
+    return info
+
+
+def _hetzner_traffic():
+    """Outbound traffic vs. included quota from the Hetzner Cloud API, cached 5 min.
+    Needs HETZNER_API_TOKEN in the env; HETZNER_SERVER_ID is optional (else first server)."""
+    token = os.environ.get("HETZNER_API_TOKEN")
+    if not token:
+        return None
+    if _HZ_CACHE["exp"] > time.monotonic():
+        return _HZ_CACHE["data"]
+    hdr = {"Authorization": f"Bearer {token}"}
+    data = None
+    try:
+        sid = os.environ.get("HETZNER_SERVER_ID")
+        if not sid:
+            req = urllib.request.Request("https://api.hetzner.cloud/v1/servers?per_page=1", headers=hdr)
+            with urllib.request.urlopen(req, timeout=4) as r:
+                servers = json.load(r).get("servers", [])
+            if not servers:
+                data = {"error": "token has no servers"}
+            else:
+                sid = servers[0]["id"]
+        if data is None:
+            req = urllib.request.Request(f"https://api.hetzner.cloud/v1/servers/{sid}", headers=hdr)
+            with urllib.request.urlopen(req, timeout=4) as r:
+                obj = json.load(r)["server"]
+            data = {"out": obj.get("outgoing_traffic") or 0,
+                    "included": obj.get("included_traffic") or 0}
+    except Exception as e:                                   # network/auth/parse — show, don't crash
+        data = {"error": str(e)[:140]}
+    _HZ_CACHE["exp"] = time.monotonic() + 300
+    _HZ_CACHE["data"] = data
+    return data
+
+
+def _server_stats_display():
+    """Formatted host vitals for the Console server card (and its live-refresh feed)."""
+    d = {}
+    try:
+        la = os.getloadavg()
+        d["load"] = f"{la[0]:.2f} / {la[1]:.2f} / {la[2]:.2f}"
+    except Exception:
+        d["load"] = "n/a"
+    d["cpus"] = f"{os.cpu_count() or 1} vCPU"
+    try:
+        mi = _meminfo()
+        total, avail = mi.get("MemTotal", 0), mi.get("MemAvailable", 0)
+        used = total - avail
+        pct = round(used / total * 100) if total else 0
+        d["mem"] = f"{_fmt_bytes(used)} / {_fmt_bytes(total)} ({pct}%)"
+    except Exception:
+        d["mem"] = "n/a"
+    try:
+        du = shutil.disk_usage("/")
+        d["disk"] = f"{_fmt_bytes(du.used)} / {_fmt_bytes(du.total)} ({round(du.used / du.total * 100)}%)"
+    except Exception:
+        d["disk"] = "n/a"
+    try:
+        with open("/proc/uptime") as f:
+            d["uptime"] = _fmt_dur(float(f.read().split()[0]))
+    except Exception:
+        d["uptime"] = "n/a"
+    hz = _hetzner_traffic()
+    if hz is None:
+        d["traffic"] = "set HETZNER_API_TOKEN in the env to enable"
+    elif "error" in hz:
+        d["traffic"] = "⚠ " + hz["error"]
+    else:
+        inc = hz.get("included") or 0
+        pct = (hz["out"] / inc * 100) if inc else 0
+        d["traffic"] = f'{_fmt_bytes(hz["out"])} of {_fmt_bytes(inc)} included ({pct:.1f}%)'
+    return d
+
+
+def _server_card():
+    d = _server_stats_display()
+    try:
+        host = os.uname().nodename
+    except Exception:
+        host = "host"
+
+    def t(lbl, vid, val):
+        return (f'<div style="flex:1;min-width:110px;text-align:center;padding:.4rem">'
+                f'<div class="muted" style="font-size:.7rem;letter-spacing:.06em">{lbl}</div>'
+                f'<div id="{vid}" style="font-size:1.15rem;font-weight:800">{escape(val)}</div></div>')
+    return (f'<div class="card"><h2>🖥️ Server <span class="muted">— {escape(host)} · live</span></h2>'
+            f'<div style="display:flex;gap:.4rem;flex-wrap:wrap">'
+            + t("LOAD 1/5/15m", "srv-load", d["load"])
+            + t("CPU", "srv-cpus", d["cpus"])
+            + t("MEMORY", "srv-mem", d["mem"])
+            + t("DISK", "srv-disk", d["disk"])
+            + t("UPTIME", "srv-uptime", d["uptime"])
+            + '</div>'
+            f'<div class="muted" style="margin-top:.55rem;font-size:.85rem">📡 Outbound traffic this month: '
+            f'<span id="srv-traffic">{escape(d["traffic"])}</span></div>'
+            '<script>'
+            'async function srvStats(){'
+            ' try{const d=await (await fetch("/admin/console/stats")).json();'
+            ' ["load","cpus","mem","disk","uptime","traffic"].forEach(function(k){'
+            ' const el=document.getElementById("srv-"+k); if(el&&d[k]!=null) el.textContent=d[k];});'
+            ' }catch(e){}}'
+            'setInterval(srvStats,5000);'
+            '</script></div>')
+
+
+@bp.get("/admin/console/stats")
+@role_required("super_admin")
+def console_stats():
+    return jsonify(_server_stats_display())
+
+
 @bp.get("/admin/console")
 @role_required("super_admin")
 def console():
@@ -720,7 +871,7 @@ setInterval(tail, 3000);
             f'<div><h1>Console <span class="pill">SUPER ADMIN</span></h1>'
             f'<p class="sub">Cross-tenant operational view — request firehose, errors, login events. '
             f'Showing the last {label}.</p></div><div>{tabs}</div></div>'
-            f'{tiles}{ip_card}{p404_card}{login_card}{stream_card}')
+            f'{tiles}{_server_card()}{ip_card}{p404_card}{login_card}{stream_card}')
     return shell(g.principal, body, active="console",
                  active_district=active_district_id(), districts=_districts_for_switcher())
 
