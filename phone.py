@@ -93,6 +93,11 @@ def phone_home():
     else:
         rows = conn.execute("SELECT * FROM meets ORDER BY date DESC, id DESC").fetchall()
     meets = [m for m in rows if can_record_meet(m)]
+    # No-login QR is locked to one meet — for a track meet, drop the helper straight
+    # into the Track Timer instead of a one-tile "pick a meet" page.
+    if getattr(p, "meet_scope", None) and len(meets) == 1 and meets[0]["sport"] == "track":
+        conn.close()
+        return redirect(f"/phone/meet/{meets[0]['id']}")
     groups = []
     for m in meets:
         if m["sport"] == "xc":
@@ -296,13 +301,20 @@ def _track_timer(conn, m):
         label = f"{gr}{gword + ' ' if gword else ''}{ev['ename']}".strip()
         evdata[str(ev["id"])] = {"label": label, "heats": heats}
         ev_opts.append(f'<option value="{ev["id"]}">{escape(label)}</option>')
-    # meet switcher (track meets the user can time)
+    # Meet switcher (track meets the user can time) — hidden for a no-login QR
+    # session, which is already locked to this one meet.
+    scoped = bool(getattr(getattr(g, "principal", None), "meet_scope", None))
     meet_opts = []
-    for mm in conn.execute("SELECT * FROM meets WHERE district_id=? AND sport='track' "
-                           "ORDER BY date DESC, id DESC", (m["district_id"],)).fetchall():
-        if can_record_meet(mm):
-            sel = "selected" if mm["id"] == m["id"] else ""
-            meet_opts.append(f'<option value="{mm["id"]}" {sel}>{escape(mm["name"])}</option>')
+    if not scoped:
+        for mm in conn.execute("SELECT * FROM meets WHERE district_id=? AND sport='track' "
+                               "ORDER BY date DESC, id DESC", (m["district_id"],)).fetchall():
+            if can_record_meet(mm):
+                sel = "selected" if mm["id"] == m["id"] else ""
+                meet_opts.append(f'<option value="{mm["id"]}" {sel}>{escape(mm["name"])}</option>')
+    meet_block = ("" if scoped else
+                  '<label>Meet</label>'
+                  "<select onchange=\"if(this.value)location.href='/phone/meet/'+this.value\">"
+                  f'{"".join(meet_opts)}</select>')
 
     return f"""
 <h1>🏅 Track Timer</h1>
@@ -314,8 +326,7 @@ def _track_timer(conn, m):
 <div class="card" id="tab-time">
   <h2>Time a race</h2>
   <p class="sub">For 800m, 1600m, 3200m &amp; 4×400m — start the clock and tap each runner as they finish.</p>
-  <label>Meet</label>
-  <select onchange="if(this.value)location.href='/phone/meet/'+this.value">{''.join(meet_opts)}</select>
+  {meet_block}
   <label>Event</label>
   <select id="tev" onchange="fillHeats()">{''.join(ev_opts)}</select>
   <label>Heat / section</label>
