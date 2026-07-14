@@ -541,17 +541,6 @@ async function commitImport(){{
   catch(e){{ alert(e.message); }}
 }}
 </script>
-
-<div class="card"><h2>🎓 Start a new season</h2>
-<p class="muted">Moves every athlete up one grade. Athletes finishing the top grade
-graduate — kept for their stats and history, just hidden from the active roster.
-Past results are never changed.</p>
-<form method="post" action="/schools/{sid}/advance-season"
-  onsubmit="return confirm('Advance every athlete one grade? Top-grade athletes will graduate. This can\\'t be auto-undone.')">
-  <label>Top grade (these graduate)</label>
-  <input name="top_grade" type="number" value="9" style="max-width:130px">
-  <button type="submit" style="margin-top:.6rem">Advance season ▲</button>
-</form></div>
 """
     if g.principal.is_admin and not ro:
         body += f"""
@@ -701,28 +690,6 @@ def restore_athlete(aid):
     conn.commit()
     conn.close()
     return redirect(f"/schools/{a['school_id']}?show=grad")
-
-
-@bp.post("/schools/<int:sid>/advance-season")
-@login_required
-def advance_season(sid):
-    """New-season rollover: everyone up one grade; top-grade athletes graduate
-    (active=0, kept for stats). Historical results are untouched."""
-    s = _load_school_or_403(sid)
-    if g.principal.is_demo:
-        abort(403)
-    tg = (request.form.get("top_grade") or "9").strip()
-    top = int(tg) if tg.isdigit() else 9
-    conn = db.connect()
-    # Graduate athletes at/above the top grade first (so the bump can't push them past it).
-    conn.execute("UPDATE athletes SET active=0 WHERE school_id=? AND active=1 "
-                 "AND grade IS NOT NULL AND grade>=?", (sid, top))
-    # Everyone else moves up one grade.
-    conn.execute("UPDATE athletes SET grade=grade+1 WHERE school_id=? AND active=1 "
-                 "AND grade IS NOT NULL AND grade<?", (sid, top))
-    conn.commit()
-    conn.close()
-    return redirect(f"/schools/{sid}")
 
 
 @bp.post("/athletes/<int:aid>/delete")
