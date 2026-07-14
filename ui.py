@@ -80,7 +80,7 @@ button.danger{background:transparent;color:var(--err);border:1px solid var(--lin
 border-radius:16px;padding:2rem}
 .authcard h1{text-align:center;margin:.1em 0 .1em}
 .authcard .sub{text-align:center;margin-bottom:1.4rem}
-.authlogo{background:#f4f6f8;border-radius:16px;padding:1rem 1.2rem;margin:0 auto 1.3rem;max-width:270px}
+.authlogo{margin:0 auto 1.3rem;max-width:250px}
 .authlogo img{width:100%;display:block}
 .authcard button{width:100%;margin-top:1rem;padding:.65rem}
 .center{text-align:center;margin-top:1rem}
@@ -269,7 +269,7 @@ def auth_page(title, sub, body, *, msg=None, err=None):
 <meta name=viewport content="width=device-width, initial-scale=1">
 <title>{escape(title)} · {BRAND}</title>{HEAD_EXTRA}<style>{CSS}</style></head><body>
 <div class="authwrap"><div class="authcard">
-  <div class="authlogo"><img src="{LOGO_URL}" alt="XCTimer"></div>
+  <div class="authlogo"><img src="{LOGO_DARK_URL}" alt="XCTimer"></div>
   <p class="sub">{escape(sub)}</p>
   {_flashes(msg, err)}
   {body}
