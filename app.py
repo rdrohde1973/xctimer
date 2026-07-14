@@ -24,7 +24,7 @@ from .insights import bp as insights_bp
 from .phone import bp as phone_bp
 from .waivers import bp as waivers_bp
 
-APP_VERSION = "0.55.0-compliance-p2"
+APP_VERSION = "0.56.0-security-page"
 
 LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width, initial-scale=1">
@@ -229,7 +229,109 @@ LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
   </div>
 </div></section>
 
-<footer>© XCTimer · xctimer.com · timing &amp; coach management for junior high cross country &amp; track</footer>
+<footer>© XCTimer · xctimer.com · timing &amp; coach management for junior high cross country &amp; track
+<br><a href="/security" style="color:var(--navy);font-weight:700">Security &amp; data privacy</a></footer>
+</body></html>"""
+
+
+SECURITY = """<!doctype html><html lang=en><head><meta charset=utf-8>
+<meta name=viewport content="width=device-width, initial-scale=1">
+<title>Security &amp; data privacy — XCTimer</title>
+<meta name="description" content="How XCTimer protects student-athlete data: encryption in transit, sign-in-gated access, district isolation, hardened sessions, daily backups, and strict data minimization.">
+<style>
+  :root{--navy:#164271;--navy-d:#0f3157;--orange:#ea6a2d;--gray:#868686;--ink:#20303f;--bg:#f5f8fc;--line:#e3e9f1}
+  *{box-sizing:border-box}
+  body{margin:0;font:16px/1.7 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;color:var(--ink);background:var(--bg)}
+  a{color:var(--navy)}
+  .wrap{max-width:820px;margin:0 auto;padding:0 1.2rem}
+  nav{position:sticky;top:0;z-index:10;background:rgba(245,248,252,.92);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
+  nav .wrap{display:flex;align-items:center;justify-content:space-between;height:64px;max-width:1080px}
+  nav img{height:34px} nav a.signin{font-weight:700;color:var(--navy);padding:.5rem 1.1rem;border-radius:9px}
+  header.hd{background:radial-gradient(120% 90% at 50% -10%,#fff 0%,#eaf0f7 75%,#e2e9f2 100%);padding:3rem 0 2.4rem;border-bottom:1px solid var(--line)}
+  header.hd h1{color:var(--navy);font-size:clamp(1.8rem,4.5vw,2.5rem);margin:.2rem 0 .4rem;letter-spacing:-.01em}
+  header.hd p{color:#43586c;font-size:1.1rem;margin:0;max-width:60ch}
+  main{padding:2.4rem 0 1rem}
+  section{border-top:1px solid var(--line);padding:2rem 0}
+  section:first-child{border-top:none}
+  .num{color:var(--orange);font-weight:800;font-size:.8rem;letter-spacing:.14em}
+  h2{color:var(--navy);font-size:1.4rem;margin:.15rem 0 1rem;letter-spacing:-.01em}
+  h3{color:var(--ink);font-size:1.02rem;margin:1.2rem 0 .1rem}
+  h3 .em{color:var(--orange)}
+  p.sub{color:#4a5f73;margin:.1rem 0 0}
+  .no{list-style:none;padding:0;margin:.6rem 0 0;display:grid;gap:.45rem}
+  .no li{display:flex;gap:.6rem;color:#3a4f63}
+  .no .x{color:#c0483f;font-weight:800;flex-shrink:0}
+  .updated{color:var(--gray);font-size:.85rem;margin-top:.5rem}
+  footer{border-top:1px solid var(--line);padding:2rem 0;color:var(--gray);font-size:.85rem;text-align:center}
+  .btn{display:inline-block;background:var(--orange);color:#fff;font-weight:700;padding:.6rem 1.4rem;border-radius:10px;text-decoration:none;margin-top:.4rem}
+</style></head><body>
+<nav><div class="wrap">
+  <a href="/"><img src="/static/branding/xctimer.png" alt="XCTimer"></a>
+  <a class="signin" href="/login">Sign in</a>
+</div></nav>
+<header class="hd"><div class="wrap">
+  <h1>Security &amp; data privacy</h1>
+  <p>XCTimer holds information about student athletes, so we treat it carefully. Here's exactly
+     how we protect your data, what we collect, and what we deliberately don't.</p>
+</div></header>
+<main class="wrap">
+
+  <section>
+    <div class="num">01</div><h2>How we protect your data</h2>
+    <h3><span class="em">Encrypted in transit.</span></h3>
+    <p class="sub">Every connection to XCTimer runs over HTTPS/TLS. Nothing you send or view crosses the internet in the clear.</p>
+    <h3><span class="em">Locked behind sign-in.</span></h3>
+    <p class="sub">Rosters, results, and contact details are only reachable by signed-in users. The one thing that can be public is a live results page — and only when a coach chooses to share its link.</p>
+    <h3><span class="em">Your district, fenced off.</span></h3>
+    <p class="sub">Each district's data is isolated. A coach or admin in one district cannot see another district's athletes, meets, or results.</p>
+    <h3><span class="em">Least privilege by role.</span></h3>
+    <p class="sub">Coaches, timers, district admins, and platform admins each see only what their job needs — nothing more.</p>
+    <h3><span class="em">Hardened sessions.</span></h3>
+    <p class="sub">Sign-in cookies are locked to your browser (HttpOnly, Secure, SameSite), sessions expire on their own after inactivity and on a hard cap, and every action that changes data carries an anti-forgery (CSRF) token.</p>
+    <h3><span class="em">Defense in depth.</span></h3>
+    <p class="sub">A strict Content-Security-Policy, modern security headers, parameterized database queries, and a no-cache rule on every page that shows student data.</p>
+    <h3><span class="em">Locked down at rest.</span></h3>
+    <p class="sub">The database lives on a private server with no public inbound access — reachable only through the authenticated app, behind a managed network edge.</p>
+    <h3><span class="em">Daily backups.</span></h3>
+    <p class="sub">Rosters and results are backed up automatically every night, so a bad day never means lost data.</p>
+  </section>
+
+  <section>
+    <div class="num">02</div><h2>What we hold — and what we don't</h2>
+    <h3><span class="em">What's in your account.</span></h3>
+    <p class="sub">Athlete rosters (name, grade, school, bib), meet entries and results/times, and any optional contact, parent, emergency, physical, or waiver details a coach chooses to add. That's the whole list.</p>
+    <h3><span class="em">What we deliberately don't collect.</span></h3>
+    <ul class="no">
+      <li><span class="x">✕</span> No Social Security numbers.</li>
+      <li><span class="x">✕</span> No bank account or credit-card numbers.</li>
+      <li><span class="x">✕</span> No third-party advertising or tracking scripts.</li>
+      <li><span class="x">✕</span> We never sell or share your data — with anyone.</li>
+    </ul>
+    <h3><span class="em">Only what a meet needs.</span></h3>
+    <p class="sub">Because these are junior-high athletes, we keep the footprint small on purpose. A field exists because a real meet or a real waiver uses it — and it's built with student-privacy expectations (FERPA / COPPA) in mind.</p>
+    <h3><span class="em">Your data on the way out.</span></h3>
+    <p class="sub">Export full results to Excel anytime. Want a student's — or your whole district's — data removed? Ask us and we'll delete it.</p>
+  </section>
+
+  <section>
+    <div class="num">03</div><h2>If something goes wrong</h2>
+    <h3><span class="em">We'll tell you.</span></h3>
+    <p class="sub">If a security incident ever affected your data, we'll notify affected districts promptly — our target is within 72 hours of confirming it — with what we know and what we're doing about it.</p>
+    <h3><span class="em">Where it runs.</span></h3>
+    <p class="sub">XCTimer is hosted on dedicated servers in the United States (Hillsboro, Oregon).</p>
+  </section>
+
+  <section>
+    <div class="num">04</div><h2>Talk to us</h2>
+    <h3><span class="em">Security researchers.</span></h3>
+    <p class="sub">Found something? Email <a href="mailto:rob@xctimer.com">rob@xctimer.com</a>. We welcome good-faith reports and won't pursue researchers acting in good faith.</p>
+    <h3><span class="em">Schools, districts &amp; vendor reviews.</span></h3>
+    <p class="sub">Need a security questionnaire filled out, or have a district data-privacy requirement? Email <a href="mailto:rob@xctimer.com">rob@xctimer.com</a> — happy to help.</p>
+    <a class="btn" href="/">← Back to XCTimer</a>
+  </section>
+
+</main>
+<footer>© XCTimer · xctimer.com · <a href="/" style="color:var(--navy)">Home</a></footer>
 </body></html>"""
 
 
@@ -303,6 +405,10 @@ def create_app():
             from .ui import home_url
             return redirect(home_url(g.principal))
         return LANDING
+
+    @app.get("/security")
+    def security():
+        return SECURITY
 
     @app.get("/healthz")
     def healthz():
