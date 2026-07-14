@@ -287,11 +287,15 @@ _ROSTER_SYS = (
     "You extract a cross-country / track team roster from messy text (spreadsheet "
     "dumps, PDFs, exports). Return ONLY a JSON array, no prose. Each element: "
     '{"name": "First Last", "grade": <int 6-12 or null>, "gender": "M"|"F"|null, '
+    '"does_xc": true|false|null, "does_track": true|false|null, '
     '"dob": <date of birth as written, or null>, '
     '"email": <string or null>, "phone": <string or null>, '
     '"parent_name": <string or null>, "parent_email": <string or null>, '
     '"parent_phone": <string or null>, "emergency_name": <string or null>, '
     '"emergency_phone": <string or null>}. '
+    "For does_xc/does_track: read columns like 'Cross Country'/'XC' and 'Track' — a Yes, "
+    "Y, X, TRUE, ✓, or the sport's name means true; No/blank means false; use null only "
+    "when there is no such column at all. "
     "Include the dob/contact/parent/emergency fields ONLY when clearly present in the "
     "source (matching column headers like Date of Birth/DOB, Email, Phone, "
     "Parent/Guardian, Emergency Contact); otherwise use null — never invent them. "

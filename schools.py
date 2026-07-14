@@ -457,7 +457,45 @@ Past results are never changed.</p>
 <p class="muted">Upload Excel/CSV/PDF/Word, or paste a Google Sheet link. Claude
 normalizes names, then you confirm before anything is saved.</p>
 <p><a class="btn ghost" href="/roster-template.xlsx">⬇ Download roster template (Excel)</a>
- <span class="muted">— fill in athletes plus contact, parent &amp; emergency info, then upload it back here.</span></p>
+ <button type="button" class="btn ghost"
+   onclick="document.getElementById('gfmodal').style.display='flex'">📝 Set up a Google Form sign-up</button></p>
+<p class="muted">Fill the template with athletes plus contact, parent &amp; emergency info and upload it back —
+ or collect it all with a Google Form (see the guide).</p>
+
+<div id="gfmodal" style="display:none;position:fixed;inset:0;z-index:50;background:rgba(3,10,20,.7);
+  align-items:flex-start;justify-content:center;padding:4vh 1rem;overflow:auto"
+  onclick="if(event.target===this)this.style.display='none'">
+  <div class="card" style="max-width:640px;width:100%">
+    <div class="row" style="justify-content:space-between;align-items:center">
+      <h2 style="margin:0">📝 Collect sign-ups with a Google Form</h2>
+      <button class="ghost" onclick="document.getElementById('gfmodal').style.display='none'">✕</button>
+    </div>
+    <p class="muted">Build a form once, share the link with parents, and every response lands in a
+      Google Sheet you can import here in one click. Name the questions to match these columns.</p>
+    <ol style="line-height:1.6;padding-left:1.2rem">
+      <li>Go to <b>forms.google.com</b> → <b>Blank form</b>. Title it e.g. "Lehi XC / Track Sign-up".</li>
+      <li>Add one question per column (the question title becomes the column header):
+        <ul style="margin:.3rem 0;padding-left:1.1rem">
+          <li><b>Name</b> — Short answer</li>
+          <li><b>Grade</b> — Multiple choice: 6, 7, 8, 9</li>
+          <li><b>Gender</b> — Multiple choice: M, F</li>
+          <li><b>Cross Country</b> — Multiple choice: Yes, No</li>
+          <li><b>Track</b> — Multiple choice: Yes, No</li>
+          <li><b>Date of Birth</b> — Date</li>
+          <li><b>Parent/Guardian Name</b> — Short answer</li>
+          <li><b>Parent Email</b> · <b>Parent Phone</b> — Short answer</li>
+          <li><b>Emergency Contact</b> · <b>Emergency Phone</b> — Short answer</li>
+        </ul>
+      </li>
+      <li>Open the <b>Responses</b> tab → <b>Link to Sheets</b> → create a new spreadsheet.</li>
+      <li>In that Sheet: <b>Share</b> → <b>Anyone with the link</b> → <b>Viewer</b>, and copy the link.</li>
+      <li>Back here, paste it into <b>Google Sheet share link</b> → <b>Pull sheet</b> → review → <b>Import</b>.</li>
+    </ol>
+    <p class="muted">Tip: you can also open the Sheet → <b>File → Download → .xlsx</b> and upload that file instead.
+      Extra Google Form columns (like a timestamp) are ignored automatically.</p>
+    <button onclick="document.getElementById('gfmodal').style.display='none'" style="margin-top:.4rem">Got it</button>
+  </div>
+</div>
 <div class="row">
   <div>
     <label>File</label>
@@ -479,10 +517,11 @@ function renderPreview(rows){{
   PARSED = rows || [];
   if(!PARSED.length){{ document.getElementById('preview').innerHTML =
     '<p class="msg err">No athletes found.</p>'; return; }}
+  const yn=v=> v===true?'✓':(v===false?'–':'');
   let h = '<h2>'+PARSED.length+' found — review &amp; import</h2><table>'
-    +'<tr><th>Name</th><th>Gr</th><th>Sex</th></tr>';
+    +'<tr><th>Name</th><th>Gr</th><th>Sex</th><th>XC</th><th>Track</th></tr>';
   for(const a of PARSED) h += '<tr><td>'+esc(a.name)+'</td><td>'+esc(a.grade??'')
-    +'</td><td>'+esc(a.gender??'')+'</td></tr>';
+    +'</td><td>'+esc(a.gender??'')+'</td><td>'+yn(a.does_xc)+'</td><td>'+yn(a.does_track)+'</td></tr>';
   h += '</table><button type="button" onclick="commitImport()" style="margin-top:1rem">'
     +'Import '+PARSED.length+' athletes</button>';
   document.getElementById('preview').innerHTML = h;
@@ -525,14 +564,14 @@ async function commitImport(){{
                  active_district=active_district_id(), districts=_districts_for_switcher())
 
 
-_TEMPLATE_COLS = ["Name", "Grade", "Gender", "Date of Birth", "Athlete Email",
-                  "Athlete Phone", "Parent/Guardian Name", "Parent Email", "Parent Phone",
-                  "Emergency Contact", "Emergency Phone"]
+_TEMPLATE_COLS = ["Name", "Grade", "Gender", "Cross Country", "Track", "Date of Birth",
+                  "Athlete Email", "Athlete Phone", "Parent/Guardian Name", "Parent Email",
+                  "Parent Phone", "Emergency Contact", "Emergency Phone"]
 _TEMPLATE_SAMPLES = [
-    ["Alex Rivers", 7, "M", "2013-04-18", "", "", "Jordan Rivers",
+    ["Alex Rivers", 7, "M", "Yes", "Yes", "2013-04-18", "", "", "Jordan Rivers",
      "jordan.rivers@example.com", "555-0142", "Jordan Rivers", "555-0142"],
-    ["Sam Brooks", 8, "F", "2012-09-05", "sam.brooks@example.com", "", "Taylor Brooks",
-     "taylor.brooks@example.com", "555-0199", "Casey Brooks", "555-0177"],
+    ["Sam Brooks", 8, "F", "No", "Yes", "2012-09-05", "sam.brooks@example.com", "",
+     "Taylor Brooks", "taylor.brooks@example.com", "555-0199", "Casey Brooks", "555-0177"],
 ]
 
 
@@ -550,7 +589,7 @@ def _roster_template_xlsx():
         c.font = Font(bold=True)
     for row in _TEMPLATE_SAMPLES:
         ws.append(row)
-    widths = [20, 7, 8, 13, 24, 14, 22, 26, 14, 22, 16]
+    widths = [20, 7, 8, 13, 8, 13, 24, 14, 22, 26, 14, 22, 16]
     for i, w in enumerate(widths, 1):
         ws.column_dimensions[get_column_letter(i)].width = w
     ws.freeze_panes = "A2"
@@ -561,10 +600,11 @@ def _roster_template_xlsx():
             "1. Replace the two example rows on the 'Roster' tab with your athletes.",
             "2. Keep the header row exactly as-is.",
             "3. Name = First Last.  Grade = a number (6, 7, 8, 9).  Gender = M or F.",
-            "4. Date of Birth = MM/DD/YYYY (or YYYY-MM-DD).",
-            "5. Contact / parent / emergency columns are optional — fill what you have.",
-            "6. Bibs are assigned automatically on import (you don't enter them here).",
-            "7. Save the file, then upload it on the school's Import roster card.",
+            "4. Cross Country / Track = Yes or No (which sports the athlete is doing).",
+            "5. Date of Birth = MM/DD/YYYY (or YYYY-MM-DD).",
+            "6. Contact / parent / emergency columns are optional — fill what you have.",
+            "7. Bibs are assigned automatically on import (you don't enter them here).",
+            "8. Save the file, then upload it on the school's Import roster card.",
             "",
             "You can also upload your own spreadsheet — the importer reads matching",
             "column headers — but this template is the easiest way to capture everything."],
@@ -937,12 +977,19 @@ def import_commit(sid):
         cf = {k: (str(r.get(k)).strip() if r.get(k) else None) for k in
               ("dob", "email", "phone", "parent_name", "parent_email", "parent_phone",
                "emergency_name", "emergency_phone")}
+        # Sports: honor Cross Country / Track columns; default to BOTH when neither given.
+        dx, dt = r.get("does_xc"), r.get("does_track")
+        if dx is None and dt is None:
+            dx = dt = 1
+        else:
+            dx, dt = (1 if dx else 0), (1 if dt else 0)
         conn.execute(
             "INSERT INTO athletes (school_id, bib, name, grade, gender, does_xc, does_track, "
             "dob, email, phone, parent_name, parent_email, parent_phone, emergency_name, emergency_phone) "
-            "VALUES (?,?,?,?,?,1,1,?,?,?,?,?,?,?,?)",
-            (sid, bib, name, grade, gender, cf["dob"], cf["email"], cf["phone"], cf["parent_name"],
-             cf["parent_email"], cf["parent_phone"], cf["emergency_name"], cf["emergency_phone"]),
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (sid, bib, name, grade, gender, dx, dt, cf["dob"], cf["email"], cf["phone"],
+             cf["parent_name"], cf["parent_email"], cf["parent_phone"], cf["emergency_name"],
+             cf["emergency_phone"]),
         )
         added += 1
     conn.commit()
