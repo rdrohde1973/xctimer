@@ -44,6 +44,31 @@ def _qr_image(text):
     return ImageReader(buf)
 
 
+def per_page(template):
+    t = TEMPLATES.get(template, TEMPLATES["5160"])
+    return t["cols"] * t["rows"]
+
+
+def blank_fillers(used_bibs, bib_start, bib_end, need):
+    """`need` blank sticker rows (name='') carrying the next available bib numbers
+    within the school's block — leftover labels become ready-to-use last-minute adds."""
+    if need <= 0:
+        return []
+    used = {b for b in used_bibs if b is not None}
+    nb = max(used) + 1 if used else (bib_start or 1)
+    if bib_start and nb < bib_start:
+        nb = bib_start
+    out, b = [], nb
+    while len(out) < need:
+        if bib_end and b > bib_end:      # don't spill past this school's block
+            break
+        if b not in used:
+            out.append({"bib": b, "name": "", "grade": None, "gender": None})
+            used.add(b)
+        b += 1
+    return out
+
+
 def bib_stickers_pdf(school_name, athletes, *, template="5160", qr_prefix="", logo_path=None):
     """Avery label sheet for one school: logo + bib + name + school + QR."""
     t = TEMPLATES.get(template, TEMPLATES["5160"])

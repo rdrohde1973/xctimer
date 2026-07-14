@@ -473,13 +473,15 @@ def _attending_groups(mid):
     return groups
 
 
-def _sticker_groups(mid, with_events):
+def _sticker_groups(mid, with_events, fill_to=0):
     """[(school_name, logo_path, [athlete dicts])]. For track, attach each
-    athlete's events (name + heat/lane) and include only entered athletes."""
+    athlete's events (name + heat/lane) and include only entered athletes.
+    fill_to = labels per sheet: pad each school's last sheet with blank stickers
+    on the next open bibs (for last-minute adds)."""
     conn = db.connect()
     schools = conn.execute(
-        "SELECT s.id, s.name, s.logo_path FROM schools s JOIN meet_schools ms ON ms.school_id=s.id "
-        "WHERE ms.meet_id=? ORDER BY s.name", (mid,)).fetchall()
+        "SELECT s.id, s.name, s.logo_path, s.bib_start, s.bib_end FROM schools s "
+        "JOIN meet_schools ms ON ms.school_id=s.id WHERE ms.meet_id=? ORDER BY s.name", (mid,)).fetchall()
     groups = []
     for s in schools:
         ath = conn.execute("SELECT id, bib, name, grade, gender FROM athletes WHERE school_id=? "
@@ -516,6 +518,11 @@ def _sticker_groups(mid, with_events):
                     continue  # track: sticker only for entered athletes
                 d["events"] = ev_list
             arr.append(d)
+        if fill_to:
+            real = [a for a in arr if a["bib"] is not None]
+            need = (fill_to - len(real) % fill_to) % fill_to
+            arr += pdfs.blank_fillers([a["bib"] for a in real],
+                                      s["bib_start"], s["bib_end"], need)
         groups.append((s["name"], s["logo_path"], arr))
     conn.close()
     return groups
@@ -527,10 +534,11 @@ def meet_stickers(mid):
     m = load_meet(mid)
     if not can_view_meet(m):
         abort(403)
-    groups = _sticker_groups(mid, with_events=(m["sport"] == "track"))
+    template = request.args.get("template", "5160")
+    groups = _sticker_groups(mid, with_events=(m["sport"] == "track"),
+                             fill_to=pdfs.per_page(template))
     # QR encodes just the bib number (no URL).
-    pdf = pdfs.meet_stickers_pdf(groups,
-                                 template=request.args.get("template", "5160"), qr_prefix="")
+    pdf = pdfs.meet_stickers_pdf(groups, template=template, qr_prefix="")
     return Response(pdf, mimetype="application/pdf",
                     headers={"Content-Disposition": 'inline; filename="meet-stickers.pdf"'})
 
