@@ -289,62 +289,66 @@ def _draw_label(c, t, slot, ph, a, school_name, qr_prefix, logo=None):
         except Exception:  # noqa: BLE001
             pass
 
-    # QR (right, vertically centered, a bit larger — easier to scan)
-    qr_sz = min(lh * 0.6, 0.9 * inch)
+    # QR (top-right corner)
+    qr_sz = min(lh * 0.5, 0.72 * inch)
     qr_text = f"{qr_prefix}{a['bib']}" if qr_prefix else str(a["bib"])
     qr_x = x + lw - qr_sz - pad
     try:
-        c.drawImage(_qr_image(qr_text), qr_x, y_top - lh / 2 - qr_sz / 2,
+        c.drawImage(_qr_image(qr_text), qr_x, top - qr_sz,
                     qr_sz, qr_sz, preserveAspectRatio=True, mask="auto")
     except Exception:  # noqa: BLE001
         pass
 
-    # Centered block between logo and QR: big navy bib, name beneath, (school only
-    # when there's no logo), then event lines — vertically centered like the sticker.
-    mid_l = left
-    mid_r = qr_x - 0.06 * inch
-    mid_w = max(0.4 * inch, mid_r - mid_l)
-    cx = mid_l + mid_w / 2
+    content_l = left
+    content_r = qr_x - 0.07 * inch
+    content_w = max(0.6 * inch, content_r - content_l)
 
+    # Header row: big navy bib top-left, name + school stacked to its right.
     bib = str(a["bib"])
-    big = min(lh * 0.5, 40)
-    while big > 12 and c.stringWidth(bib, "Helvetica-Bold", big) > mid_w:
-        big -= 1
-    ntext, nsz = _fit_text(c, a["name"] or "", "Helvetica-Bold", min(lh * 0.18, 15), mid_w)
-    lines = [("bib", bib, big), ("name", ntext, nsz)]
-    if logo is None and school_name:
-        stext, ssz = _fit_text(c, school_name, "Helvetica", min(lh * 0.12, 9), mid_w)
-        lines.append(("school", stext, ssz))
-    events = a.get("events") if isinstance(a, dict) else None
-    for ev in (events or [])[:4]:
-        etext, esz = _fit_text(c, ev, "Helvetica-Bold", min(lh * 0.13, 10), mid_w)
-        lines.append(("event", etext, esz))
+    bibsz = min(lh * 0.48, 36)
+    while bibsz > 14 and c.stringWidth(bib, "Helvetica-Bold", bibsz) > content_w * 0.42:
+        bibsz -= 1
+    bib_base = top - bibsz * 0.82
+    c.setFont("Helvetica-Bold", bibsz)
+    c.setFillColorRGB(*NAVY)
+    c.drawString(content_l, bib_base, bib)
+    bibw = c.stringWidth(bib, "Helvetica-Bold", bibsz)
 
-    gap = 0.05 * inch
-    total = sum(sz for _, _, sz in lines) + gap * (len(lines) - 1)
-    usable = lh - 2 * pad
-    if total > usable:                      # scale the whole block to fit the label
-        sf = usable / total
-        lines = [(k, tx, sz * sf) for k, tx, sz in lines]
-        gap *= sf
-        total = usable
-    cursor = y_top - lh / 2 + total / 2
-    for kind, text, sz in lines:
-        cursor -= sz
-        if cursor < bottom:
-            break
-        if kind == "bib":
-            c.setFont("Helvetica-Bold", sz)
-            c.setFillColorRGB(*NAVY)
-        elif kind == "school":
-            c.setFont("Helvetica", sz)
-            c.setFillGray(0.42)
-        else:
-            c.setFont("Helvetica-Bold", sz)
+    name_x = content_l + bibw + 0.1 * inch
+    name_w = max(0.5 * inch, content_r - name_x)
+    ntext, nsz = _fit_text(c, a["name"] or "", "Helvetica-Bold", min(lh * 0.2, 14), name_w)
+    c.setFont("Helvetica-Bold", nsz)
+    c.setFillColorRGB(*NAVY)
+    c.drawString(name_x, top - nsz, ntext)
+    if school_name:
+        stext, ssz = _fit_text(c, school_name, "Helvetica", min(lh * 0.13, 9.5), name_w)
+        c.setFont("Helvetica", ssz)
+        c.setFillGray(0.45)
+        c.drawString(name_x, top - nsz - ssz - 0.03 * inch, stext)
+
+    # Body: event lines, left-aligned under the bib.
+    events = a.get("events") if isinstance(a, dict) else None
+    events = (events or [])[:4]
+    if events:
+        avail = (bib_base - 0.07 * inch) - bottom
+        esz = min(lh * 0.14, 9.5)
+        line_gap = 0.035 * inch
+        need = len(events) * esz + (len(events) - 1) * line_gap
+        if need > avail and avail > 0:
+            sf = avail / need
+            esz *= sf
+            line_gap *= sf
+        cursor = bib_base - 0.07 * inch
+        for ev in events:
+            etext, e_ = _fit_text(c, ev, "Helvetica-Bold", esz, content_w)
+            cursor -= e_
+            if cursor < bottom:
+                break
+            c.setFont("Helvetica-Bold", e_)
             c.setFillGray(0)
-        c.drawCentredString(cx, cursor, text)
-        c.setFillGray(0)
-        cursor -= gap
+            c.drawString(content_l, cursor, etext)
+            cursor -= line_gap
+    c.setFillGray(0)
 
 
 def meet_stickers_pdf(groups, *, template="5160", qr_prefix=""):

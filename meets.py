@@ -7,6 +7,7 @@ is Phase 4. Access:
   - record: super | district_admin(own) | coach attending | meet-QR principal
 """
 import io
+import json
 import secrets
 from datetime import datetime, timezone
 
@@ -491,12 +492,29 @@ def _sticker_groups(mid, with_events):
                     "SELECT e.name AS ename, en.heat, en.lane FROM entries en "
                     "JOIN meet_events me ON me.id=en.meet_event_id JOIN events e ON e.id=me.event_id "
                     "WHERE me.meet_id=? AND en.runner_id=? ORDER BY e.sort", (mid, a["id"])).fetchall()
-                if not evs:
+                ev_list = []
+                for ev in evs:
+                    if ev["heat"] and ev["lane"]:
+                        detail = f" · Sec {ev['heat']} Pos {ev['lane']}"
+                    elif ev["heat"]:
+                        detail = f" · Sec {ev['heat']}"
+                    else:
+                        detail = ""
+                    ev_list.append(ev["ename"] + detail)
+                # Relays store member names (not runner_id) — add any this athlete is on.
+                for r in conn.execute(
+                        "SELECT e.name AS ename, en.members_json FROM entries en "
+                        "JOIN meet_events me ON me.id=en.meet_event_id JOIN events e ON e.id=me.event_id "
+                        "WHERE me.meet_id=? AND e.kind='relay' ORDER BY e.sort", (mid,)).fetchall():
+                    try:
+                        members = json.loads(r["members_json"] or "[]")
+                    except (ValueError, TypeError):
+                        members = []
+                    if a["name"] in members:
+                        ev_list.append(f"{r['ename']} · relay")
+                if not ev_list:
                     continue  # track: sticker only for entered athletes
-                d["events"] = [
-                    ev["ename"] + (f" · H{ev['heat']} L{ev['lane']}" if ev["heat"] and ev["lane"]
-                                   else (f" · Sec {ev['heat']}" if ev["heat"] else ""))
-                    for ev in evs]
+                d["events"] = ev_list
             arr.append(d)
         groups.append((s["name"], s["logo_path"], arr))
     conn.close()
