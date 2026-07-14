@@ -800,6 +800,7 @@ body{margin:0;font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;b
 .top .right{display:flex;align-items:center;gap:1rem;flex-shrink:0}
 .xls{background:#2e8b57;color:#fff;text-decoration:none;font-weight:700;padding:.55rem 1rem;border-radius:9px;white-space:nowrap}
 .xls:hover{background:#287a4c}
+.hostlogo{height:52px;width:auto;max-width:90px;object-fit:contain;background:#fff;border-radius:8px;padding:5px}
 .qr{text-align:center}
 .qr img{width:84px;height:84px;background:#fff;padding:6px;border-radius:8px;display:block}
 .qr span{display:block;font-size:.66rem;opacity:.85;margin-top:.2rem}
@@ -919,6 +920,18 @@ def _team_grade_gender_groups(mid):
     return groups
 
 
+def _host_logo_tag(m, cls="hostlogo"):
+    """<img> for the meet's host-school logo (top corner of public results), or ''."""
+    if not m["host_school_id"]:
+        return ""
+    conn = db.connect()
+    s = conn.execute("SELECT logo_path FROM schools WHERE id=?", (m["host_school_id"],)).fetchone()
+    conn.close()
+    if s and s["logo_path"]:
+        return f'<img class="{cls}" src="{escape(s["logo_path"])}" alt="">'
+    return ""
+
+
 def _public_xc(m, mode):
     mid = m["id"]
     results = build_results(mid)
@@ -961,7 +974,9 @@ def _public_xc(m, mode):
 <meta name=viewport content="width=device-width, initial-scale=1">
 <title>{escape(m['name'])} — Results</title>{HEAD_EXTRA}<style>{PUB_CSS}</style></head><body>
 <div class="top">
-  <div><div class="mt">{escape(m['name'])} — Combined</div><div class="sub">{sub}</div></div>
+  <div style="display:flex;align-items:center;gap:.8rem">{_host_logo_tag(m)}
+    <div><div class="mt">{escape(m['name'])} — Combined</div><div class="sub">{sub}</div></div>
+  </div>
 </div>
 <main>
   <div class="tabs">
@@ -995,9 +1010,10 @@ def public_results(token):
 <meta name=viewport content="width=device-width, initial-scale=1">
 <title>{escape(m['name'])} — Results · XCTimer</title><style>{CSS}
 main{{max-width:960px;margin:0 auto;padding:1.4rem 1rem 4rem}}
-.pubhdr{{display:flex;align-items:center;gap:.6rem;padding:1rem;border-bottom:1px solid var(--line)}}
+.pubhdr{{display:flex;align-items:center;gap:.7rem;padding:1rem;border-bottom:1px solid var(--line)}}
+.pubhdr .hostlogo{{height:48px;width:auto;max-width:80px;object-fit:contain;background:#fff;border-radius:8px;padding:4px}}
 </style></head><body>
-<div class="pubhdr"><span style="font-weight:800;font-size:1.2rem">{BRAND_HTML}</span></div>
+<div class="pubhdr">{_host_logo_tag(m)}<span style="font-weight:800;font-size:1.2rem">{BRAND_HTML}</span></div>
 <main><h1>{escape(m['name'])}</h1>
 <p class="sub">🎽 Track · {escape(m['date'] or '')}</p>
 {inner}</main></body></html>"""
