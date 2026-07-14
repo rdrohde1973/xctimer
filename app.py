@@ -24,7 +24,7 @@ from .insights import bp as insights_bp
 from .phone import bp as phone_bp
 from .waivers import bp as waivers_bp
 
-APP_VERSION = "0.57.0-end-season-cleanup"
+APP_VERSION = "0.57.1-contact-email"
 
 LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width, initial-scale=1">
@@ -225,7 +225,7 @@ LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
   <p class="lead" style="margin:.4rem auto 1.4rem">Sign in to get started, or reach out to bring XCTimer to your district.</p>
   <div class="cta" style="display:flex;gap:.8rem;justify-content:center;flex-wrap:wrap">
     <a class="btn" href="/login">Sign in</a>
-    <a class="btn ghost" href="mailto:rob@xctimer.com?subject=XCTimer%20for%20our%20district">Get in touch</a>
+    <a class="btn ghost" href="mailto:admin@xctimer.com?subject=XCTimer%20for%20our%20district">Get in touch</a>
   </div>
 </div></section>
 
@@ -324,9 +324,9 @@ SECURITY = """<!doctype html><html lang=en><head><meta charset=utf-8>
   <section>
     <div class="num">04</div><h2>Talk to us</h2>
     <h3><span class="em">Security researchers.</span></h3>
-    <p class="sub">Found something? Email <a href="mailto:rob@xctimer.com">rob@xctimer.com</a>. We welcome good-faith reports and won't pursue researchers acting in good faith.</p>
+    <p class="sub">Found something? Email <a href="mailto:admin@xctimer.com">admin@xctimer.com</a>. We welcome good-faith reports and won't pursue researchers acting in good faith.</p>
     <h3><span class="em">Schools, districts &amp; vendor reviews.</span></h3>
-    <p class="sub">Need a security questionnaire filled out, or have a district data-privacy requirement? Email <a href="mailto:rob@xctimer.com">rob@xctimer.com</a> — happy to help.</p>
+    <p class="sub">Need a security questionnaire filled out, or have a district data-privacy requirement? Email <a href="mailto:admin@xctimer.com">admin@xctimer.com</a> — happy to help.</p>
     <a class="btn" href="/">← Back to XCTimer</a>
   </section>
 
@@ -435,7 +435,7 @@ def create_app():
         from flask import Response
         exp = (datetime.now(timezone.utc) + timedelta(days=365)).strftime("%Y-%m-%dT%H:%M:%SZ")
         base = os.environ.get("XC_PUBLIC_URL", "https://xctimer.com")
-        body = (f"Contact: mailto:rob@shasta.cloud\n"
+        body = (f"Contact: mailto:admin@xctimer.com\n"
                 f"Expires: {exp}\n"
                 f"Preferred-Languages: en\n"
                 f"Canonical: {base}/.well-known/security.txt\n")
