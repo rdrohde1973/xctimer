@@ -308,17 +308,60 @@ def _fit_text(c, text, font, size, max_w, min_size=6):
     return text, size
 
 
-def _draw_label(c, t, slot, ph, a, school_name, qr_prefix, logo=None):
-    """One sticker: [logo] [big bib] [name / school / event(s)] [QR].
+def _draw_label_xc(c, x, y_top, lw, lh, a, school_name, qr_prefix, logo):
+    """XC / no-event sticker: full-height logo left, BIG centered bib, name and
+    school stacked below, QR right. The classic layout."""
+    pad = 0.06 * lh
+    bottom = y_top - lh
+    content_l = x + pad
+    if logo is not None:                       # full-height mascot on the left
+        logo_w = 0.28 * lw
+        try:
+            c.drawImage(logo, x + pad, bottom + pad, logo_w, lh - 2 * pad,
+                        preserveAspectRatio=True, anchor="w", mask="auto")
+            content_l = x + pad + logo_w + 0.06 * inch
+        except Exception:  # noqa: BLE001
+            pass
+    qr_sz = min(lh - 2 * pad, 0.30 * lw)
+    qr_text = f"{qr_prefix}{a['bib']}" if qr_prefix else str(a["bib"])
+    qr_x = x + lw - pad - qr_sz
+    try:
+        c.drawImage(_qr_image(qr_text), qr_x, bottom + (lh - qr_sz) / 2,
+                    qr_sz, qr_sz, preserveAspectRatio=True, mask="auto")
+    except Exception:  # noqa: BLE001
+        pass
+    content_r = qr_x - 0.05 * inch
+    cx = (content_l + content_r) / 2
+    mw = max(0.4 * inch, content_r - content_l)
 
-    Matches the reference app: full-height school logo left, big navy bib,
-    name + school, optional event lines (track), QR of the bib top-right.
-    """
+    bib = str(a["bib"])
+    bibsz = _fit_font(c, bib, "Helvetica-Bold", min(lh * 0.46, 44), mw)
+    c.setFont("Helvetica-Bold", bibsz)
+    c.setFillColorRGB(*NAVY)
+    c.drawCentredString(cx, bottom + lh * 0.50, bib)
+    ntext, nsz = _fit_text(c, a["name"] or "", "Helvetica-Bold", min(lh * 0.18, 16), mw)
+    c.setFont("Helvetica-Bold", nsz)
+    c.setFillGray(0.1)
+    c.drawCentredString(cx, bottom + lh * 0.26, ntext)
+    if school_name:
+        stext, ssz = _fit_text(c, school_name, "Helvetica", min(lh * 0.13, 10), mw)
+        c.setFont("Helvetica", ssz)
+        c.setFillGray(0.42)
+        c.drawCentredString(cx, bottom + lh * 0.09, stext)
+    c.setFillGray(0)
+
+
+def _draw_label(c, t, slot, ph, a, school_name, qr_prefix, logo=None):
+    """One sticker. No events (XC) -> big centered-bib layout; with events (track)
+    -> big bib top-left + name/school beside + event lines below. QR of the bib."""
     col = slot % t["cols"]
     row = slot // t["cols"]
     x = t["side"] * inch + col * t["px"] * inch
     y_top = ph - t["top"] * inch - row * t["py"] * inch
     lw, lh = t["lw"] * inch, t["lh"] * inch
+    if not (a.get("events") if isinstance(a, dict) else None):
+        _draw_label_xc(c, x, y_top, lw, lh, a, school_name, qr_prefix, logo)
+        return
     pad = 0.07 * inch
     top = y_top - pad
     bottom = y_top - lh + pad
