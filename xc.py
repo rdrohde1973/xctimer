@@ -1059,6 +1059,8 @@ main{{max-width:960px;margin:0 auto;padding:1.4rem 1rem 4rem}}
 .pubhdr .hostlogo{{height:48px;width:auto;max-width:80px;object-fit:contain;background:#fff;border-radius:8px;padding:4px}}
 .livecard{{border:2px solid #e8622a;box-shadow:0 0 0 4px rgba(232,98,42,.12)}}
 .livehd{{font-weight:800;font-size:1.05rem;color:#e8622a;display:flex;align-items:center;gap:.5rem;margin-bottom:.2rem}}
+.livecard.final{{border-color:#2e9e5b;box-shadow:0 0 0 4px rgba(46,158,91,.12)}}
+.livehd.final{{color:#2e9e5b}}
 .livedot{{width:.7rem;height:.7rem;border-radius:50%;background:#e8622a;animation:lblink 1s infinite}}
 @keyframes lblink{{50%{{opacity:.2}}}}
 .liveclock{{font-size:2.6rem;font-weight:800;font-variant-numeric:tabular-nums;text-align:center;margin:.1rem 0 .6rem;letter-spacing:.5px}}
@@ -1105,9 +1107,12 @@ function renderLive(heats){{
                      :'<span class=muted>… crossing</span>')+'</td></tr>';
     }});
     if(!rows) rows='<tr><td class="muted">Waiting for the first finisher…</td></tr>';
-    h+='<div class="card livecard">'
-      +'<div class="livehd"><span class="livedot"></span> LIVE · '+lesc(ht.name)+'</div>'
-      +'<div class="liveclock" data-start="'+ht.start_ms+'">0:00:00.0</div>'
+    const hd = ht.ended
+      ? '<div class="livehd final">✅ FINAL · '+lesc(ht.name)+'</div>'
+      : '<div class="livehd"><span class="livedot"></span> LIVE · '+lesc(ht.name)+'</div>';
+    const clk = '<div class="liveclock" data-start="'+ht.start_ms+'"'
+      +(ht.ended?(' data-stop="'+ht.stop_ms+'"'):'')+'>0:00:00.0</div>';
+    h+='<div class="card livecard'+(ht.ended?' final':'')+'">'+hd+clk
       +'<div class="livescroll"><table>'+rows+'</table></div></div>';
   }});
   box.innerHTML=h;
@@ -1117,7 +1122,8 @@ function tickLive(){{
   const now=Date.now()+LOFFSET;
   document.querySelectorAll('.liveclock').forEach(function(c){{
     const st=parseInt(c.getAttribute('data-start'),10);
-    if(st) c.textContent=lfmt((now-st)/1000);
+    const sp=parseInt(c.getAttribute('data-stop'),10);   // frozen final time if ended
+    if(st) c.textContent=lfmt(((sp||now)-st)/1000);
   }});
 }}
 setInterval(tickLive,100);

@@ -2479,6 +2479,7 @@ def _fmt_pts(x):
 
 _LIVE_CACHE = {}       # (mid, name_mode) -> (expires_monotonic, heats_list)
 _LIVE_TTL = 1.0        # recompute the DB snapshot at most once/sec no matter the crowd
+LIVE_HOLD = 30.0       # keep an ended heat on the public board this many seconds
 
 
 def public_live(mid, name_mode=None):
@@ -2497,15 +2498,20 @@ def public_live(mid, name_mode=None):
 
 
 def _live_heats(mid, name_mode=None):
-    """Track heats whose clock is currently running, with the finishers tapped so far."""
+    """Track heats currently running, plus ones that ended within LIVE_HOLD seconds
+    (kept on the board briefly so spectators can read the final result)."""
     conn = db.connect()
     rows = conn.execute(
-        "SELECT tc.meet_event_id AS meid, tc.heat AS heat, tc.start_time "
+        "SELECT tc.meet_event_id AS meid, tc.heat AS heat, tc.start_time, tc.stop_time "
         "FROM track_clocks tc JOIN meet_events me ON me.id=tc.meet_event_id "
-        "WHERE me.meet_id=? AND tc.start_time IS NOT NULL AND tc.stop_time IS NULL "
+        "WHERE me.meet_id=? AND tc.start_time IS NOT NULL "
         "ORDER BY tc.start_time", (mid,)).fetchall()
+    now = _t_now()
     heats = []
     for r in rows:
+        stop = _t_parse(r["stop_time"])
+        if stop and (now - stop).total_seconds() > LIVE_HOLD:
+            continue                       # ended more than 30s ago -> off the board
         me = load_meet_event(r["meid"])
         label = _div_grade(me["gender"], me["grade"])
         name = f'{me["ename"]} · {label}' + (f' · Heat {r["heat"]}' if r["heat"] else "")
@@ -2520,7 +2526,9 @@ def _live_heats(mid, name_mode=None):
                     nm, _bib, sch = _entry_label(conn, e)
                     who, school = demo.display(nm, name_mode), sch
             fin.append({"n": i + 1, "elapsed": t["elapsed_seconds"], "who": who, "school": school})
-        heats.append({"name": name, "start_ms": _t_ms(_t_parse(r["start_time"])), "finishers": fin})
+        heats.append({"name": name, "start_ms": _t_ms(_t_parse(r["start_time"])),
+                      "stop_ms": _t_ms(stop) if stop else None, "ended": bool(stop),
+                      "finishers": fin})
     conn.close()
     return heats
 
