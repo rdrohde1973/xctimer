@@ -231,6 +231,85 @@ def _athlete_focus(conn, did, school_ids, question, mode):
     return "\n".join(out)
 
 
+def _performance_lists(conn, did, school_ids, mode):
+    """Season performance lists: each athlete's BEST mark per event, ranked. This is
+    what powers roster-wide 'who's fastest / top 5 / best in X' questions."""
+    if did is None:
+        return ""
+    from .track import _fmt_ht  # feet-inches for field marks
+    names = None
+    trk_filter, tparams = "", [did]
+    if school_ids is not None:
+        if not school_ids:
+            return ""
+        trk_filter = f" AND en.school_id IN ({','.join('?'*len(school_ids))})"
+        tparams += list(school_ids)
+        names = {r["name"] for r in conn.execute(
+            f"SELECT name FROM schools WHERE id IN ({','.join('?'*len(school_ids))})",
+            tuple(school_ids)).fetchall()}
+
+    trk = conn.execute(
+        "SELECT e.name AS event, e.sort, e.unit, me.gender, me.grade, en.runner_id, "
+        "r.mark_seconds, r.mark_metric, r.snap_name, r.snap_school "
+        "FROM results r JOIN entries en ON en.id=r.entry_id "
+        "JOIN meet_events me ON me.id=en.meet_event_id JOIN events e ON e.id=me.event_id "
+        "JOIN meets m ON m.id=me.meet_id "
+        "WHERE m.district_id=? AND m.sport='track' AND en.runner_id IS NOT NULL "
+        "AND (r.mark_seconds IS NOT NULL OR r.mark_metric IS NOT NULL)" + trk_filter,
+        tuple(tparams)).fetchall()
+    groups = {}  # (sort, event, gender, grade) -> {runner_id: (val, is_time, name, school)}
+    for r in trk:
+        is_time = r["unit"] == "seconds"
+        val = r["mark_seconds"] if is_time else r["mark_metric"]
+        if val is None:
+            continue
+        g = groups.setdefault((r["sort"] or 0, r["event"], r["gender"] or "", r["grade"]), {})
+        cur = g.get(r["runner_id"])
+        if cur is None or (is_time and val < cur[0]) or (not is_time and val > cur[0]):
+            g[r["runner_id"]] = (val, is_time, r["snap_name"], r["snap_school"])
+
+    def _div(gender, grade):
+        gw = {"M": "Boys", "F": "Girls"}.get(gender, "")
+        return (f"{gw} {grade}th".strip() if grade else (gw or "Open"))
+
+    lines = []
+    if groups:
+        lines.append("=== SEASON PERFORMANCE LISTS — TRACK (each athlete's best mark, ranked) ===")
+    for key in sorted(groups):
+        _s, event, gender, grade = key
+        ents = list(groups[key].values())
+        is_time = ents[0][1]
+        ents.sort(key=lambda x: x[0], reverse=not is_time)
+        parts = [f"{i}) {demo.display(nm or '?', mode)} ({sch or '?'}) "
+                 f"{_fmt_t(v) if is_t else _fmt_ht(v)}"
+                 for i, (v, is_t, nm, sch) in enumerate(ents[:30], 1)]
+        lines.append(f"{event} — {_div(gender, grade)}: " + "; ".join(parts))
+
+    xc = conn.execute(
+        "SELECT f.snap_grade AS grade, f.snap_gender AS gender, f.bib, f.snap_name, "
+        "f.snap_school, f.elapsed_seconds FROM finishers f JOIN races ra ON ra.id=f.race_id "
+        "JOIN meets m ON m.id=ra.meet_id WHERE m.district_id=? AND f.dq=0 "
+        "AND f.elapsed_seconds IS NOT NULL", (did,)).fetchall()
+    xg = {}
+    for r in xc:
+        if names is not None and r["snap_school"] not in names:
+            continue
+        g = xg.setdefault((r["grade"], r["gender"] or ""), {})
+        akey = (r["bib"], r["snap_school"])
+        if akey not in g or r["elapsed_seconds"] < g[akey][0]:
+            g[akey] = (r["elapsed_seconds"], r["snap_name"], r["snap_school"])
+    if xg:
+        lines.append("=== SEASON PERFORMANCE LISTS — CROSS COUNTRY (best time, ranked) ===")
+    for key in sorted(xg, key=lambda k: (k[0] if k[0] is not None else 999,
+                                         {"F": 0, "M": 1}.get(k[1], 2))):
+        grade, gender = key
+        ents = sorted(xg[key].values(), key=lambda x: x[0])
+        parts = [f"{i}) {demo.display(nm or '?', mode)} ({sch or '?'}) {_fmt_t(v)}"
+                 for i, (v, nm, sch) in enumerate(ents[:30], 1)]
+        lines.append(f"XC — {_div(gender, grade)}: " + "; ".join(parts))
+    return "\n".join(lines)
+
+
 def _digest(principal, question=""):
     did, school_ids = _scope(principal)
     mode = demo.mode_for(principal)
@@ -266,6 +345,12 @@ def _digest(principal, question=""):
         for r in recs:
             lines.append(f"  {r['event']} | {r['gender']} {r['grade']} | {r['mark']} | "
                          f"{r['athlete']} ({r['school']}, {r['year']})")
+        lines.append("")
+
+    # Ranked performance lists — powers roster-wide 'who's fastest / top N / best in X'.
+    perf = _performance_lists(conn, did, school_ids, mode)
+    if perf:
+        lines.append(perf)
         lines.append("")
     if school_ids is not None:
         schools = conn.execute(
@@ -310,13 +395,18 @@ def _digest(principal, question=""):
                              f"({r['snap_school'] or '?'}) {mk}")
     conn.close()
     text = "\n".join(lines)
-    return text[:12000]
+    return text[:60000]
 
 
 _SYS = ("You are XCTimer's roster insights assistant for a school running program. "
         "Answer the coach/admin's question using ONLY the data digest provided. Be concise "
-        "and factual; give plain text (no markdown tables). If the data doesn't contain the "
-        "answer, say so briefly. Never invent athletes, times, or results.")
+        "and factual; give plain text (no markdown tables). The digest includes SEASON "
+        "PERFORMANCE LISTS — each athlete's best mark per event, already ranked (fastest "
+        "time / longest distance / highest jump first) and grouped by event × gender × grade; "
+        "use them for 'who is fastest', 'top N', and 'best in <event>' questions, and to rank "
+        "across grades, compare the per-grade lists. Times are M:SS.xx; field marks are "
+        "feet-inches (e.g. 15-06). If the data doesn't contain the answer, say so briefly. "
+        "Never invent athletes, times, or results.")
 
 
 @bp.get("/insights")
@@ -339,8 +429,9 @@ def insights_page():
     <div style="display:flex;align-items:flex-end"><button onclick="ask()">Ask</button></div>
   </div>
 </div>
-<div class="card muted">Examples: “What's the district record for the 100m?” · “Which school has the most girls?”
-· “Top 3 in the 100m at the last meet?” · “Who improved the most?”</div>
+<div class="card muted">Examples: “Who's my fastest 200m runner?” · “Top 5 girls in the 1600m” ·
+“What's Grayson Young's 200m time?” · “Which school has the best shot put?” ·
+“What's the district record for the 100m?”</div>
 <script>
 async function ask(){{
   const q=document.getElementById('q').value.trim(); if(!q)return;
