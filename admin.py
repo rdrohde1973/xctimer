@@ -943,7 +943,9 @@ setInterval(tail, 3000);
     body = (f'<div class="row" style="justify-content:space-between;align-items:center">'
             f'<div><h1>Console <span class="pill">SUPER ADMIN</span></h1>'
             f'<p class="sub">Cross-tenant operational view — request firehose, errors, login events. '
-            f'Showing the last {label}.</p></div><div>{tabs}</div></div>'
+            f'Showing the last {label}. '
+            f'<a href="/admin/security">📄 Security report for district review</a></p></div>'
+            f'<div>{tabs}</div></div>'
             f'{tiles}{_server_card()}{ip_card}{p404_card}{login_card}{audit_card}{stream_card}')
     return shell(g.principal, body, active="console",
                  active_district=active_district_id(), districts=_districts_for_switcher())
@@ -953,3 +955,185 @@ setInterval(tail, 3000);
 @role_required("super_admin")
 def console_tail():
     return jsonify(lines=[_line_mt(ln) for ln in _read_journal("15 minutes ago", cap=200)[-200:]])
+
+
+@bp.get("/admin/security")
+@role_required("super_admin")
+def security_report():
+    """Detailed, print-ready security & data-protection overview for a district security
+    review. Deliberately honest — states what is implemented AND what is not."""
+    try:
+        from .app import APP_VERSION as _v
+    except Exception:  # noqa: BLE001
+        _v = "current"
+    today = datetime.now(_MT).strftime("%B %-d, %Y")
+    css = """
+*{box-sizing:border-box}
+body{margin:0;font:15px/1.65 -apple-system,Segoe UI,Roboto,system-ui,sans-serif;color:#1b2b3a;background:#eef1f5}
+.doc{max-width:820px;margin:0 auto;background:#fff;padding:3rem 3.2rem 4rem;
+     box-shadow:0 2px 20px rgba(20,50,80,.08)}
+h1{font-size:1.7rem;color:#12385f;margin:.2rem 0 .2rem}
+.meta{color:#5b6b7c;font-size:.86rem;margin-bottom:.4rem}
+.conf{display:inline-block;background:#fdeeea;color:#b5451f;border:1px solid #f3c9bb;
+      border-radius:6px;padding:.15rem .55rem;font-size:.72rem;font-weight:800;letter-spacing:.06em}
+h2{font-size:1.12rem;color:#12385f;margin:2rem 0 .5rem;border-bottom:2px solid #e3e9f1;padding-bottom:.3rem}
+h3{font-size:.98rem;margin:1rem 0 .2rem;color:#20303f}
+p,li{color:#2b3d4f}
+ul{margin:.35rem 0 .6rem;padding-left:1.2rem}li{margin:.18rem 0}
+table{border-collapse:collapse;width:100%;margin:.6rem 0;font-size:.9rem}
+th,td{border:1px solid #dbe2ea;padding:.45rem .6rem;text-align:left;vertical-align:top}
+th{background:#f1f4f8;color:#33475b;font-size:.78rem;text-transform:uppercase;letter-spacing:.03em}
+.ok{color:#1f7a44;font-weight:700}.part{color:#b07d16;font-weight:700}.no{color:#b5451f;font-weight:700}
+.note{background:#f6f9fc;border-left:3px solid #2f6db5;padding:.6rem .9rem;margin:.7rem 0;font-size:.9rem}
+.small{color:#5b6b7c;font-size:.82rem}
+.toolbar{max-width:820px;margin:1.2rem auto 0;text-align:right}
+.btn{background:#2f6db5;color:#fff;border:none;border-radius:8px;padding:.55rem 1.1rem;font-weight:700;cursor:pointer;font-size:.9rem}
+@media print{body{background:#fff}.doc{box-shadow:none;max-width:none;padding:0}.toolbar{display:none}a{color:#12385f;text-decoration:none}}
+"""
+    def st(label):
+        cls = {"Implemented": "ok", "Partial": "part", "Roadmap": "no",
+               "Not implemented": "no"}.get(label, "")
+        return f'<span class="{cls}">{label}</span>'
+
+    body = f"""<div class="toolbar"><button class="btn" onclick="window.print()">🖨 Print / Save as PDF</button></div>
+<div class="doc">
+<div class="conf">CONFIDENTIAL — PREPARED FOR DISTRICT SECURITY REVIEW</div>
+<h1>XCTimer — Security &amp; Data Protection Overview</h1>
+<p class="meta">Generated {today} · Platform version {escape(str(_v))} · xctimer.com · Contact: admin@xctimer.com</p>
+<p>XCTimer is a cross-country and track &amp; field meet-management platform for junior-high and
+middle-school programs. It stores information about student athletes, so this document describes,
+in detail and candidly, how that data is protected — including controls that are fully implemented
+and those still on our roadmap.</p>
+
+<h2>1. Data processed &amp; classification</h2>
+<h3>Student athlete data (sensitive)</h3>
+<ul>
+<li>Required: name, grade, school, bib number.</li>
+<li>Optional (added at a coach's discretion): date of birth, athlete/parent contact info,
+emergency contacts, physical-exam dates, and signed participation waivers.</li>
+<li>Competition data: meet entries, finish times, places, and team scores.</li>
+</ul>
+<h3>Account data</h3>
+<ul><li>Staff accounts: name, email, role, and a salted one-way password hash (passwords are never
+stored in plaintext or recoverable form).</li></ul>
+<h3>Deliberately NOT collected</h3>
+<ul><li>No Social Security numbers, no financial/payment-card data, no biometrics, and no
+third-party advertising or behavioral tracking. Data is never sold or shared for marketing.</li></ul>
+
+<h2>2. Hosting &amp; network architecture</h2>
+<ul>
+<li><b>Compute/storage:</b> a dedicated virtual server (Hetzner) located in the <b>United States
+(Hillsboro, Oregon)</b>.</li>
+<li><b>Edge:</b> Cloudflare provides TLS termination, CDN, and DDoS/WAF protection.</li>
+<li><b>No public inbound:</b> the origin server is reachable <b>only</b> through a Cloudflare Tunnel —
+it exposes no public inbound ports and is not directly addressable from the internet.</li>
+<li><b>Data store:</b> an embedded SQLite database (WAL mode) on the server's local disk; single
+application process served by a hardened WSGI server.</li>
+</ul>
+
+<h2>3. Encryption</h2>
+<table><tr><th>Control</th><th>Status</th><th>Detail</th></tr>
+<tr><td>In transit</td><td>{st("Implemented")}</td><td>TLS 1.2+ for all traffic, terminated at Cloudflare; HSTS enforced.</td></tr>
+<tr><td>Backups at rest</td><td>{st("Implemented")}</td><td>Nightly backups are stored in an <b>encrypted</b> volume on a private, access-controlled NAS.</td></tr>
+<tr><td>Live database at rest</td><td>{st("Roadmap")}</td><td>The live database sits on a private host with no public inbound access. Full-disk / database-level encryption of the live store is planned but <b>not yet enabled</b>; we disclose this rather than overstate it.</td></tr>
+<tr><td>Secrets</td><td>{st("Implemented")}</td><td>API keys/credentials live in an environment file outside the web root and outside source control.</td></tr>
+</table>
+
+<h2>4. Authentication &amp; session security</h2>
+<ul>
+<li><b>Passwords:</b> salted one-way hashing (Werkzeug); configurable complexity minimums; one-time,
+expiring email links for account setup and password reset.</li>
+<li><b>Sessions:</b> 256-bit random server-side session tokens. Cookies are <b>HttpOnly</b>,
+<b>Secure</b>, and <b>SameSite=Lax</b>.</li>
+<li><b>Expiry:</b> idle timeout (24h) plus an absolute cap (30 days); the session ID is rotated on
+login and fully invalidated on logout.</li>
+<li><b>Brute-force protection:</b> server-side rate-limiting and back-off on repeated failed logins.</li>
+<li><b>Multi-factor authentication:</b> {st("Partial")} — a per-user MFA control exists in the admin UI;
+email-code enforcement is being rolled out.</li>
+<li><b>Meet-day access:</b> optional no-login QR tokens let volunteer timers record finishes for a
+<b>single meet only</b>. These scoped tokens grant no access to rosters, other meets, or admin functions.</li>
+</ul>
+
+<h2>5. Authorization &amp; tenant isolation</h2>
+<ul>
+<li><b>Roles (least privilege):</b> Super Admin, District Admin, Coach, and Timer — each limited to the
+data and actions its function requires.</li>
+<li><b>District isolation:</b> every record is scoped to a district; server-side authorization checks
+prevent a user in one district from reading or modifying another district's data.</li>
+<li><b>Model:</b> a shared database with enforced application-level tenant scoping (not per-tenant
+databases); access-control checks are applied on every request server-side.</li>
+</ul>
+
+<h2>6. Application security</h2>
+<ul>
+<li><b>CSRF:</b> anti-forgery token (double-submit cookie) required on every state-changing request.</li>
+<li><b>Content-Security-Policy:</b> restricts sources and sets <span class="small">frame-ancestors 'none'</span> (clickjacking protection).</li>
+<li><b>Security headers:</b> HSTS, X-Frame-Options: DENY, X-Content-Type-Options: nosniff, Referrer-Policy, and Permissions-Policy.</li>
+<li><b>Injection:</b> all database access uses parameterized queries; no string-built SQL from user input.</li>
+<li><b>Output encoding:</b> user-supplied data is HTML-escaped at render time to prevent XSS.</li>
+<li><b>Caching:</b> authenticated (student-data) responses are marked <span class="small">Cache-Control: no-store</span> so they are not cached by browsers or proxies.</li>
+</ul>
+
+<h2>7. Audit logging &amp; monitoring</h2>
+<ul>
+<li><b>Audit trail:</b> a durable log records authenticated activity — who <b>viewed, changed,
+exported, or deleted</b> records — with the acting user, action, timestamp, and source IP.
+Retained approximately <b>13 months</b> and reviewable by a Super Admin.</li>
+<li><b>Access logging:</b> a separate per-request log (method, path, status, source IP, user) feeds a
+real-time operational console (traffic, errors, login events, and host health).</li>
+</ul>
+
+<h2>8. Data retention, minimization &amp; deletion</h2>
+<ul>
+<li><b>Minimization:</b> only fields a meet or waiver actually needs are collected.</li>
+<li><b>End-of-season deletion:</b> an administrator can permanently delete a school's athletes and all
+associated personal data (contacts, DOB, parent/emergency info, waivers) at the end of a season.</li>
+<li><b>Right to delete:</b> a district's or an individual student's data is removed on request.</li>
+<li><b>Retention:</b> audit records are kept ~13 months (intentionally outliving deleted student data,
+to evidence that deletions occurred). Backups are retained 14 days on the server and 30 days on the NAS.</li>
+</ul>
+
+<h2>9. Backups &amp; recovery</h2>
+<ul>
+<li>Automated nightly backups using a write-safe hot snapshot of the database (no downtime).</li>
+<li>Backups include the database plus configuration needed for a cold-start restore, packaged and
+stored <b>encrypted</b> on a private NAS pulled from the server over an authenticated channel.</li>
+</ul>
+
+<h2>10. Third-party sub-processors</h2>
+<p>The following providers may process data in the course of delivering the service:</p>
+<table><tr><th>Provider</th><th>Purpose</th><th>Data involved</th></tr>
+<tr><td>Cloudflare</td><td>TLS, CDN, DDoS/WAF, secure tunnel to origin</td><td>Traffic in transit (not stored)</td></tr>
+<tr><td>Hetzner</td><td>Server hosting / compute &amp; storage (US)</td><td>Data at rest on the application server</td></tr>
+<tr><td>Resend</td><td>Transactional email (account setup, password reset, waiver links)</td><td>Recipient email address + message contents</td></tr>
+<tr><td>Anthropic (Claude API)</td><td><b>Optional</b> AI features: roster import from an uploaded file/photo, and results-based "insights"</td><td>The relevant roster or results text is sent to the API to process the request. Per Anthropic's commercial API terms, submissions are not used to train models.</td></tr>
+</table>
+<div class="note">The AI features are optional conveniences. When used, the specific roster/results
+content for that request transits Anthropic's API. Districts that prefer not to use them can simply
+avoid the AI import and insights features; core timing and roster management do not depend on them.</div>
+
+<h2>11. Compliance posture</h2>
+<ul>
+<li>Built to align with <b>FERPA</b> and <b>COPPA</b> expectations for student data: minimization,
+access control, deletion on request, and audit logging.</li>
+<li><b>Independent certifications:</b> {st("Not implemented")} — XCTimer does not currently hold SOC 2 and
+has not undergone a third-party penetration test. We are transparent about this and can discuss a DPA
+or complete a district security questionnaire on request.</li>
+</ul>
+
+<h2>12. Incident response</h2>
+<ul>
+<li>If a security incident affecting your data is confirmed, we will notify affected districts
+<b>promptly — targeting within 72 hours</b> — with the facts known and the remediation underway.</li>
+<li>Operations are US-based. A machine-readable security contact is published at
+<span class="small">/.well-known/security.txt</span>.</li>
+</ul>
+
+<h2>Contact</h2>
+<p>Security questions, questionnaires, DPAs, or vulnerability reports: <b>admin@xctimer.com</b>.</p>
+<p class="small">This document reflects the platform as of {today} (version {escape(str(_v))}) and is provided
+for a district security review. Controls evolve; contact us for the current status of any roadmap item.</p>
+</div>"""
+    return f"""<!doctype html><html lang=en><head><meta charset=utf-8>
+<meta name=viewport content="width=device-width, initial-scale=1">
+<title>XCTimer — Security Overview</title><style>{css}</style></head><body>{body}</body></html>"""
