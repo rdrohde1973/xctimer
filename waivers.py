@@ -25,12 +25,20 @@ from .ui import CSS, BRAND_HTML, HEAD_EXTRA
 bp = Blueprint("waivers", __name__)
 
 # Placeholders filled per athlete when a waiver is sent. Shown as a hint to admins.
-PLACEHOLDER_HINT = ("{{athlete_name}}, {{school}}, {{grade}}, {{district}}, "
-                    "{{date}}, {{parent_name}}")
+PLACEHOLDER_HINT = ("{{athlete_name}}, {{school}}, {{grade}}, {{district}}, {{date}}, "
+                    "{{dob}}, {{parent_name}}, {{parent_email}}, {{parent_phone}}, "
+                    "{{emergency_name}}, {{emergency_phone}}")
 
 
 def _merge(body, athlete, district_name, today):
-    """Substitute {{merge fields}} with this athlete's values (used at send time)."""
+    """Substitute {{merge fields}} with this athlete's values (used at send time).
+    A blank field renders as a fill-in line so the parent can write it in."""
+    def field(key):
+        try:
+            v = athlete[key]
+        except (KeyError, IndexError):
+            v = None
+        return v or "____________________"
     repl = {
         "athlete_name": athlete["name"] or "",
         "athlete": athlete["name"] or "",
@@ -39,7 +47,12 @@ def _merge(body, athlete, district_name, today):
         "gender": athlete["gender"] or "",
         "district": district_name or "",
         "date": today,
-        "parent_name": (athlete["parent_name"] or "____________________"),
+        "dob": field("dob"),
+        "parent_name": field("parent_name"),
+        "parent_email": field("parent_email"),
+        "parent_phone": field("parent_phone"),
+        "emergency_name": field("emergency_name"),
+        "emergency_phone": field("emergency_phone"),
     }
     out = body or ""
     for k, v in repl.items():
