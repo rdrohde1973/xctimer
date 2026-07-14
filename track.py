@@ -262,16 +262,40 @@ def setup_section(m, setup):
     return f'<div class="card"><h2>Events at this meet ({len(mes)})</h2>{etbl}{add}</div>'
 
 
+def _apply_hj_schedule(conn, mid, low_s, high_s, inc):
+    """Build the bar ladder low→high by `inc` and assign it to the meet's High Jump
+    events: girls get the lowest 10 bars, boys the top 10 (both get all when the
+    ladder is 10 bars or fewer)."""
+    low, high = _parse_ht(low_s), _parse_ht(high_s)
+    if low is None or high is None or not inc or inc <= 0 or high < low:
+        return
+    bars, v = [], low
+    while v <= high + 0.01 and len(bars) < 40:
+        bars.append(_fmt_ht(v))
+        v += inc
+    girls = bars[:10] if len(bars) > 10 else bars
+    boys = bars[-10:] if len(bars) > 10 else bars
+    for me in conn.execute(
+            "SELECT id, gender FROM meet_events WHERE meet_id=? AND "
+            "event_id IN (SELECT id FROM events WHERE name='High Jump')", (mid,)).fetchall():
+        chosen = girls if me["gender"] == "F" else (boys if me["gender"] == "M" else bars)
+        conn.execute("UPDATE meet_events SET bar_heights=? WHERE id=?", (json.dumps(chosen), me["id"]))
+
+
 def settings_fields(m, setup):
     """Scoring / event-limit / lanes fields (no <form> — hosted by the combined
     Save meet setup form in meet_detail). Returns a read-only summary otherwise."""
     tables = _points_tables()
     default_id = next((t["id"] for t in tables if t["name"] == DEFAULT_PT), None)
     sel = m["points_table_id"] or default_id  # default: Invitational 10-8-6-4-2-1
+    st = json.loads(m["settings_json"] or "{}")
+    hj_low = escape(str(st.get("hj_low", "3-06")))
+    hj_high = escape(str(st.get("hj_high", "5-06")))
+    hj_inc = escape(str(st.get("hj_inc", 2)))
     if not setup:
         tname = next((t["name"] for t in tables if t["id"] == sel), "—")
         return (f'<p class="muted">Scoring: {escape(tname)} · event limit {event_limit(m)} '
-                f'· {m["lanes"] or 8} lanes</p>')
+                f'· {m["lanes"] or 8} lanes · HJ bars {hj_low}–{hj_high} every {hj_inc}"</p>')
     # Hide the legacy seed tables from the picker (unless a meet already uses one).
     legacy = {"Individual (1-8)", "Relay (1-8)"}
     tables = [t for t in tables if t["name"] not in legacy or t["id"] == sel]
@@ -286,6 +310,16 @@ def settings_fields(m, setup):
     <input name="event_limit" type="number" value="{event_limit(m)}"></div>
   <div style="max-width:150px"><label>Track lanes</label>
     <input name="lanes" type="number" value="{m['lanes'] or 8}"></div>
+</div>
+<label style="margin-top:.8rem">High Jump bar schedule
+  <span class="muted">— girls get the lowest 10 bars, boys the top 10</span></label>
+<div class="row">
+  <div style="max-width:150px"><label>Low bar (ft-in)</label>
+    <input name="hj_low" value="{hj_low}" placeholder="3-06"></div>
+  <div style="max-width:150px"><label>High bar (ft-in)</label>
+    <input name="hj_high" value="{hj_high}" placeholder="5-06"></div>
+  <div style="max-width:150px"><label>Increment (in)</label>
+    <input name="hj_inc" type="number" value="{hj_inc}" placeholder="2"></div>
 </div>"""
 
 
@@ -321,6 +355,17 @@ def track_setup(mid):
     ln = request.form.get("lanes")
     if ln and ln.isdigit():
         conn.execute("UPDATE meets SET lanes=? WHERE id=?", (max(2, min(12, int(ln))), mid))
+    # High Jump bar schedule (low/high/increment) -> stored + applied to HJ events
+    hj_low = (request.form.get("hj_low") or "").strip()
+    hj_high = (request.form.get("hj_high") or "").strip()
+    hj_inc_s = (request.form.get("hj_inc") or "").strip()
+    if hj_low and hj_high and hj_inc_s.isdigit() \
+            and _parse_ht(hj_low) is not None and _parse_ht(hj_high) is not None:
+        row = conn.execute("SELECT settings_json FROM meets WHERE id=?", (mid,)).fetchone()
+        settings = json.loads(row["settings_json"] or "{}")
+        settings.update(hj_low=hj_low, hj_high=hj_high, hj_inc=int(hj_inc_s))
+        conn.execute("UPDATE meets SET settings_json=? WHERE id=?", (json.dumps(settings), mid))
+        _apply_hj_schedule(conn, mid, hj_low, hj_high, int(hj_inc_s))
     conn.commit()
     conn.close()
     return redirect(f"/meets/{mid}")
@@ -379,6 +424,16 @@ def track_settings(mid):
     ln = request.form.get("lanes")
     if ln and ln.isdigit():
         conn.execute("UPDATE meets SET lanes=? WHERE id=?", (max(2, min(12, int(ln))), mid))
+    hj_low = (request.form.get("hj_low") or "").strip()
+    hj_high = (request.form.get("hj_high") or "").strip()
+    hj_inc_s = (request.form.get("hj_inc") or "").strip()
+    if hj_low and hj_high and hj_inc_s.isdigit() \
+            and _parse_ht(hj_low) is not None and _parse_ht(hj_high) is not None:
+        row = conn.execute("SELECT settings_json FROM meets WHERE id=?", (mid,)).fetchone()
+        settings = json.loads(row["settings_json"] or "{}")
+        settings.update(hj_low=hj_low, hj_high=hj_high, hj_inc=int(hj_inc_s))
+        conn.execute("UPDATE meets SET settings_json=? WHERE id=?", (json.dumps(settings), mid))
+        _apply_hj_schedule(conn, mid, hj_low, hj_high, int(hj_inc_s))
     conn.commit()
     conn.close()
     return redirect(f"/meets/{mid}")
