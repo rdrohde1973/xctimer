@@ -7,6 +7,7 @@
 """
 import os
 import functools
+import hashlib
 import secrets
 import smtplib
 from datetime import datetime, timedelta, timezone
@@ -44,6 +45,13 @@ SETUP_TTL_DAYS = 7
 RESET_TTL_HOURS = 1
 SESSION_TTL_DAYS = 30                                   # absolute session lifetime
 IDLE_HOURS = int(os.environ.get("XC_IDLE_HOURS", "24"))  # idle timeout for user logins
+
+# Email-code MFA
+MFA_PENDING_COOKIE = "xctimer_mfa_pending"
+MFA_DEVICE_COOKIE = "xctimer_mfa_device"
+MFA_CODE_TTL_MIN = 10          # a sign-in code is valid this many minutes
+MFA_MAX_ATTEMPTS = 6           # wrong-code tries before the challenge is voided
+MFA_DEVICE_DAYS = 30           # "remember this device" duration
 ROLES = ("super_admin", "district_admin", "coach", "timer")
 
 
@@ -257,6 +265,106 @@ def _set_session_cookie(resp, token):
     return resp
 
 
+# --- email-code MFA ---
+def _mfa_required(u):
+    return bool("mfa_enabled" in u.keys() and u["mfa_enabled"])
+
+
+def _mask_email(e):
+    e = e or ""
+    name, _, dom = e.partition("@")
+    if not dom:
+        return e
+    show = name[:1] + "***" if len(name) > 1 else "*"
+    return f"{show}@{dom}"
+
+
+def _device_remembered(user_id):
+    tok = request.cookies.get(MFA_DEVICE_COOKIE)
+    if not tok:
+        return False
+    h = hashlib.sha256(tok.encode()).hexdigest()
+    conn = db.connect()
+    r = conn.execute("SELECT * FROM mfa_devices WHERE user_id=? AND token_hash=?",
+                     (user_id, h)).fetchone()
+    conn.close()
+    return bool(r) and not _expired(r["expires"])
+
+
+def _remember_device(resp, user_id):
+    tok = secrets.token_urlsafe(24)
+    conn = db.connect()
+    conn.execute("INSERT INTO mfa_devices (user_id, token_hash, expires, created_at) VALUES (?,?,?,?)",
+                 (user_id, hashlib.sha256(tok.encode()).hexdigest(),
+                  _iso(_now() + timedelta(days=MFA_DEVICE_DAYS)), _iso(_now())))
+    conn.execute("DELETE FROM mfa_devices WHERE expires < ?", (_iso(_now()),))   # tidy expired
+    conn.commit()
+    conn.close()
+    resp.set_cookie(MFA_DEVICE_COOKIE, tok, httponly=True, samesite="Lax",
+                    secure=bool(os.environ.get("XC_SECURE_COOKIES")),
+                    max_age=MFA_DEVICE_DAYS * 86400)
+
+
+def _send_mfa_code(u, code):
+    html = (f"<p>Your XCTimer sign-in code is:</p>"
+            f"<p style='font-size:1.8rem;font-weight:800;letter-spacing:4px'>{code}</p>"
+            f"<p style='color:#888'>This code expires in {MFA_CODE_TTL_MIN} minutes. "
+            f"If you didn't just try to sign in, you can ignore this email — your account is safe.</p>")
+    return send_email(u["email"], "Your XCTimer sign-in code", html)
+
+
+def _start_mfa_challenge(u, nxt):
+    """Create + email a fresh code, return the challenge token (or None if email failed)."""
+    code = f"{secrets.randbelow(1000000):06d}"
+    token = secrets.token_urlsafe(24)
+    conn = db.connect()
+    conn.execute("DELETE FROM mfa_challenges WHERE user_id=?", (u["id"],))   # one active at a time
+    conn.execute("INSERT INTO mfa_challenges (token, user_id, code_hash, next, attempts, expires, created_at) "
+                 "VALUES (?,?,?,?,0,?,?)",
+                 (token, u["id"], hash_password(code), nxt,
+                  _iso(_now() + timedelta(minutes=MFA_CODE_TTL_MIN)), _iso(_now())))
+    conn.commit()
+    conn.close()
+    if not _send_mfa_code(u, code):
+        conn = db.connect()
+        conn.execute("DELETE FROM mfa_challenges WHERE token=?", (token,))
+        conn.commit()
+        conn.close()
+        return None
+    return token
+
+
+def _load_challenge():
+    tok = request.cookies.get(MFA_PENDING_COOKIE)
+    if not tok:
+        return None
+    conn = db.connect()
+    ch = conn.execute("SELECT * FROM mfa_challenges WHERE token=?", (tok,)).fetchone()
+    conn.close()
+    return ch
+
+
+def _mfa_body(masked):
+    return f"""
+<form method="post" action="/login/verify">
+  <p class="muted center">Enter the 6-digit code we emailed to <b>{escape(masked)}</b></p>
+  <label>Code</label>
+  <input name="code" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]*"
+    maxlength="6" autofocus required style="letter-spacing:.4em;font-size:1.2rem;text-align:center">
+  <label style="display:flex;align-items:center;gap:.5rem;font-weight:400;margin-top:.6rem">
+    <input type="checkbox" name="remember" value="1" checked style="width:auto;margin:0">
+    Remember this device for {MFA_DEVICE_DAYS} days</label>
+  <button type="submit">Verify &amp; sign in</button>
+</form>
+<div class="center" style="margin-top:.8rem">
+  <form method="post" action="/login/resend" style="display:inline">
+    <button class="link" type="submit" style="background:none;border:none;color:var(--acc);
+      cursor:pointer;padding:0;text-decoration:underline">Resend code</button>
+  </form>
+  &nbsp;·&nbsp; <a href="/login">Back to sign in</a>
+</div>"""
+
+
 # --- login throttle (audit MEDIUM-3): backoff after repeated failures ---
 import time as _time  # noqa: E402
 
@@ -401,14 +509,104 @@ def login_submit():
         return auth_page("Sign in", "Cross-country & track timing", _login_body(email, nxt),
                          err="Invalid email or password."), 401
     _LOGIN_FAILS.pop(email, None)
+    # Second factor: if this user has MFA on and this device isn't remembered, email a code
+    # instead of logging in straight away.
+    if _mfa_required(u) and not _device_remembered(u["id"]):
+        tok = _start_mfa_challenge(u, nxt)
+        if not tok:
+            return auth_page("Sign in", "Cross-country & track timing", _login_body(email, nxt),
+                             err="We couldn't send your sign-in code just now. Please try again."), 500
+        _log.info(f"XCLOG MFA sent {email} {ip}")
+        resp = make_response(redirect("/login/verify"))
+        resp.set_cookie(MFA_PENDING_COOKIE, tok, httponly=True, samesite="Lax",
+                        secure=bool(os.environ.get("XC_SECURE_COOKIES")), max_age=MFA_CODE_TTL_MIN * 60)
+        return resp
+    return _complete_login(u, nxt, ip, _log)
+
+
+def _complete_login(u, nxt, ip, _log, extra=""):
+    """Finish a verified sign-in: stamp last_login, rotate the session, set the cookie."""
     conn = db.connect()
     conn.execute("UPDATE users SET last_login=? WHERE id=?", (_iso(_now()), u["id"]))
     conn.commit()
     conn.close()
-    _log.info(f"XCLOG LOGIN ok {email} {u['role']} {ip}")
+    _log.info(f"XCLOG LOGIN ok {u['email']} {u['role']} {ip}{extra}")
     destroy_session(request.cookies.get(SESSION_COOKIE))   # rotate: drop any prior session id
     token = create_session(u["id"])
-    return _set_session_cookie(make_response(redirect(nxt or "/dashboard")), token)
+    return _set_session_cookie(make_response(redirect(_safe_next(nxt) or "/dashboard")), token)
+
+
+@bp.get("/login/verify")
+def mfa_form():
+    ch = _load_challenge()
+    if not ch or _expired(ch["expires"]):
+        return redirect("/login")
+    conn = db.connect()
+    u = conn.execute("SELECT * FROM users WHERE id=?", (ch["user_id"],)).fetchone()
+    conn.close()
+    if not u:
+        return redirect("/login")
+    return auth_page("Enter your code", "Two-step verification", _mfa_body(_mask_email(u["email"])))
+
+
+@bp.post("/login/resend")
+def mfa_resend():
+    ch = _load_challenge()
+    if not ch:
+        return redirect("/login")
+    conn = db.connect()
+    u = conn.execute("SELECT * FROM users WHERE id=?", (ch["user_id"],)).fetchone()
+    conn.close()
+    if not u:
+        return redirect("/login")
+    tok = _start_mfa_challenge(u, ch["next"])          # replaces the old challenge, new code
+    if not tok:
+        return auth_page("Enter your code", "Two-step verification", _mfa_body(_mask_email(u["email"])),
+                         err="Couldn't resend the code. Please try again."), 500
+    resp = make_response(auth_page("Enter your code", "Two-step verification",
+                                   _mfa_body(_mask_email(u["email"])), msg="A new code is on its way."))
+    resp.set_cookie(MFA_PENDING_COOKIE, tok, httponly=True, samesite="Lax",
+                    secure=bool(os.environ.get("XC_SECURE_COOKIES")), max_age=MFA_CODE_TTL_MIN * 60)
+    return resp
+
+
+@bp.post("/login/verify")
+def mfa_submit():
+    import logging
+    _log = logging.getLogger("xctimer.access")
+    ip = (request.headers.get("CF-Connecting-IP")
+          or request.headers.get("X-Forwarded-For", "").split(",")[0].strip()
+          or request.remote_addr or "-")
+    ch = _load_challenge()
+    if not ch:
+        return redirect("/login")
+    conn = db.connect()
+    u = conn.execute("SELECT * FROM users WHERE id=?", (ch["user_id"],)).fetchone()
+    if _expired(ch["expires"]) or ch["attempts"] >= MFA_MAX_ATTEMPTS:
+        conn.execute("DELETE FROM mfa_challenges WHERE id=?", (ch["id"],))
+        conn.commit()
+        conn.close()
+        return auth_page("Sign in", "Cross-country & track timing", _login_body(),
+                         err="That code expired or had too many tries. Please sign in again."), 400
+    code = (request.form.get("code") or "").strip()
+    if not u or not verify_password(code, ch["code_hash"]):
+        conn.execute("UPDATE mfa_challenges SET attempts=attempts+1 WHERE id=?", (ch["id"],))
+        conn.commit()
+        conn.close()
+        left = MFA_MAX_ATTEMPTS - (ch["attempts"] + 1)
+        _log.info(f"XCLOG MFA fail {u['email'] if u else '-'} {ip}")
+        return auth_page("Enter your code", "Two-step verification",
+                         _mfa_body(_mask_email(u["email"] if u else "")),
+                         err=f"Incorrect code. {max(left, 0)} attempt(s) left."), 401
+    # correct
+    conn.execute("DELETE FROM mfa_challenges WHERE id=?", (ch["id"],))
+    conn.commit()
+    conn.close()
+    resp = _complete_login(u, ch["next"], ip, _log, extra=" mfa")
+    resp.delete_cookie(MFA_PENDING_COOKIE)
+    if request.form.get("remember") == "1":
+        _remember_device(resp, u["id"])
+    return resp
 
 
 @bp.post("/logout")

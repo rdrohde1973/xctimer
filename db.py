@@ -384,6 +384,25 @@ def migrate(conn):
     conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_district ON audit_log(district_id)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_actor ON audit_log(actor_id)")
 
+    # Email-code MFA (compliance): a short-lived challenge per pending sign-in, and
+    # long-lived "remembered device" tokens so MFA users aren't prompted every login.
+    conn.execute("""CREATE TABLE IF NOT EXISTS mfa_challenges (
+        id INTEGER PRIMARY KEY,
+        token TEXT UNIQUE,
+        user_id INTEGER NOT NULL,
+        code_hash TEXT,
+        next TEXT,
+        attempts INTEGER DEFAULT 0,
+        expires TEXT,
+        created_at TEXT)""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS mfa_devices (
+        id INTEGER PRIMARY KEY,
+        user_id INTEGER NOT NULL,
+        token_hash TEXT,
+        expires TEXT,
+        created_at TEXT)""")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_mfa_dev ON mfa_devices(user_id, token_hash)")
+
     # Ensure the named points tables exist (older DBs seeded a different set).
     for name, vals in SEED_POINTS_TABLES:
         if not conn.execute("SELECT 1 FROM points_tables WHERE name=?", (name,)).fetchone():
