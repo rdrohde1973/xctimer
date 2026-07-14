@@ -346,8 +346,11 @@ function render(){{
   }});
   document.getElementById('rows').innerHTML=h;
 }}
-async function startRace(){{ await jpost('/races/'+RID+'/start',{{}}); load(); }}
-async function stopRace(){{ await jpost('/races/'+RID+'/stop',{{}}); load(); }}
+async function startRace(){{
+  const body={{}};
+  if(STOPPED&&FIN.length){{ if(!confirm('Race ended with '+FIN.length+' finisher(s). Restarting CLEARS them. Continue?'))return; body.clear=true; }}
+  try{{ await jpost('/races/'+RID+'/start',body); }}catch(e){{ alert(e.message); }} load(); }}
+async function stopRace(){{ if(!confirm('Stop the race clock?'))return; await jpost('/races/'+RID+'/stop',{{}}); load(); }}
 async function resetRace(){{ if(!confirm('Reset clears the clock and all finishers. Continue?'))return;
   await jpost('/races/'+RID+'/reset',{{}}); load(); }}
 async function recordBib(){{ const el=document.getElementById('bib'); const v=el.value.trim(); if(!v)return;
@@ -406,6 +409,18 @@ def race_state(rid):
 def race_start(rid):
     r, m = _race_or_403(rid, can_record_meet)
     conn = db.connect()
+    # Restarting an ended race with finishers recorded is a data-loss trap: their
+    # elapsed times belong to the old clock. Require an explicit clear (confirmed
+    # client-side) before we hand out a fresh start time.
+    if r["start_time"] and r["stop_time"]:
+        n = conn.execute("SELECT COUNT(*) FROM finishers WHERE race_id=?", (rid,)).fetchone()[0]
+        clear = bool((request.get_json(silent=True) or {}).get("clear"))
+        if n and not clear:
+            conn.close()
+            return jsonify(error=f"Race ended with {n} finisher(s). Restarting clears them — "
+                                 "confirm the restart (or use Reset).", needs_clear=True), 409
+        if n:
+            conn.execute("DELETE FROM finishers WHERE race_id=?", (rid,))
     conn.execute("UPDATE races SET start_time=?, stop_time=NULL WHERE id=?", (_iso(_now()), rid))
     conn.commit()
     conn.close()
@@ -515,6 +530,8 @@ def race_tap(rid):
     start = _parse(r["start_time"])
     if not start:
         return jsonify(error="Race not started"), 400
+    if r["stop_time"]:
+        return jsonify(error="Race has ended — Reset to run again"), 400
     elapsed = (_now() - start).total_seconds()
     conn = db.connect()
     seq = (conn.execute("SELECT COALESCE(MAX(seq),0) FROM finishers WHERE race_id=?",
@@ -544,7 +561,17 @@ def finisher_bib(fid):
         conn.execute("UPDATE finishers SET bib=NULL, snap_name=NULL, snap_grade=NULL, "
                      "snap_gender=NULL, snap_school=NULL WHERE id=?", (fid,))
     else:
-        bib = int(raw)
+        try:
+            bib = int(str(raw).strip())
+        except (TypeError, ValueError):
+            conn.close()
+            return jsonify(error="Bib must be a number"), 400
+        dup = conn.execute("SELECT seq, snap_name FROM finishers WHERE race_id=? AND bib=? AND id!=?",
+                           (f["race_id"], bib, fid)).fetchone()
+        if dup:
+            conn.close()
+            nm = f" ({dup['snap_name']})" if dup["snap_name"] else ""
+            return jsonify(error=f"Bib {bib}{nm} is already on finisher #{dup['seq']}"), 400
         a = _athlete_for_bib(conn, f["meet_id"], bib)
         conn.execute(
             "UPDATE finishers SET bib=?, snap_name=?, snap_grade=?, snap_gender=?, snap_school=? WHERE id=?",
@@ -637,19 +664,33 @@ def team_scores(runners):
             "sixth": rs[5]["score_place"] if len(rs) > 5 else None,
             "seventh": rs[6]["score_place"] if len(rs) > 6 else None,
         })
-    teams.sort(key=lambda t: (t["score"], t["sixth"] if t["sixth"] else 9999))
+    # Ties break on the 6th runner, then the 7th (standard XC tie-break order).
+    teams.sort(key=lambda t: (t["score"], t["sixth"] if t["sixth"] else 9999,
+                              t["seventh"] if t["seventh"] else 9999))
     for i, t in enumerate(teams):
         t["rank"] = i + 1
     return teams
 
 
 def _meet_finishers(mid):
+    """All finishers across the meet's races, deduped: a bib that appears in more
+    than one heat counts once, at its fastest time (bib-less taps are kept as-is)."""
     conn = db.connect()
     rows = conn.execute(
         "SELECT f.* FROM finishers f JOIN races r ON r.id=f.race_id WHERE r.meet_id=?", (mid,)
     ).fetchall()
     conn.close()
-    return [dict(r) for r in rows]
+    out, best = [], {}
+    for r in rows:
+        d = dict(r)
+        if d["bib"] is None or d["elapsed_seconds"] is None:
+            out.append(d)
+            continue
+        cur = best.get(d["bib"])
+        if cur is None or d["elapsed_seconds"] < cur["elapsed_seconds"]:
+            best[d["bib"]] = d
+    out.extend(best.values())
+    return out
 
 
 GENDERS = [("M", "Boys"), ("F", "Girls")]
@@ -1023,6 +1064,12 @@ main{{max-width:960px;margin:0 auto;padding:1.4rem 1rem 4rem}}
 @bp.get("/r/<token>/results.xlsx")
 def public_results_xlsx(token):
     m = _meet_by_token(token)
+    if m["sport"] == "track":
+        from . import track
+        fname = (m["name"] or "results").replace(" ", "_")
+        return Response(track.track_workbook(m["id"], name_mode=_public_mask(m)),
+                        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                        headers={"Content-Disposition": f'attachment; filename="{fname}.xlsx"'})
     return _xlsx_response(m["id"], m["name"], _public_mask(m))
 
 

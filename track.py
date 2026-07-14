@@ -1981,6 +1981,14 @@ def build_results(mid):
             if r["snap_school"]:
                 key = (r["snap_school"], me["gender"] or "U", me["grade"])
                 team_pts[key] = team_pts.get(key, 0) + pts
+        # DQ'd athletes stay visible at the bottom of the event (no place, no points)
+        # — an official expects to see the DQ on the results, not a disappearance.
+        for r in conn.execute(
+                "SELECT r.* FROM results r JOIN entries en ON en.id=r.entry_id "
+                "WHERE en.meet_event_id=? AND r.dq=1", (me["id"],)).fetchall():
+            mark = fmt_time(r["mark_seconds"]) if me["unit"] == "seconds" else _fmt_ht(r["mark_metric"])
+            items.append({"place": "DQ", "mark": mark or "", "attempts": "",
+                          "name": r["snap_name"], "school": r["snap_school"], "points": 0})
         events_out.append({"name": f'{me["ename"]} — {_div_grade(me["gender"], me["grade"])}',
                            "items": items, "gkey": me["gender"] or "U"})
     conn.close()
@@ -2099,6 +2107,15 @@ def results_xlsx(mid):
     m = load_meet(mid)
     if not can_view_meet(m):
         abort(403)
+    fname = (m["name"] or "results").replace(" ", "_")
+    return Response(track_workbook(mid),
+                    mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition": f'attachment; filename="{fname}.xlsx"'})
+
+
+def track_workbook(mid, name_mode=None):
+    """Track results workbook bytes (Team Scores + Results). name_mode masks names
+    for public downloads (district mask_public)."""
     import io as _io
     import openpyxl
     data = build_results(mid)
@@ -2121,14 +2138,11 @@ def results_xlsx(mid):
         ws2.append([ev["name"]])
         ws2.append(["Place", "Competitor", "School", "Best", "Attempts", "Points"])
         for i in ev["items"]:
-            ws2.append([i["place"], i["name"], i["school"], i["mark"],
-                        i.get("attempts") or "", _fmt_pts(i["points"])])
+            ws2.append([i["place"], demo.display(i["name"] or "", name_mode), i["school"],
+                        i["mark"], i.get("attempts") or "", _fmt_pts(i["points"])])
         ws2.append([])
     if not wb.sheetnames:
         wb.create_sheet("Results").append(["No results yet"])
     buf = _io.BytesIO()
     wb.save(buf)
-    fname = (m["name"] or "results").replace(" ", "_")
-    return Response(buf.getvalue(),
-                    mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                    headers={"Content-Disposition": f'attachment; filename="{fname}.xlsx"'})
+    return buf.getvalue()

@@ -119,7 +119,8 @@ def progress(aid):
             val, disp = r["mark_seconds"], _fmt_t(r["mark_seconds"])
             better_min = True
         else:
-            val, disp = r["mark_metric"], (f'{r["mark_metric"]:.2f}m' if r["mark_metric"] else "")
+            from .track import _fmt_ht
+            val, disp = r["mark_metric"], (_fmt_ht(r["mark_metric"]) if r["mark_metric"] else "")
             better_min = False
         perf_rows.append((r["date"], "Track", r["event"], disp, False))
         if val is not None:
@@ -389,8 +390,8 @@ def _digest(principal, question=""):
                 "FROM results r JOIN entries en ON en.id=r.entry_id JOIN meet_events me ON me.id=en.meet_event_id "
                 "JOIN events e ON e.id=me.event_id WHERE me.meet_id=? AND r.place=1 LIMIT 12", (m["id"],)).fetchall()
             for r in rr:
-                mk = _fmt_t(r["mark_seconds"]) if r["mark_seconds"] is not None else \
-                    (f'{r["mark_metric"]:.2f}m' if r["mark_metric"] else "")
+                mk = _mark_str("seconds" if r["mark_seconds"] is not None else "metric",
+                               r["mark_seconds"], r["mark_metric"])
                 lines.append(f"  {r['ev']} winner: {demo.display(r['snap_name'] or '?', mode)} "
                              f"({r['snap_school'] or '?'}) {mk}")
     conn.close()

@@ -560,7 +560,7 @@ async function commitImport(){{
   <label>Replace logo (optional)</label><input name="logo" type="file" accept="image/*">
   <button type="submit" style="margin-top:.8rem">Save changes</button>
 </form></div>"""
-    return shell(g.principal, body, active="schools",
+    return shell(g.principal, body, active="schools", err=request.args.get("err"),
                  active_district=active_district_id(), districts=_districts_for_switcher())
 
 
@@ -642,6 +642,14 @@ def add_athlete(sid):
     dt = 1 if request.form.get("does_track") else 0
     conn = db.connect()
     bib = int(bib_raw) if bib_raw.isdigit() else _next_bib(conn, s)
+    # Manual bib must be unique across the district (stickers/scans key on it).
+    dup = conn.execute(
+        "SELECT a.name, sc.name AS sname FROM athletes a JOIN schools sc ON sc.id=a.school_id "
+        "WHERE a.bib=? AND sc.district_id=? AND a.active=1", (bib, s["district_id"])).fetchone()
+    if dup:
+        conn.close()
+        return redirect(f"/schools/{sid}?err=Bib+{bib}+is+already+assigned+to+"
+                        f"{dup['name'].replace(' ', '+')}+({dup['sname'].replace(' ', '+')})")
     conn.execute(
         "INSERT INTO athletes (school_id, bib, name, grade, gender, does_xc, does_track) "
         "VALUES (?,?,?,?,?,?,?)",

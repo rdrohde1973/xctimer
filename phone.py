@@ -252,8 +252,11 @@ function render(){{
   }});
   list.innerHTML=h;
 }}
-async function startRace(){{ await jpost('/races/'+RID+'/start',{{}}); load(); }}
-async function stopRace(){{ await jpost('/races/'+RID+'/stop',{{}}); load(); }}
+async function startRace(){{
+  const body={{}};
+  if(STOPPED&&FIN.length){{ if(!confirm('Race ended with '+FIN.length+' finisher(s). Restarting CLEARS them. Continue?'))return; body.clear=true; }}
+  try{{ await jpost('/races/'+RID+'/start',body); }}catch(e){{ alert(e.message); }} load(); }}
+async function stopRace(){{ if(!confirm('Stop the race clock?'))return; await jpost('/races/'+RID+'/stop',{{}}); load(); }}
 async function tap(){{ try{{ await jpost('/races/'+RID+'/tap',{{}}); }}catch(e){{}} load(); }}
 async function undo(){{ try{{ await jpost('/races/'+RID+'/untap',{{}}); }}catch(e){{ alert(e.message); }} load(); }}
 async function rec(){{ const el=document.getElementById('sbib'); const v=el.value.trim(); if(!v)return;
