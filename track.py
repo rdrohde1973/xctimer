@@ -1143,7 +1143,7 @@ def _hj_grid_html(meid, me, entries, res, labels, setup, record):
 .barchip{{display:inline-block;background:var(--panel2);border:1px solid var(--line);border-radius:999px;padding:.1rem .55rem;font-size:.8rem;margin:.1rem}}
 table.hjgrid{{white-space:nowrap;font-size:.9rem}}
 table.hjgrid th,table.hjgrid td{{padding:.35rem .45rem;text-align:center;border-bottom:1px solid var(--line)}}
-table.hjgrid td:nth-child(2),table.hjgrid td:nth-child(3),table.hjgrid th:nth-child(2),table.hjgrid th:nth-child(3){{text-align:left}}
+table.hjgrid td:nth-child(2),table.hjgrid th:nth-child(2){{text-align:left}}
 .hjc{{width:54px;text-align:center;text-transform:uppercase}}
 .hjgrid .pl{{font-weight:800;color:var(--acc)}}
 .hjgrid .best{{font-weight:700;font-variant-numeric:tabular-nums}}
@@ -1158,11 +1158,10 @@ function bestOf(marks){{ let best=null; BARS.forEach(function(b){{ const mk=(mar
 function render(){{
   BARS=[...new Set(BARS)].filter(b=>inches(b)!=null).sort((a,b)=>inches(a)-inches(b));
   document.getElementById('barchips').innerHTML = BARS.map(b=>'<span class="barchip">'+esc(b)+'</span>').join(' ') || '<span class="muted">none yet</span>';
-  let h='<table class="hjgrid"><tr><th>PL</th><th>Athlete</th><th>School</th>'+BARS.map(b=>'<th>'+esc(b)+'</th>').join('')+'<th>Best</th><th>DQ</th><th></th></tr>';
+  let h='<table class="hjgrid"><tr><th>PL</th><th>Athlete</th>'+BARS.map(b=>'<th>'+esc(b)+'</th>').join('')+'<th>Best</th><th>DQ</th><th></th></tr>';
   ROWS.forEach(function(r,ri){{
     h+='<tr><td class="pl" id="pl'+ri+'">'+(r.place||'')+'</td>'
-      +'<td><b>'+esc(r.name)+'</b>'+(r.bib?' <span class=muted>#'+r.bib+'</span>':'')+'</td>'
-      +'<td>'+esc(r.school)+'</td>'
+      +'<td><b>'+esc(r.name)+'</b>'+(r.bib?' <span class=muted>#'+r.bib+'</span>':'')+(r.school?'<br><span class=muted>'+esc(r.school)+'</span>':'')+'</td>'
       +BARS.map(function(b){{ return '<td><input class="hjc" '+(CANREC?'':'disabled')+' value="'+esc(r.marks[b]||'')+'" data-ri="'+ri+'" data-bar="'+esc(b)+'" onchange="edit(this)"></td>'; }}).join('')
       +'<td class="best" id="best'+ri+'">'+(bestOf(r.marks)!=null?fmtht(bestOf(r.marks)):esc(r.best||''))+'</td>'
       +'<td><input type="checkbox" '+(r.dq?'checked':'')+' '+(CANREC?'':'disabled')+' onchange="dqc('+ri+',this)"></td>'
