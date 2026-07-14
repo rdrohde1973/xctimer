@@ -6,6 +6,10 @@ Districts: super admin only. Users: super admin (any district) and district admi
 import json
 import re
 import subprocess
+from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
+
+_MT = ZoneInfo("America/Denver")   # Mountain Time (handles MST/MDT)
 
 from markupsafe import escape
 from flask import Blueprint, request, redirect, g, abort, jsonify, Response
@@ -293,7 +297,14 @@ def list_users():
     def _fmt_login(iso):
         if not iso:
             return '<span class="muted">never</span>'
-        return f'<span class="muted">{escape(str(iso).replace("T", " ")[:16])} UTC</span>'
+        try:
+            dt = datetime.fromisoformat(str(iso))
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            dt = dt.astimezone(_MT)
+            return f'<span class="muted">{escape(dt.strftime("%b %-d, %-I:%M %p %Z"))}</span>'
+        except Exception:  # noqa: BLE001
+            return f'<span class="muted">{escape(str(iso)[:16])}</span>'
     trs = []
     for u in rows:
         status = ('<span class="muted">pending setup</span>' if not u["password_hash"]
