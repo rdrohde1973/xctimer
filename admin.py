@@ -11,7 +11,7 @@ from flask import Blueprint, request, redirect, g, abort
 
 from . import db
 from .auth import (login_required, role_required, create_user, issue_reset_token,
-                   send_setup_email, ROLES)
+                   send_setup_email, hash_password, ROLES)
 from .tenancy import active_district_id, require_district, all_districts
 from .ui import shell
 
@@ -299,6 +299,13 @@ def list_users():
         resend_label = "Resend invite" if not u["password_hash"] else "Send login link"
         resend = (f'<form class="inline" method="post" action="/users/{u["id"]}/resend">'
                   f'<button class="ghost" type="submit">{resend_label}</button></form> ')
+        # Demo accounts are shareable showcase logins — let an admin set a known password.
+        if "is_demo" in u.keys() and u["is_demo"]:
+            resend += (
+                f'<form class="inline" method="post" action="/users/{u["id"]}/demo-password">'
+                f'<input name="password" placeholder="demo password" required '
+                f'style="width:auto;padding:.35rem .5rem">'
+                f'<button class="ghost" type="submit">Set password</button></form> ')
         # Role: editable dropdown when this admin may manage this user's role, else a pill.
         # Never editable for super admins or for your own account (no self-lockout).
         assignable = _creatable_roles(p)
@@ -399,6 +406,7 @@ def list_users():
                 ' <span class="muted">Showing every user across all districts.</span>')
     body = f"<h1>Users</h1><p class='sub'>{sub}</p>{table}{form}"
     return shell(p, body, active="users", msg=request.args.get("msg"),
+                 err=request.args.get("err"),
                  active_district=did, districts=_districts_for_switcher())
 
 
@@ -491,6 +499,33 @@ def change_role(uid):
         conn.commit()
         conn.close()
     return redirect("/users?msg=Role+updated")
+
+
+@bp.post("/users/<int:uid>/demo-password")
+@role_required("super_admin", "district_admin")
+def set_demo_password(uid):
+    from urllib.parse import quote
+    pw = (request.form.get("password") or "").strip()
+    conn = db.connect()
+    u = conn.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone()
+    if not u:
+        conn.close()
+        abort(404)
+    if u["district_id"] is not None:
+        require_district(u["district_id"])
+    # Only demo accounts get a directly-set (shareable) password.
+    if not ("is_demo" in u.keys() and u["is_demo"]):
+        conn.close()
+        abort(403)
+    if len(pw) < 4:
+        conn.close()
+        return redirect("/users?err=" + quote("Demo password must be at least 4 characters."))
+    conn.execute(
+        "UPDATE users SET password_hash=?, setup_token=NULL, token_expires=NULL WHERE id=?",
+        (hash_password(pw), uid))
+    conn.commit()
+    conn.close()
+    return redirect("/users?msg=" + quote(f"Demo login ready — {u['email']} / {pw}"))
 
 
 @bp.post("/users/<int:uid>/delete")
