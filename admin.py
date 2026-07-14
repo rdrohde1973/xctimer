@@ -572,6 +572,30 @@ _CONSOLE_RANGES = {"1h": ("1 hour", "1 hour ago"), "24h": ("24 hours", "1 day ag
                    "7d": ("7 days", "7 days ago")}
 
 
+def _ts_mt(ts):
+    """A journal ISO timestamp -> readable Mountain Time."""
+    try:
+        dt = datetime.fromisoformat(ts)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return dt.astimezone(_MT).strftime("%b %-d, %-I:%M:%S %p")
+    except Exception:  # noqa: BLE001
+        return ts[:19].replace("T", " ")
+
+
+def _line_mt(line):
+    """Rewrite a raw journal line's leading timestamp into Mountain Time."""
+    parts = line.split(" ", 1)
+    try:
+        dt = datetime.fromisoformat(parts[0])
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        stamp = dt.astimezone(_MT).strftime("%m-%d %H:%M:%S")
+        return stamp + (" " + parts[1] if len(parts) > 1 else "")
+    except Exception:  # noqa: BLE001
+        return line
+
+
 def _read_journal(since, cap=20000):
     """XCLOG lines from this service's journal since `since` (newest last)."""
     try:
@@ -664,7 +688,7 @@ def console():
                  f'<th style="text-align:right">Distinct IPs</th></tr>{p404_rows}</table></div>')
 
     lg_rows = "".join(
-        f'<tr><td>{escape(l["ts"][:19].replace("T", " "))}</td><td>{escape(l["email"])}</td>'
+        f'<tr><td>{escape(_ts_mt(l["ts"]))}</td><td>{escape(l["email"])}</td>'
         f'<td>{escape(l["role"])}</td>'
         f'<td>{"✓ ok" if l["result"] == "ok" else "<span style=color:var(--err)>✕ fail</span>"}</td>'
         f'<td>{escape(l["ip"])}</td></tr>'
@@ -673,7 +697,7 @@ def console():
                   f'<table><tr><th>When</th><th>Email</th><th>Role</th><th>Status</th><th>IP</th></tr>'
                   f'{lg_rows}</table></div>')
 
-    stream_seed = "\n".join(_read_journal(since, cap=200)[-200:])
+    stream_seed = "\n".join(_line_mt(ln) for ln in _read_journal(since, cap=200)[-200:])
     stream_card = f"""<div class="card"><h2>Raw log stream <span class="muted">— live tail</span>
 <button class="ghost" onclick="PAUSED=!PAUSED;this.textContent=PAUSED?'▶ Resume':'⏸ Pause'"
   style="float:right">⏸ Pause</button></h2>
@@ -704,4 +728,4 @@ setInterval(tail, 3000);
 @bp.get("/admin/console/tail")
 @role_required("super_admin")
 def console_tail():
-    return jsonify(lines=_read_journal("15 minutes ago", cap=200)[-200:])
+    return jsonify(lines=[_line_mt(ln) for ln in _read_journal("15 minutes ago", cap=200)[-200:]])
