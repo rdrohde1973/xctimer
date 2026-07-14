@@ -786,7 +786,11 @@ def _season_seed_value(conn, entry, event_id, exclude_meet_id):
 def _draw(conn, me, m, mode, entries=None, laned_override=None):
     """Assign heat + lane to a set of entries. Seeded = fastest heat last, center-out lanes."""
     laned = bool(me["laned"]) if laned_override is None else laned_override
-    size = (m["lanes"] or DEFAULT_LANES) if laned else DEFAULT_SECTION
+    lanes = m["lanes"] or DEFAULT_LANES
+    # Laned sprints: one runner per lane. Distance (800/1600/3200) runs a waterfall
+    # section that holds ~2x the lanes — so don't split into a 2nd section until there
+    # are more than double the lanes (e.g. >16 on an 8-lane track).
+    size = lanes if laned else 2 * lanes
     if entries is None:
         entries = conn.execute("SELECT * FROM entries WHERE meet_event_id=?", (me["id"],)).fetchall()
     entries = list(entries)
