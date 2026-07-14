@@ -266,6 +266,15 @@ def list_users():
             "SELECT u.*, d.name AS dname FROM users u "
             "LEFT JOIN districts d ON d.id=u.district_id ORDER BY u.role, u.email"
         ).fetchall()
+    elif p.is_super:
+        # District selected: that district's users PLUS the global super admins,
+        # so a super always sees their own account and platform peers.
+        rows = conn.execute(
+            "SELECT u.*, d.name AS dname FROM users u "
+            "LEFT JOIN districts d ON d.id=u.district_id "
+            "WHERE u.district_id=? OR u.role='super_admin' ORDER BY u.role, u.email",
+            (did,),
+        ).fetchall()
     else:
         rows = conn.execute(
             "SELECT u.*, NULL AS dname FROM users u WHERE u.district_id=? ORDER BY u.role, u.email",
@@ -382,7 +391,13 @@ def list_users():
 <p class="muted">An email with a setup link is sent so they can set their password.</p>
 </div>{filter_js}"""
 
-    body = f"<h1>Users</h1><p class='sub'>Coaches, timers, and district admins.</p>{table}{form}"
+    sub = "Coaches, timers, and district admins."
+    if p.is_super:
+        sub += (' <span class="muted">Showing this district plus super admins — '
+                'choose <b>All districts</b> in the header to see every user.</span>'
+                if did is not None else
+                ' <span class="muted">Showing every user across all districts.</span>')
+    body = f"<h1>Users</h1><p class='sub'>{sub}</p>{table}{form}"
     return shell(p, body, active="users", msg=request.args.get("msg"),
                  active_district=did, districts=_districts_for_switcher())
 
