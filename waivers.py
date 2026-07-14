@@ -27,7 +27,8 @@ bp = Blueprint("waivers", __name__)
 # Placeholders filled per athlete when a waiver is sent. Shown as a hint to admins.
 PLACEHOLDER_HINT = ("{{athlete_name}}, {{school}}, {{grade}}, {{district}}, {{date}}, "
                     "{{dob}}, {{parent_name}}, {{parent_email}}, {{parent_phone}}, "
-                    "{{emergency_name}}, {{emergency_phone}}")
+                    "{{emergency_name}}, {{emergency_phone}}, {{xc_check}} (☑/☐ from roster), "
+                    "{{track_check}} (☑/☐ from roster)")
 
 
 def _merge(body, athlete, district_name, today):
@@ -39,6 +40,13 @@ def _merge(body, athlete, district_name, today):
         except (KeyError, IndexError):
             v = None
         return v or "____________________"
+
+    def checkbox(key):
+        try:
+            v = athlete[key]
+        except (KeyError, IndexError):
+            v = 0
+        return "☑" if v else "☐"   # ☑ / ☐, auto-checked from the roster
     repl = {
         "athlete_name": athlete["name"] or "",
         "athlete": athlete["name"] or "",
@@ -53,6 +61,8 @@ def _merge(body, athlete, district_name, today):
         "parent_phone": field("parent_phone"),
         "emergency_name": field("emergency_name"),
         "emergency_phone": field("emergency_phone"),
+        "xc_check": checkbox("does_xc"),
+        "track_check": checkbox("does_track"),
     }
     out = body or ""
     for k, v in repl.items():

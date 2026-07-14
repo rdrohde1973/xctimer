@@ -111,20 +111,24 @@ def vision_read_sheet(image_bytes, media_type="image/jpeg"):
 
 WAIVER_FIELDS = ("athlete_name", "school", "grade", "district", "date", "dob",
                  "parent_name", "parent_email", "parent_phone",
-                 "emergency_name", "emergency_phone")
+                 "emergency_name", "emergency_phone", "xc_check", "track_check")
 
 _WAIVER_TPL_SYS = (
     "You convert an uploaded youth-sports waiver / permission / consent form into a "
     "REUSABLE template. Keep the wording VERBATIM, but replace the specific values that "
     "vary per athlete with placeholders drawn ONLY from this exact list:\n"
     "{{athlete_name}}, {{school}}, {{grade}}, {{district}}, {{date}}, {{dob}}, "
-    "{{parent_name}}, {{parent_email}}, {{parent_phone}}, {{emergency_name}}, {{emergency_phone}}\n"
+    "{{parent_name}}, {{parent_email}}, {{parent_phone}}, {{emergency_name}}, {{emergency_phone}}, "
+    "{{xc_check}}, {{track_check}}\n"
     "Guidance: a student/athlete/child name (or a blank like 'Student Name: ____') -> "
     "{{athlete_name}}; the school or team name -> {{school}}; a grade/year -> {{grade}}; "
     "the district/organization -> {{district}}; a date line -> {{date}}; a date of birth / "
     "DOB -> {{dob}}; the parent or guardian's printed name -> {{parent_name}}; a parent/guardian "
     "email -> {{parent_email}}; a parent/guardian cell/phone -> {{parent_phone}}; an emergency "
     "contact name -> {{emergency_name}}; an emergency contact phone -> {{emergency_phone}}. "
+    "For a sport checkbox line (e.g. '☐ Cross Country  ☐ Track & Field'), replace the "
+    "Cross Country checkbox with {{xc_check}} and the Track (& Field) checkbox with "
+    "{{track_check}}, keeping the sport label right after each. "
     "Do NOT invent placeholders outside the "
     "list. Leave the actual signature line alone (the app captures the signature "
     "separately). Drop letterhead, logos, and page numbers. Preserve paragraph breaks as "
