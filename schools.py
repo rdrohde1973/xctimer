@@ -401,7 +401,7 @@ async function saveCore(aid){{
 function editInfo(){{ document.getElementById('cardView').style.display='none';
   document.getElementById('cardEdit').style.display='block'; }}
 async function saveInfo(aid){{
-  const f={{}}; ['email','phone','parent_name','parent_email','parent_phone',
+  const f={{}}; ['dob','email','phone','parent_name','parent_email','parent_phone',
     'emergency_name','emergency_phone','physical_date'].forEach(k=>{{
       const el=document.getElementById('f_'+k); if(el) f[k]=el.value; }});
   try{{ await jpost('/athletes/'+aid+'/info', f); openCard(aid); }}
@@ -525,13 +525,13 @@ async function commitImport(){{
                  active_district=active_district_id(), districts=_districts_for_switcher())
 
 
-_TEMPLATE_COLS = ["Name", "Grade", "Gender", "Athlete Email", "Athlete Phone",
-                  "Parent/Guardian Name", "Parent Email", "Parent Phone",
+_TEMPLATE_COLS = ["Name", "Grade", "Gender", "Date of Birth", "Athlete Email",
+                  "Athlete Phone", "Parent/Guardian Name", "Parent Email", "Parent Phone",
                   "Emergency Contact", "Emergency Phone"]
 _TEMPLATE_SAMPLES = [
-    ["Alex Rivers", 7, "M", "", "", "Jordan Rivers", "jordan.rivers@example.com",
-     "555-0142", "Jordan Rivers", "555-0142"],
-    ["Sam Brooks", 8, "F", "sam.brooks@example.com", "", "Taylor Brooks",
+    ["Alex Rivers", 7, "M", "2013-04-18", "", "", "Jordan Rivers",
+     "jordan.rivers@example.com", "555-0142", "Jordan Rivers", "555-0142"],
+    ["Sam Brooks", 8, "F", "2012-09-05", "sam.brooks@example.com", "", "Taylor Brooks",
      "taylor.brooks@example.com", "555-0199", "Casey Brooks", "555-0177"],
 ]
 
@@ -550,7 +550,7 @@ def _roster_template_xlsx():
         c.font = Font(bold=True)
     for row in _TEMPLATE_SAMPLES:
         ws.append(row)
-    widths = [20, 7, 8, 24, 14, 22, 26, 14, 22, 16]
+    widths = [20, 7, 8, 13, 24, 14, 22, 26, 14, 22, 16]
     for i, w in enumerate(widths, 1):
         ws.column_dimensions[get_column_letter(i)].width = w
     ws.freeze_panes = "A2"
@@ -561,9 +561,10 @@ def _roster_template_xlsx():
             "1. Replace the two example rows on the 'Roster' tab with your athletes.",
             "2. Keep the header row exactly as-is.",
             "3. Name = First Last.  Grade = a number (6, 7, 8, 9).  Gender = M or F.",
-            "4. Contact / parent / emergency columns are optional — fill what you have.",
-            "5. Bibs are assigned automatically on import (you don't enter them here).",
-            "6. Save the file, then upload it on the school's Import roster card.",
+            "4. Date of Birth = MM/DD/YYYY (or YYYY-MM-DD).",
+            "5. Contact / parent / emergency columns are optional — fill what you have.",
+            "6. Bibs are assigned automatically on import (you don't enter them here).",
+            "7. Save the file, then upload it on the school's Import roster card.",
             "",
             "You can also upload your own spreadsheet — the importer reads matching",
             "column headers — but this template is the easiest way to capture everything."],
@@ -740,6 +741,7 @@ def _card_fragment(a, w, ro):
      · <a href="/athletes/{aid}/progress">📈 progress</a></p>
   <div class="crow"><span class="k">Waiver</span><span>{wb} {btn}</span></div>
   <div class="crow"><span class="k">Physical</span><span>{pb}{" · " + escape(pd) if pd else ""}</span></div>
+  {row("Date of birth", a["dob"])}
   {row("Athlete email", a["email"])}
   {row("Athlete phone", a["phone"])}
   {row("Parent / guardian", a["parent_name"])}
@@ -760,6 +762,8 @@ def _card_fragment(a, w, ro):
     edit = f"""
 <div id="cardEdit" style="display:none">
   <h2 style="margin:.1em 0 1rem">Edit — {escape(a['name'])}</h2>
+  <label>Date of birth</label>
+  <input id="f_dob" type="date" value="{escape((a['dob'] or '')[:10])}">
   <label>Physical date</label>
   <input id="f_physical_date" type="date" value="{escape((a['physical_date'] or '')[:10])}">
   {inp("email", "Athlete email", "email")}
@@ -872,7 +876,7 @@ def athlete_info(aid):
     if not _can_access_school(s) or g.principal.is_demo:
         abort(403)
     d = request.get_json(silent=True) or {}
-    fields = ("email", "phone", "parent_name", "parent_email", "parent_phone",
+    fields = ("dob", "email", "phone", "parent_name", "parent_email", "parent_phone",
               "emergency_name", "emergency_phone", "physical_date")
     vals = [(str(d.get(k)).strip() or None) if d.get(k) is not None else None for k in fields]
     conn = db.connect()
@@ -931,13 +935,13 @@ def import_commit(sid):
         gender = gender if gender in ("M", "F") else None
         bib = _next_bib(conn, s)
         cf = {k: (str(r.get(k)).strip() if r.get(k) else None) for k in
-              ("email", "phone", "parent_name", "parent_email", "parent_phone",
+              ("dob", "email", "phone", "parent_name", "parent_email", "parent_phone",
                "emergency_name", "emergency_phone")}
         conn.execute(
             "INSERT INTO athletes (school_id, bib, name, grade, gender, does_xc, does_track, "
-            "email, phone, parent_name, parent_email, parent_phone, emergency_name, emergency_phone) "
-            "VALUES (?,?,?,?,?,1,1,?,?,?,?,?,?,?)",
-            (sid, bib, name, grade, gender, cf["email"], cf["phone"], cf["parent_name"],
+            "dob, email, phone, parent_name, parent_email, parent_phone, emergency_name, emergency_phone) "
+            "VALUES (?,?,?,?,?,1,1,?,?,?,?,?,?,?,?)",
+            (sid, bib, name, grade, gender, cf["dob"], cf["email"], cf["phone"], cf["parent_name"],
              cf["parent_email"], cf["parent_phone"], cf["emergency_name"], cf["emergency_phone"]),
         )
         added += 1

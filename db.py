@@ -299,9 +299,15 @@ def migrate(conn):
         conn.execute("ALTER TABLE athletes ADD COLUMN active INTEGER DEFAULT 1")
     # Contact / parent / emergency / physical fields (importable from the roster file).
     for col in ("email", "phone", "parent_name", "parent_email", "parent_phone",
-                "emergency_name", "emergency_phone", "physical_date"):
+                "emergency_name", "emergency_phone", "physical_date", "dob"):
         if col not in acols:
             conn.execute(f"ALTER TABLE athletes ADD COLUMN {col} TEXT")
+
+    # Waiver signing can also capture family physician + health insurance.
+    wcols = _column_names(conn, "athlete_waivers")
+    for col in ("physician_name", "physician_phone", "insurance_provider", "insurance_policy"):
+        if col not in wcols:
+            conn.execute(f"ALTER TABLE athlete_waivers ADD COLUMN {col} TEXT")
 
     # Meet setup fields ported from the reference apps.
     mcols = _column_names(conn, "meets")

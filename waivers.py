@@ -266,6 +266,17 @@ def sign_page(token):
   <input id="nm" autocomplete="name" placeholder="Parent / guardian name">
   <label>Relationship to athlete</label>
   <input id="rel" placeholder="e.g. Mother, Father, Guardian">
+  <div class="med">
+    <div class="medh">Medical info <span class="opt">— optional, in case of an injury on meet day</span></div>
+    <label>Family physician</label>
+    <input id="doc" placeholder="Physician or clinic name">
+    <label>Physician phone</label>
+    <input id="docph" inputmode="tel" placeholder="Phone">
+    <label>Health insurance provider</label>
+    <input id="ins" placeholder="Insurance company">
+    <label>Policy / member #</label>
+    <input id="pol" placeholder="Policy number">
+  </div>
   <label>Draw your signature</label>
   <div class="pad"><canvas id="sig" width="600" height="180"></canvas></div>
   <button type="button" class="clear" onclick="clearSig()">Clear signature</button>
@@ -289,6 +300,9 @@ body{{background:var(--bg);color:var(--fg);margin:0;padding:1.2rem;max-width:720
 .clear{{background:transparent;color:var(--mut);border:1px solid var(--line);margin-top:.5rem}}
 .agree{{display:flex;gap:.6rem;align-items:flex-start;margin-top:1rem;font-size:.95rem;color:var(--fg)}}
 .agree input{{width:auto;margin-top:.2rem}}
+.med{{border:1px solid var(--line);border-radius:10px;padding:.6rem .9rem 1rem;margin-top:1rem}}
+.medh{{font-weight:700;margin-bottom:.2rem}}
+.opt{{color:var(--mut);font-weight:400;font-size:.9rem}}
 #go{{margin-top:1.2rem;width:100%;padding:.9rem;font-size:1.1rem}}
 .err{{color:var(--err);margin-top:.6rem}}
 .signed{{background:rgba(63,191,127,.12);color:var(--ok);border:1px solid rgba(63,191,127,.3);
@@ -324,10 +338,13 @@ async function submitSig(){{
   if(!window._sigDirty||!window._sigDirty()){{err.textContent='Please draw your signature above.';return;}}
   if(!consent){{err.textContent='Please check the consent box to sign.';return;}}
   const sig=document.getElementById('sig').toDataURL('image/png');
+  const gv=id=>{{const el=document.getElementById(id);return el?el.value.trim():'';}};
   document.getElementById('go').disabled=true;
   try{{
     const r=await fetch('/waiver/'+TOKEN+'/sign',{{method:'POST',headers:{{'Content-Type':'application/json'}},
-      body:JSON.stringify({{name:nm,relationship:rel,consent:true,signature:sig}})}});
+      body:JSON.stringify({{name:nm,relationship:rel,consent:true,signature:sig,
+        physician_name:gv('doc'),physician_phone:gv('docph'),
+        insurance_provider:gv('ins'),insurance_policy:gv('pol')}})}});
     const j=await r.json(); if(!r.ok) throw new Error(j.error||'Error');
     document.body.innerHTML='<div class="wbrand">{BRAND_HTML}</div>'
       +'<div class="signed" style="margin-top:1rem">✅ Thank you — the waiver for {esc_js(w['aname'])} is signed.</div>';
@@ -368,10 +385,15 @@ def sign_submit(token):
                 f.write(raw)
             sig_path = f"/static/signatures/{fn}"
     now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    med = {k: (str(data.get(k) or "").strip() or None) for k in
+           ("physician_name", "physician_phone", "insurance_provider", "insurance_policy")}
     conn.execute(
         "UPDATE athlete_waivers SET status='signed', signer_name=?, signer_relationship=?, "
-        "signer_sig_path=?, signed_at=?, signed_ip=?, signed_ua=? WHERE id=?",
-        (name, rel, sig_path, now, _client_ip(), request.headers.get("User-Agent", "")[:300], w["id"]))
+        "signer_sig_path=?, signed_at=?, signed_ip=?, signed_ua=?, physician_name=?, "
+        "physician_phone=?, insurance_provider=?, insurance_policy=? WHERE id=?",
+        (name, rel, sig_path, now, _client_ip(), request.headers.get("User-Agent", "")[:300],
+         med["physician_name"], med["physician_phone"], med["insurance_provider"],
+         med["insurance_policy"], w["id"]))
     conn.commit()
     conn.close()
     if w["sent_to"]:

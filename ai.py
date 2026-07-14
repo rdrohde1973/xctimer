@@ -287,20 +287,21 @@ _ROSTER_SYS = (
     "You extract a cross-country / track team roster from messy text (spreadsheet "
     "dumps, PDFs, exports). Return ONLY a JSON array, no prose. Each element: "
     '{"name": "First Last", "grade": <int 6-12 or null>, "gender": "M"|"F"|null, '
+    '"dob": <date of birth as written, or null>, '
     '"email": <string or null>, "phone": <string or null>, '
     '"parent_name": <string or null>, "parent_email": <string or null>, '
     '"parent_phone": <string or null>, "emergency_name": <string or null>, '
     '"emergency_phone": <string or null>}. '
-    "Include the contact/parent/emergency fields ONLY when clearly present in the "
-    "source (matching column headers like Email, Phone, Parent/Guardian, "
-    "Emergency Contact); otherwise use null — never invent contact info. "
+    "Include the dob/contact/parent/emergency fields ONLY when clearly present in the "
+    "source (matching column headers like Date of Birth/DOB, Email, Phone, "
+    "Parent/Guardian, Emergency Contact); otherwise use null — never invent them. "
     "Normalize names to 'First Last' with proper capitalization. Infer gender only "
     "if explicit (a column, or M/F/Boys/Girls). Skip header rows, coaches, blanks, "
     "and totals. If a grade is given as 9th/Fr/Freshman etc., map to the integer."
 )
 
 # Optional contact fields carried through import when the source has them.
-_CONTACT_FIELDS = ("email", "phone", "parent_name", "parent_email",
+_CONTACT_FIELDS = ("dob", "email", "phone", "parent_name", "parent_email",
                    "parent_phone", "emergency_name", "emergency_phone")
 
 
