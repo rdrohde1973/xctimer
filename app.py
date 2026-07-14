@@ -22,7 +22,7 @@ from .insights import bp as insights_bp
 from .phone import bp as phone_bp
 from .waivers import bp as waivers_bp
 
-APP_VERSION = "0.52.1-hetzner-envname"
+APP_VERSION = "0.53.0-threads24"
 
 LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width, initial-scale=1">
@@ -308,8 +308,12 @@ def main():
 
     host = os.environ.get("XC_HOST", "127.0.0.1")
     port = int(os.environ.get("XC_PORT", "5006"))
-    print(f"XCTimer {APP_VERSION} serving on {host}:{port}")
-    serve(app, host=host, port=port)
+    # Thread pool = max concurrent requests. Default 24 (waitress default is only 4):
+    # gives headroom so a burst of write requests waiting on SQLite's single writer
+    # can't starve everyone else (spectators, other timers, healthz). Override via env.
+    threads = int(os.environ.get("XC_THREADS", "24"))
+    print(f"XCTimer {APP_VERSION} serving on {host}:{port} ({threads} threads)")
+    serve(app, host=host, port=port, threads=threads)
 
 
 if __name__ == "__main__":
