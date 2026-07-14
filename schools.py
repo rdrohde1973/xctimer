@@ -442,17 +442,6 @@ async function tog(aid, sport, el){
   <span class="muted">Leave bib blank to auto-assign the next free bib in the block.</span>
 </form></div>
 
-<div class="card"><h2>🎓 Start a new season</h2>
-<p class="muted">Moves every athlete up one grade. Athletes finishing the top grade
-graduate — kept for their stats and history, just hidden from the active roster.
-Past results are never changed.</p>
-<form method="post" action="/schools/{sid}/advance-season"
-  onsubmit="return confirm('Advance every athlete one grade? Top-grade athletes will graduate. This can\\'t be auto-undone.')">
-  <label>Top grade (these graduate)</label>
-  <input name="top_grade" type="number" value="9" style="max-width:130px">
-  <button type="submit" style="margin-top:.6rem">Advance season ▲</button>
-</form></div>
-
 <div class="card"><h2>Import roster</h2>
 <p class="muted">Upload Excel/CSV/PDF/Word, or paste a Google Sheet link. Claude
 normalizes names, then you confirm before anything is saved.</p>
@@ -552,6 +541,17 @@ async function commitImport(){{
   catch(e){{ alert(e.message); }}
 }}
 </script>
+
+<div class="card"><h2>🎓 Start a new season</h2>
+<p class="muted">Moves every athlete up one grade. Athletes finishing the top grade
+graduate — kept for their stats and history, just hidden from the active roster.
+Past results are never changed.</p>
+<form method="post" action="/schools/{sid}/advance-season"
+  onsubmit="return confirm('Advance every athlete one grade? Top-grade athletes will graduate. This can\\'t be auto-undone.')">
+  <label>Top grade (these graduate)</label>
+  <input name="top_grade" type="number" value="9" style="max-width:130px">
+  <button type="submit" style="margin-top:.6rem">Advance season ▲</button>
+</form></div>
 """
     if g.principal.is_admin and not ro:
         body += f"""
