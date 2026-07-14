@@ -5,7 +5,7 @@ Later phases add heat sheets / meet-day packets (track).
 import io
 import os
 
-from reportlab.lib.pagesizes import letter
+from reportlab.lib.pagesizes import letter, landscape
 from reportlab.lib.units import inch
 from reportlab.lib.utils import ImageReader
 from reportlab.pdfgen import canvas as pdfcanvas
@@ -156,12 +156,12 @@ def _draw_field_section(c, ph, pw, left, title, rows, hj, token=None, bars=None)
         # High Jump jury grid: the pre-set bar heights print as columns (mark O/X/P
         # per height); a wide BEST box on the right is what the scanner reads.
         name_x = left + 0.5 * inch
-        hx = name_x + 1.55 * inch
-        best_w = 0.85 * inch
+        hx = name_x + 1.7 * inch
+        best_w = 1.1 * inch                    # wide target — this is what the scanner reads
         right_edge = pw - 0.5 * inch
-        hcols = bars[:11]
-        avail = right_edge - best_w - 0.15 * inch - hx
-        cw = max(0.34 * inch, min(0.46 * inch, avail / len(hcols))) if hcols else 0.4 * inch
+        hcols = bars[:16]                       # landscape fits a full ladder
+        avail = right_edge - best_w - 0.2 * inch - hx
+        cw = max(0.38 * inch, min(0.52 * inch, avail / len(hcols))) if hcols else 0.45 * inch
         best_x = hx + len(hcols) * cw + 0.15 * inch
         y -= 0.36 * inch
         c.setFont("Helvetica-Bold", 8)
@@ -220,10 +220,12 @@ def _draw_field_section(c, ph, pw, left, title, rows, hj, token=None, bars=None)
 
 
 def heat_sheet_pdf(title, rows, *, laned=True, token=None, kind="track", bars=None):
-    """Meet-day packet for one event. kind: 'track' | 'field' | 'hj'."""
+    """Meet-day packet for one event. kind: 'track' | 'field' | 'hj'.
+    High Jump prints landscape so the whole bar ladder + BEST box fit with room."""
     buf = io.BytesIO()
-    c = pdfcanvas.Canvas(buf, pagesize=letter)
-    pw, ph = letter
+    page = landscape(letter) if kind == "hj" else letter
+    c = pdfcanvas.Canvas(buf, pagesize=page)
+    pw, ph = page
     if kind in ("field", "hj"):
         _draw_field_section(c, ph, pw, 0.75 * inch, title, rows, kind == "hj", token, bars)
     else:
@@ -246,8 +248,13 @@ def multi_heat_sheet_pdf(sections):
         bars = sec[5] if len(sec) > 5 else None
         if not rows:
             continue
-        if kind in ("field", "hj"):
-            _draw_field_section(c, ph, pw, 0.75 * inch, title, rows, kind == "hj", token, bars)
+        if kind == "hj":                       # landscape page for the bar ladder
+            lpw, lph = landscape(letter)
+            c.setPageSize((lpw, lph))
+            _draw_field_section(c, lph, lpw, 0.75 * inch, title, rows, True, token, bars)
+            c.setPageSize(letter)              # back to portrait for the next section
+        elif kind == "field":
+            _draw_field_section(c, ph, pw, 0.75 * inch, title, rows, False, token, bars)
         else:
             _draw_heat_section(c, ph, pw, 0.75 * inch, title, rows, laned, token)
         drew = True
