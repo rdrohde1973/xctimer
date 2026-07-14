@@ -193,18 +193,10 @@ def phone_race(rid):
   <button id="startb" class="bigbtn start" onclick="startRace()">START</button>
   <button id="tapb" class="bigbtn tap" onclick="tap()" style="display:none">FINISHER</button>
   <div id="scanbox" class="scanbox" style="display:none">
-    <input id="sbib" inputmode="numeric" autocomplete="off" placeholder="bib #"
+    <input id="sbib" inputmode="numeric" autocomplete="off" placeholder="scan or type bib #"
       onkeydown="if(event.key==='Enter')rec()">
     <button class="bigbtn tap" onclick="rec()">RECORD</button>
-    <button id="cambtn" class="bigbtn" style="background:#5b4a9e;padding:.9rem 0;font-size:1.1rem"
-      onclick="toggleCam()">📷 SCAN STICKER QR</button>
-    <video id="cam" playsinline muted
-      style="display:none;width:100%;border-radius:14px;max-height:38vh;object-fit:cover"></video>
   </div>
-  <div id="scanhint" class="banner" style="display:none;background:rgba(91,74,158,.15);color:#b8a9e6">
-    📷 Camera bib-scanning lives in <b>Scan</b> mode — set this heat to Scan (in meet setup) to scan sticker QRs.
-  </div>
-  <script src="/static/js/jsqr.js"></script>
   <div id="banner" class="banner" style="display:none"></div>
   <div id="flist" class="flist" style="display:none">
     <div class="empty">Finishers appear here as you record them.</div>
@@ -232,7 +224,6 @@ function sync(){{
   document.getElementById('startb').style.display = STARTED?'none':'';
   document.getElementById('tapb').style.display = (active&&!scan)?'':'none';
   document.getElementById('scanbox').style.display = (active&&scan)?'':'none';
-  document.getElementById('scanhint').style.display = (active&&!scan)?'':'none';
   document.getElementById('flist').style.display = STARTED?'':'none';
   document.getElementById('ctrls').style.display = STARTED?'':'none';
   const b=document.getElementById('banner');
@@ -277,41 +268,6 @@ let WL=null;
 async function wlock(){{ try{{ WL=await navigator.wakeLock.request('screen'); }}catch(e){{}} }}
 document.addEventListener('visibilitychange',()=>{{ if(document.visibilityState==='visible')wlock(); }});
 wlock();
-// Camera QR scan of bib stickers (QR encodes the bib number). 3s dedupe/bib.
-// Uses BarcodeDetector where available (Android/Chrome), falls back to bundled
-// jsQR everywhere else (iPhone/Safari, which has no BarcodeDetector).
-let CAMON=false, CSTREAM=null, LASTQ={{}}, QCANVAS=null;
-function _seenBib(b){{ const now=Date.now(); if(!LASTQ[b] || now-LASTQ[b]>3000){{ LASTQ[b]=now; return true; }} return false; }}
-async function toggleCam(){{
-  const v=document.getElementById('cam'), btn=document.getElementById('cambtn');
-  if(CAMON){{ CAMON=false; v.style.display='none'; if(btn)btn.textContent='📷 SCAN STICKER QR';
-    if(CSTREAM){{ CSTREAM.getTracks().forEach(t=>t.stop()); CSTREAM=null; }} return; }}
-  try{{
-    CSTREAM=await navigator.mediaDevices.getUserMedia({{video:{{facingMode:'environment'}}}});
-    v.srcObject=CSTREAM; v.setAttribute('playsinline',''); v.style.display=''; await v.play(); CAMON=true;
-    if(btn)btn.textContent='✕ STOP SCANNING';
-  }}catch(e){{ alert('Camera unavailable: '+e.message); return; }}
-  const useBD=('BarcodeDetector' in window);
-  const det=useBD? new BarcodeDetector({{formats:['qr_code']}}) : null;
-  if(!useBD && !QCANVAS) QCANVAS=document.createElement('canvas');
-  (async function loop(){{
-    while(CAMON){{
-      try{{
-        if(useBD){{
-          const codes=await det.detect(v);
-          for(const c of codes){{ const b=(c.rawValue||'').trim(); if(/^\\d+$/.test(b)&&_seenBib(b)) rec(b); }}
-        }} else if(v.videoWidth && window.jsQR){{
-          const sc=Math.min(1, 640/v.videoWidth), w=Math.round(v.videoWidth*sc), h=Math.round(v.videoHeight*sc);
-          QCANVAS.width=w; QCANVAS.height=h;
-          const ctx=QCANVAS.getContext('2d',{{willReadFrequently:true}}); ctx.drawImage(v,0,0,w,h);
-          const code=window.jsQR(ctx.getImageData(0,0,w,h).data, w, h);
-          if(code){{ const b=(code.data||'').trim(); if(/^\\d+$/.test(b)&&_seenBib(b)) rec(b); }}
-        }}
-      }}catch(e){{}}
-      await new Promise(r=>setTimeout(r, useBD?200:350));
-    }}
-  }})();
-}}
 setInterval(tick,60);
 setInterval(load,3000);
 load();
