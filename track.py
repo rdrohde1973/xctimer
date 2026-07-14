@@ -1107,6 +1107,7 @@ def _hj_grid_html(meid, me, entries, res, labels, setup, record):
                 grid = {}
         rows_data.append({"eid": e["id"], "name": name, "bib": bib, "school": school or "",
                           "marks": grid, "dq": bool(r and r["dq"]),
+                          "best": (_fmt_ht(r["mark_metric"]) if r and r["mark_metric"] is not None else ""),
                           "place": (r["place"] if r and r["place"] else "")})
     add_h = ("" if not record else
              '<div class="hjrow"><b>Bar schedule:</b>'
@@ -1159,7 +1160,7 @@ function render(){{
       +'<td><b>'+esc(r.name)+'</b>'+(r.bib?' <span class=muted>#'+r.bib+'</span>':'')+'</td>'
       +'<td>'+esc(r.school)+'</td>'
       +BARS.map(function(b){{ return '<td><input class="hjc" '+(CANREC?'':'disabled')+' value="'+esc(r.marks[b]||'')+'" data-ri="'+ri+'" data-bar="'+esc(b)+'" onchange="edit(this)"></td>'; }}).join('')
-      +'<td class="best" id="best'+ri+'">'+fmtht(bestOf(r.marks))+'</td>'
+      +'<td class="best" id="best'+ri+'">'+(bestOf(r.marks)!=null?fmtht(bestOf(r.marks)):esc(r.best||''))+'</td>'
       +'<td><input type="checkbox" '+(r.dq?'checked':'')+' '+(CANREC?'':'disabled')+' onchange="dqc('+ri+',this)"></td>'
       +'<td>'+(SETUP?'<button class="danger" onclick="delRow('+r.eid+')">✕</button>':'')+'</td></tr>';
   }});
@@ -1214,12 +1215,21 @@ def hj_save(meid):
             continue
         marks = row.get("marks") or {}
         grid = {b: str(marks.get(b, "")).strip().upper() for b in bars if str(marks.get(b, "")).strip()}
-        best = _hj_best(grid)
         name, bib, school = _entry_label(conn, e)
-        conn.execute("DELETE FROM results WHERE entry_id=?", (eid,))
-        conn.execute("INSERT INTO results (entry_id, mark_metric, attempts_json, dq, snap_name, "
-                     "snap_bib, snap_school) VALUES (?,?,?,?,?,?,?)",
-                     (eid, best, json.dumps(grid), 1 if row.get("dq") else 0, name, bib, school))
+        dq = 1 if row.get("dq") else 0
+        if grid:                          # grid cells present -> best comes from the grid
+            conn.execute("DELETE FROM results WHERE entry_id=?", (eid,))
+            conn.execute("INSERT INTO results (entry_id, mark_metric, attempts_json, dq, snap_name, "
+                         "snap_bib, snap_school) VALUES (?,?,?,?,?,?,?)",
+                         (eid, _hj_best(grid), json.dumps(grid), dq, name, bib, school))
+        else:                             # no grid marks -> keep any scanned result, sync DQ only
+            existing = conn.execute("SELECT id FROM results WHERE entry_id=?", (eid,)).fetchone()
+            if existing:
+                conn.execute("UPDATE results SET dq=? WHERE entry_id=?", (dq, eid))
+            elif dq:
+                conn.execute("INSERT INTO results (entry_id, mark_metric, attempts_json, dq, "
+                             "snap_name, snap_bib, snap_school) VALUES (?,NULL,?,1,?,?,?)",
+                             (eid, json.dumps({}), name, bib, school))
     _recompute_places(conn, load_meet_event(meid))
     out = [{"eid": r["entry_id"], "place": r["place"], "best": _fmt_ht(r["mark_metric"])}
            for r in conn.execute("SELECT r.entry_id, r.place, r.mark_metric FROM results r "
