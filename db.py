@@ -284,9 +284,17 @@ def migrate(conn):
         conn.execute("ALTER TABLE sessions ADD COLUMN kind TEXT DEFAULT 'user'")
     if "meet_id" not in scols:
         conn.execute("ALTER TABLE sessions ADD COLUMN meet_id INTEGER")
+    if "last_seen" not in scols:      # idle-timeout tracking (compliance Phase 2)
+        conn.execute("ALTER TABLE sessions ADD COLUMN last_seen TEXT")
+        # grandfather existing sessions: give them a fresh idle window, not an instant logout
+        conn.execute("UPDATE sessions SET last_seen = "
+                     "strftime('%Y-%m-%dT%H:%M:%S+00:00','now') WHERE last_seen IS NULL")
     # Demo accounts: read-only + anonymized names (handoff §8 demo mode).
-    if "is_demo" not in _column_names(conn, "users"):
+    ucols = _column_names(conn, "users")
+    if "is_demo" not in ucols:
         conn.execute("ALTER TABLE users ADD COLUMN is_demo INTEGER DEFAULT 0")
+    if "mfa_enabled" not in ucols:    # per-user MFA opt-in flag (enforcement TBD)
+        conn.execute("ALTER TABLE users ADD COLUMN mfa_enabled INTEGER DEFAULT 0")
 
     # Roster: per-athlete sport membership (XC / Track) + active flag. One shared
     # athlete list; grade bumps preserve historical results (stored per-result).

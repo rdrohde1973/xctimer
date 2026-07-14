@@ -107,7 +107,38 @@ border-radius:16px;padding:2rem}
 }
 """
 
-JS = """
+# CSRF (double-submit cookie): the server sets a readable `csrftoken` cookie; every
+# mutating request must echo it back. We wrap fetch to add the X-CSRF-Token header on
+# all non-GET requests (covers jpost + raw fetch uploads) and auto-inject a hidden
+# _csrf field into POST forms — so nothing downstream needs to know about CSRF.
+CSRF_JS = """
+(function(){
+  function csrf(){ var v=('; '+document.cookie).split('; csrftoken=');
+    return v.length===2 ? decodeURIComponent(v.pop().split(';').shift()) : ''; }
+  window.__csrf = csrf;
+  var _fetch = window.fetch;
+  window.fetch = function(input, init){
+    init = init || {};
+    var m = (init.method || (input && input.method) || 'GET').toUpperCase();
+    if(m!=='GET' && m!=='HEAD'){
+      var h = new Headers(init.headers || {});
+      if(!h.has('X-CSRF-Token')) h.set('X-CSRF-Token', csrf());
+      init.headers = h;
+    }
+    return _fetch(input, init);
+  };
+  document.addEventListener('submit', function(e){
+    var f = e.target;
+    if(!f || f.tagName!=='FORM') return;
+    if(((f.getAttribute('method')||'get').toLowerCase())!=='post') return;
+    var i = f.querySelector('input[name=_csrf]');
+    if(!i){ i=document.createElement('input'); i.type='hidden'; i.name='_csrf'; f.appendChild(i); }
+    i.value = csrf();
+  }, true);
+})();
+"""
+
+JS = CSRF_JS + """
 async function jpost(url, data){
   const r = await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify(data||{})});
@@ -267,7 +298,7 @@ def auth_page(title, sub, body, *, msg=None, err=None):
     """Standalone (no-shell) page for login / setup / reset."""
     return f"""<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width, initial-scale=1">
-<title>{escape(title)} · {BRAND}</title>{HEAD_EXTRA}<style>{CSS}</style></head><body>
+<title>{escape(title)} · {BRAND}</title>{HEAD_EXTRA}<style>{CSS}</style><script>{CSRF_JS}</script></head><body>
 <div class="authwrap"><div class="authcard">
   <div class="authlogo"><img src="{LOGO_DARK_URL}" alt="XCTimer"></div>
   <p class="sub">{escape(sub)}</p>

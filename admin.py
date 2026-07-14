@@ -296,7 +296,7 @@ def list_users():
 
     show_d = p.is_super and did is None
     hdr = ("<tr><th>User</th><th>Role</th>" + ("<th>District</th>" if show_d else "")
-           + "<th>Status</th><th>Last login</th><th></th></tr>")
+           + "<th>Status</th><th>Last login</th><th>MFA</th><th></th></tr>")
 
     def _fmt_login(iso):
         if not iso:
@@ -340,12 +340,21 @@ def list_users():
                 f'style="width:auto;padding:.3rem .5rem">{opts}</select></form>')
         else:
             role_cell = f'<span class="pill">{escape(u["role"].replace("_"," "))}</span>'
+        # Per-user MFA opt-in. Toggle persists now; enforcement (email code) ships later.
+        mfa_on = "mfa_enabled" in u.keys() and u["mfa_enabled"]
+        mfa_cell = (
+            f'<form class="inline" method="post" action="/users/{u["id"]}/mfa">'
+            f'<input type="hidden" name="on" value="{0 if mfa_on else 1}">'
+            f'<button class="ghost" type="submit" '
+            f'title="Two-factor sign-in (email code). Enforcement coming soon.">'
+            f'{"🔒 On" if mfa_on else "Off"}</button></form>')
         trs.append(
             f'<tr><td><b>{escape(u["name"] or "")}</b><br>'
             f'<span class="muted">{escape(u["email"])}</span></td>'
             f'<td>{role_cell}</td>'
             f'{dcol}<td>{status}</td>'
             f'<td>{_fmt_login(u["last_login"])}</td>'
+            f'<td>{mfa_cell}</td>'
             f'<td style="text-align:right">{resend}'
             f'<form class="inline" method="post" action="/users/{u["id"]}/delete" '
             f'onsubmit="return confirm(\'Delete {escape(u["email"])}?\')">'
@@ -521,6 +530,24 @@ def change_role(uid):
         conn.commit()
         conn.close()
     return redirect("/users?msg=Role+updated")
+
+
+@bp.post("/users/<int:uid>/mfa")
+@role_required("super_admin", "district_admin")
+def user_mfa(uid):
+    """Toggle a user's MFA opt-in flag. Stored now; login enforcement ships later."""
+    on = 1 if (request.form.get("on") == "1") else 0
+    conn = db.connect()
+    u = conn.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone()
+    if not u:
+        conn.close()
+        abort(404)
+    if u["district_id"] is not None:
+        require_district(u["district_id"])   # district admins limited to their own users
+    conn.execute("UPDATE users SET mfa_enabled=? WHERE id=?", (on, uid))
+    conn.commit()
+    conn.close()
+    return redirect("/users?msg=MFA+preference+updated")
 
 
 @bp.post("/users/<int:uid>/demo-password")

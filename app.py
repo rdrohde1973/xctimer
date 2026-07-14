@@ -6,9 +6,11 @@ and the meet-day no-login QR session. XC/Track engines land in Phases 3-4.
 
 Serve: waitress on XC_HOST:XC_PORT (defaults 127.0.0.1:5006), via the systemd unit.
 """
+import hmac
 import os
+import secrets
 
-from flask import Flask, jsonify, g, redirect
+from flask import Flask, jsonify, g, redirect, request
 
 from . import db, auth
 from .auth import bp as auth_bp
@@ -22,7 +24,7 @@ from .insights import bp as insights_bp
 from .phone import bp as phone_bp
 from .waivers import bp as waivers_bp
 
-APP_VERSION = "0.54.1-coach-parent"
+APP_VERSION = "0.55.0-compliance-p2"
 
 LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width, initial-scale=1">
@@ -252,6 +254,25 @@ def create_app():
                admin_bp, insights_bp, phone_bp, waivers_bp):
         app.register_blueprint(bp)
 
+    # --- CSRF protection (double-submit cookie), compliance Phase 2 ---
+    # The token cookie is issued in the existing _security_headers after_request below;
+    # the client (ui.CSRF_JS) echoes it as X-CSRF-Token / a hidden _csrf form field.
+    CSRF_COOKIE = "csrftoken"
+    _CSRF_SAFE = {"GET", "HEAD", "OPTIONS", "TRACE"}
+
+    @app.before_request
+    def _csrf_protect():
+        if request.method in _CSRF_SAFE:
+            return
+        cookie = request.cookies.get(CSRF_COOKIE)
+        # header first (covers fetch/JSON/file uploads without parsing the body)
+        sent = request.headers.get("X-CSRF-Token") or request.form.get("_csrf")
+        if not cookie or not sent or not hmac.compare_digest(str(cookie), str(sent)):
+            from .ui import error_page
+            return error_page(403, "Security check failed",
+                              "Your page's security token was missing or expired. "
+                              "Please reload the page and try again."), 403
+
     # Access log -> journald: one parseable line per request, for the Super-Admin console.
     import logging as _logging
     from flask import request as _request
@@ -334,6 +355,10 @@ def create_app():
         if getattr(g, "principal", None):
             resp.headers["Cache-Control"] = "no-store"
             resp.headers["Pragma"] = "no-cache"
+        # Issue a readable CSRF token cookie once per browser (double-submit pattern).
+        if not request.cookies.get(CSRF_COOKIE):
+            resp.set_cookie(CSRF_COOKIE, secrets.token_urlsafe(32),
+                            samesite="Lax", secure=_secure, max_age=60 * 60 * 24 * 30)
         return resp
 
     from .ui import error_page

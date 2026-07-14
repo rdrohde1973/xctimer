@@ -42,7 +42,8 @@ bp = Blueprint("auth", __name__)
 SESSION_COOKIE = "xctimer_session"
 SETUP_TTL_DAYS = 7
 RESET_TTL_HOURS = 1
-SESSION_TTL_DAYS = 30
+SESSION_TTL_DAYS = 30                                   # absolute session lifetime
+IDLE_HOURS = int(os.environ.get("XC_IDLE_HOURS", "24"))  # idle timeout for user logins
 ROLES = ("super_admin", "district_admin", "coach", "timer")
 
 
@@ -173,10 +174,11 @@ def issue_reset_token(user_id):
 def create_session(user_id, *, kind="user", meet_id=None, ttl_days=SESSION_TTL_DAYS):
     token = secrets.token_urlsafe(32)
     conn = db.connect()
+    now = _iso(_now())
     conn.execute(
-        "INSERT INTO sessions (token, user_id, expires, created_at, kind, meet_id) "
-        "VALUES (?,?,?,?,?,?)",
-        (token, user_id, _iso(_now() + timedelta(days=ttl_days)), _iso(_now()), kind, meet_id),
+        "INSERT INTO sessions (token, user_id, expires, created_at, last_seen, kind, meet_id) "
+        "VALUES (?,?,?,?,?,?,?)",
+        (token, user_id, _iso(_now() + timedelta(days=ttl_days)), now, now, kind, meet_id),
     )
     conn.commit()
     conn.close()
@@ -217,7 +219,19 @@ def load_principal():
         g.principal = Principal(session_token=tok, meet_scope=s["meet_id"],
                                 role="timer", district_id=meet["district_id"])
         return
+    # Idle timeout for logged-in users (meet-day timer sessions are exempt above).
+    now = _now()
+    last = _parse(s["last_seen"]) or _parse(s["created_at"]) or now
+    if (now - last) > timedelta(hours=IDLE_HOURS):
+        conn.execute("DELETE FROM sessions WHERE token=?", (tok,))
+        conn.commit()
+        conn.close()
+        return
     u = conn.execute("SELECT * FROM users WHERE id=?", (s["user_id"],)).fetchone()
+    # Refresh last_seen at most every 5 min to bound write load under heavy usage.
+    if s["last_seen"] is None or (now - last) > timedelta(minutes=5):
+        conn.execute("UPDATE sessions SET last_seen=? WHERE token=?", (_iso(now), tok))
+        conn.commit()
     conn.close()
     if u:
         g.principal = Principal(user=u, session_token=tok)
@@ -392,6 +406,7 @@ def login_submit():
     conn.commit()
     conn.close()
     _log.info(f"XCLOG LOGIN ok {email} {u['role']} {ip}")
+    destroy_session(request.cookies.get(SESSION_COOKIE))   # rotate: drop any prior session id
     token = create_session(u["id"])
     return _set_session_cookie(make_response(redirect(nxt or "/dashboard")), token)
 
@@ -416,8 +431,8 @@ def setup_form():
                          err="This setup link is invalid or has expired."), 400
     body = f"""
 <form method="post" action="/setup">
-  <input type="hidden" name="token" value="{token}">
-  <p class="muted center">Setting password for <b>{u['email']}</b></p>
+  <input type="hidden" name="token" value="{escape(token)}">
+  <p class="muted center">Setting password for <b>{escape(u['email'])}</b></p>
   <label>New password</label><input name="password" type="password" minlength="8" autofocus required>
   <label>Confirm password</label><input name="confirm" type="password" minlength="8" required>
   <button type="submit">Set password &amp; sign in</button>
