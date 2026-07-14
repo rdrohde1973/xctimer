@@ -181,7 +181,7 @@ def shell(principal, body, *, active="", active_district=None, districts=None,
     if bare:
         return f"""<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width, initial-scale=1">
-<title>{escape(title or BRAND)} · {BRAND}</title>{HEAD_EXTRA}<style>{CSS}</style></head><body>
+<title>{escape(title or BRAND)} · {BRAND}</title>{HEAD_EXTRA}<style>{CSS}</style><script>{JS}</script></head><body>
 <header class="top">{_brand(principal, "/phone", app=True)}</header>
 <main>{_flashes(msg, err)}{body}</main>
 <script>{JS}</script>
@@ -235,7 +235,7 @@ def shell(principal, body, *, active="", active_district=None, districts=None,
     head = title or BRAND
     return f"""<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width, initial-scale=1">
-<title>{escape(head)} · {BRAND}</title>{HEAD_EXTRA}<style>{CSS}</style></head><body>
+<title>{escape(head)} · {BRAND}</title>{HEAD_EXTRA}<style>{CSS}</style><script>{JS}</script></head><body>
 <header class="top">
   {_brand(principal)}
   <nav>{''.join(nav)}</nav>
