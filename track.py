@@ -1455,11 +1455,41 @@ async function postScan(n){{
 
 
 # ------------------------------- vision scan-back -------------------------------
+def _resolve_scanned_event(conn, scanned_bibs, code_meid):
+    """Which meet_event is this sheet for? Prefer the event whose entrants actually
+    match the scanned (PRINTED) bibs — deterministic and immune to OCR misreads of the
+    printed code — and fall back to the code only when the bibs are inconclusive.
+    Returns (meid, how) or (None, None)."""
+    best = None  # (meid, match_count)
+    if scanned_bibs:
+        q = ",".join("?" * len(scanned_bibs))
+        rows = conn.execute(
+            f"SELECT me.id AS meid, me.meet_id, COUNT(DISTINCT a.bib) AS n "
+            f"FROM entries en JOIN athletes a ON a.id=en.runner_id "
+            f"JOIN meet_events me ON me.id=en.meet_event_id "
+            f"WHERE a.bib IN ({q}) GROUP BY me.id ORDER BY n DESC", tuple(scanned_bibs)).fetchall()
+        for r in rows:
+            if can_record_meet(load_meet(r["meet_id"])):
+                best = (r["meid"], r["n"])
+                break
+    # A strong bib match wins outright (survives a misread sheet code).
+    if best and best[1] >= max(2, (len(scanned_bibs) + 1) // 2):
+        return best[0], "bibs"
+    # Otherwise trust the printed code if it points to a recordable event.
+    if code_meid:
+        r = conn.execute("SELECT meet_id FROM meet_events WHERE id=?", (code_meid,)).fetchone()
+        if r and can_record_meet(load_meet(r["meet_id"])):
+            return code_meid, "code"
+    if best:                       # last resort: a weak bib match beats nothing
+        return best[0], "bibs"
+    return None, None
+
+
 @bp.post("/track/scan")
 @login_required
 def scan_auto():
-    """Scan a heat sheet WITHOUT choosing an event — read the printed sheet code
-    ('XCTSHEET E<meid>') off the photo, resolve the event, and return its marks."""
+    """Scan a heat sheet WITHOUT choosing an event — resolve which event it is from the
+    printed bibs (falling back to the sheet code) and return its marks."""
     import re
     f = request.files.get("image")
     if not f:
@@ -1472,15 +1502,21 @@ def scan_auto():
         return jsonify(error=f"Vision read failed: {e}"), 400
     code = res.get("sheet_code") or ""
     mt = re.search(r"E\s*0*(\d+)", code.upper())
-    if not mt:
-        return jsonify(error="Couldn't read the sheet's code. Make sure the top-right "
-                             "code/QR is in the photo, then retake it."), 400
-    meid = int(mt.group(1))
+    code_meid = int(mt.group(1)) if mt else None
+    scanned_bibs = set()
+    for mk in res.get("marks", []):
+        try:
+            scanned_bibs.add(int(str(mk.get("bib")).strip()))
+        except (TypeError, ValueError):
+            pass
     conn = db.connect()
-    me = conn.execute("SELECT * FROM meet_events WHERE id=?", (meid,)).fetchone()
+    meid, _how = _resolve_scanned_event(conn, scanned_bibs, code_meid)
+    me = conn.execute("SELECT * FROM meet_events WHERE id=?", (meid,)).fetchone() if meid else None
     conn.close()
     if not me:
-        return jsonify(error=f"Sheet code points to an event ({meid}) that no longer exists."), 400
+        return jsonify(error="Couldn't tell which event this sheet is for — the code didn't "
+                             "read and no bib numbers matched a meet you're recording. Retake "
+                             "the photo with the whole sheet (and its top-right code) in frame."), 400
     m = load_meet(me["meet_id"])
     if not can_record_meet(m):
         abort(403)
