@@ -567,8 +567,8 @@ def assign_page(mid):
     setup = _can_assign_school(m, sid)
     # school picker
     picker = "".join(
-        f'<a class="btn {"" if s["id"]==sid else "ghost"}" href="/meets/{mid}/assign?school={s["id"]}">'
-        f'{escape(s["name"])}</a> ' for s in pickable)
+        f'<a class="btn {"" if s["id"]==sid else "ghost"}" style="white-space:nowrap" '
+        f'href="/meets/{mid}/assign?school={s["id"]}">{escape(s["name"])}</a>' for s in pickable)
 
     # per-athlete rows — individual/field AND relay events are all just checkboxes
     # which relays (this school) each athlete is already on
@@ -606,7 +606,8 @@ def assign_page(mid):
     body = f"""
 <p class="muted"><a href="/meets">← Meets</a></p>
 <h1>{escape(m['name'])}</h1>{_track_tabs(mid, 'assign')}
-<div class="card"><b>School:</b> {picker}</div>
+<div class="card" style="display:flex;flex-wrap:wrap;gap:.45rem;align-items:center">
+  <b style="margin-right:.2rem">School:</b> {picker}</div>
 <form method="post" action="/meets/{mid}/assign?school={sid}">
   <div class="card"><h2>{escape(school['name'])} — assign athletes</h2>{ath_tbl}</div>
   {relay_block}
