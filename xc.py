@@ -6,6 +6,7 @@ gender, MileSplit-style team scoring, xlsx export, and a public results page.
 """
 import io
 import json
+import time
 from collections import defaultdict
 from datetime import datetime, timezone
 
@@ -973,6 +974,41 @@ def _host_logo_tag(m, cls="hostlogo"):
     return ""
 
 
+_XLIVE_CACHE = {}      # mid -> (expires_monotonic, races_list)
+_XLIVE_TTL = 1.0
+XLIVE_HOLD = 30.0      # keep an ended race on the public board this many seconds
+
+
+def public_live_xc(mid):
+    """Public live feed for XC: races currently running (or ended within the last 30s).
+    Name + clock only — the results table itself refreshes with finishers."""
+    nowm = time.monotonic()
+    hit = _XLIVE_CACHE.get(mid)
+    if hit and hit[0] > nowm:
+        heats = hit[1]
+    else:
+        heats = _live_races(mid)
+        _XLIVE_CACHE[mid] = (nowm + _XLIVE_TTL, heats)
+    return {"server_ms": _ms(_now()), "heats": heats}
+
+
+def _live_races(mid):
+    conn = db.connect()
+    rows = conn.execute(
+        "SELECT name, start_time, stop_time FROM races "
+        "WHERE meet_id=? AND start_time IS NOT NULL ORDER BY start_time", (mid,)).fetchall()
+    now = _now()
+    heats = []
+    for r in rows:
+        stop = _parse(r["stop_time"])
+        if stop and (now - stop).total_seconds() > XLIVE_HOLD:
+            continue
+        heats.append({"name": r["name"] or "Race", "start_ms": _ms(_parse(r["start_time"])),
+                      "stop_ms": _ms(stop) if stop else None, "ended": bool(stop)})
+    conn.close()
+    return heats
+
+
 def _public_xc(m, mode):
     mid = m["id"]
     results = build_results(mid)
@@ -1013,13 +1049,23 @@ def _public_xc(m, mode):
     sub = escape(m["date"] or "") + (f" · {status}" if status else "")
     return f"""<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width, initial-scale=1">
-<title>{escape(m['name'])} — Results</title>{HEAD_EXTRA}<style>{PUB_CSS}</style></head><body>
+<title>{escape(m['name'])} — Results</title>{HEAD_EXTRA}<style>{PUB_CSS}
+#livebox{{margin:0 0 1.1rem}}
+.livecard{{background:#fff;border:2px solid #e8622a;border-radius:12px;padding:.85rem 1rem;margin:0 0 .8rem;box-shadow:0 0 0 4px rgba(232,98,42,.12)}}
+.livehd{{font-weight:800;font-size:1.02rem;color:#e8622a;display:flex;align-items:center;gap:.5rem;margin-bottom:.15rem}}
+.livecard.final{{border-color:#2e9e5b;box-shadow:0 0 0 4px rgba(46,158,91,.12)}}
+.livehd.final{{color:#2e9e5b}}
+.livedot{{width:.7rem;height:.7rem;border-radius:50%;background:#2e9e5b;animation:lblink 1s infinite}}
+@keyframes lblink{{50%{{opacity:.2}}}}
+.liveclock{{font-size:2.6rem;font-weight:800;font-variant-numeric:tabular-nums;text-align:center;margin:.1rem 0;color:#12385f;letter-spacing:.5px}}
+</style></head><body>
 <div class="top">
   <div style="display:flex;align-items:center;gap:.8rem">{_host_logo_tag(m)}
     <div><div class="mt">{escape(m['name'])} — Combined</div><div class="sub">{sub}</div></div>
   </div>
 </div>
 <main>
+  <div id="livebox"></div>
   <div class="tabs">
     <button class="tab on" id="t-overall" onclick="tab('overall')">📋 Overall</button>
     <button class="tab" id="t-grade" onclick="tab('grade')">🎽 Sorted</button>
@@ -1038,6 +1084,48 @@ function tab(n){{
   try{{ sessionStorage.setItem('xctab', n); }}catch(e){{}}
 }}
 try{{ const t=sessionStorage.getItem('xctab'); if(t) tab(t); }}catch(e){{}}
+// ---- live 'now running' panel (race name + clock only) ----
+const LTOKEN=location.pathname.replace(/^\\/r\\//,'').split('/')[0];
+let LOFFSET=0, LTIMER=null;
+function lfmt(sec){{ if(sec==null)return''; sec=Math.max(0,sec);
+  const h=Math.floor(sec/3600), mm=Math.floor((sec%3600)/60), s=sec-3600*h-60*mm;
+  return h+':'+String(mm).padStart(2,'0')+':'+s.toFixed(1).padStart(4,'0'); }}
+function lesc(s){{ return String(s==null?'':s).replace(/[&<>"]/g,c=>({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}}[c])); }}
+function renderLive(heats){{
+  const box=document.getElementById('livebox');
+  if(!heats.length){{ box.innerHTML=''; return; }}
+  let h='';
+  heats.forEach(function(ht){{
+    const hd = ht.ended
+      ? '<div class="livehd final">✅ FINAL · '+lesc(ht.name)+'</div>'
+      : '<div class="livehd"><span class="livedot"></span> LIVE · '+lesc(ht.name)+'</div>';
+    const clk='<div class="liveclock" data-start="'+ht.start_ms+'"'
+      +(ht.ended?(' data-stop="'+ht.stop_ms+'"'):'')+'>0:00:00.0</div>';
+    h+='<div class="livecard'+(ht.ended?' final':'')+'">'+hd+clk+'</div>';
+  }});
+  box.innerHTML=h;
+}}
+function tickLive(){{
+  const now=Date.now()+LOFFSET;
+  document.querySelectorAll('.liveclock').forEach(function(c){{
+    const st=parseInt(c.getAttribute('data-start'),10);
+    const sp=parseInt(c.getAttribute('data-stop'),10);
+    if(st) c.textContent=lfmt(((sp||now)-st)/1000);
+  }});
+}}
+async function pollLive(){{
+  if(LTIMER){{ clearTimeout(LTIMER); LTIMER=null; }}
+  try{{
+    const r=await fetch('/r/'+LTOKEN+'/live'); const d=await r.json();
+    LOFFSET=d.server_ms-Date.now();
+    window.__LIVE_ACTIVE=!!(d.heats&&d.heats.length);
+    renderLive(d.heats||[]);
+  }}catch(e){{}}
+  const gap = document.hidden ? 15000 : (window.__LIVE_ACTIVE ? 2500 : 8000);
+  LTIMER=setTimeout(pollLive, gap);
+}}
+document.addEventListener('visibilitychange',function(){{ if(!document.hidden) pollLive(); }});
+setInterval(tickLive,100); pollLive();
 // Live scoreboard: refresh every 20s while the page is visible (tab is remembered).
 setInterval(function(){{ if(!document.hidden) location.reload(); }}, 20000);
 </script>
@@ -1061,7 +1149,7 @@ main{{max-width:960px;margin:0 auto;padding:1.4rem 1rem 4rem}}
 .livehd{{font-weight:800;font-size:1.05rem;color:#e8622a;display:flex;align-items:center;gap:.5rem;margin-bottom:.2rem}}
 .livecard.final{{border-color:#2e9e5b;box-shadow:0 0 0 4px rgba(46,158,91,.12)}}
 .livehd.final{{color:#2e9e5b}}
-.livedot{{width:.7rem;height:.7rem;border-radius:50%;background:#e8622a;animation:lblink 1s infinite}}
+.livedot{{width:.7rem;height:.7rem;border-radius:50%;background:#2e9e5b;animation:lblink 1s infinite}}
 @keyframes lblink{{50%{{opacity:.2}}}}
 .liveclock{{font-size:2.6rem;font-weight:800;font-variant-numeric:tabular-nums;text-align:center;margin:.1rem 0 .6rem;letter-spacing:.5px}}
 .livescroll{{max-height:300px;overflow-y:auto;border-top:1px solid var(--line)}}
@@ -1143,10 +1231,10 @@ setInterval(function(){{
 def public_live_json(token):
     """Live scoreboard feed for the public results page (currently-running track heats)."""
     m = _meet_by_token(token)
-    if m["sport"] != "track":
-        return jsonify(server_ms=0, heats=[])
-    from . import track
-    return jsonify(track.public_live(m["id"], name_mode=_public_mask(m)))
+    if m["sport"] == "track":
+        from . import track
+        return jsonify(track.public_live(m["id"], name_mode=_public_mask(m)))
+    return jsonify(public_live_xc(m["id"]))
 
 
 @bp.get("/r/<token>/results.xlsx")
