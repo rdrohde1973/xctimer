@@ -12,6 +12,7 @@ full bar-by-bar HJ make/miss grid (we record best height cleared).
 import io
 import json
 import random
+from datetime import datetime, timezone
 
 from markupsafe import escape
 from flask import Blueprint, request, redirect, g, abort, jsonify, Response
@@ -30,6 +31,30 @@ DEFAULT_SECTION = 16
 
 
 # ------------------------------- helpers -------------------------------
+def _t_now():
+    return datetime.now(timezone.utc)
+
+
+def _t_iso(dt):
+    return dt.isoformat()
+
+
+def _t_parse(s):
+    if not s:
+        return None
+    dt = datetime.fromisoformat(s)
+    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
+
+
+def _t_ms(dt):
+    return int(dt.timestamp() * 1000)
+
+
+def _heat_key(heat):
+    """Normalize a heat arg to an int; 0 means 'all entries' (no heat filter)."""
+    return int(heat) if str(heat).isdigit() else 0
+
+
 def _districts_for_switcher():
     return all_districts() if g.principal.is_super else None
 
@@ -1903,32 +1928,38 @@ def scan_post(meid):
 
 
 # ------------------------------- live tap timer (distance / relay) -------------------------------
+# Server-backed so a heat can be timed on one device and assigned on another,
+# exactly like the XC race console. State lives in track_clocks + track_taps,
+# keyed by (meet_event, heat). Assigning a tap writes the result immediately so
+# every device — and the results page — stays in sync.
+def _tap_entries(conn, meids, hk):
+    """Assignable runners/squads for this heat (all entries when hk==0)."""
+    qm = ",".join("?" * len(meids))
+    if hk:
+        rows = conn.execute(f"SELECT * FROM entries WHERE meet_event_id IN ({qm}) AND heat=? "
+                            f"ORDER BY lane, id", (*meids, hk)).fetchall()
+    else:
+        rows = conn.execute(f"SELECT * FROM entries WHERE meet_event_id IN ({qm}) "
+                            f"ORDER BY heat, lane, id", tuple(meids)).fetchall()
+    out = []
+    for e in rows:
+        name, bib, school = _entry_label(conn, e)
+        lbl = name + (f" #{bib}" if bib else "") + (f" · {school}" if school and not bib else "")
+        out.append({"id": e["id"], "label": lbl})
+    return out
+
+
 @bp.get("/meet-events/<int:meid>/time")
 @login_required
 def time_console(meid):
-    """Phone tap timer for a distance/relay heat: start the clock, tap finishers,
-    assign each to a runner/squad, save -> results."""
+    """Multi-device tap timer for a distance/relay heat: start the clock, tap each
+    finisher, assign each to a runner/squad. State is shared across devices."""
     me = load_meet_event(meid)
     m = load_meet(me["meet_id"])
     if not can_record_meet(m):
         abort(403)
     heat = request.args.get("heat", "")
-    conn = db.connect()
-    meids = _combine_meids(conn, me)
-    qm = ",".join("?" * len(meids))
-    if heat.isdigit():
-        rows = conn.execute(f"SELECT * FROM entries WHERE meet_event_id IN ({qm}) AND heat=? "
-                            f"ORDER BY lane, id", (*meids, int(heat))).fetchall()
-    else:
-        rows = conn.execute(f"SELECT * FROM entries WHERE meet_event_id IN ({qm}) "
-                            f"ORDER BY heat, lane, id", tuple(meids)).fetchall()
-    ents = []
-    for e in rows:
-        name, bib, school = _entry_label(conn, e)
-        lbl = name + (f" #{bib}" if bib else "") + (f" · {school}" if school and not bib else "")
-        ents.append({"id": e["id"], "label": lbl})
-    conn.close()
-    ents_json = json.dumps(ents)
+    hk = _heat_key(heat)
     div = {"M": "Boys", "F": "Girls"}.get(me["gender"], "Open")
     title = f'{me["ename"]} — {div}' + (f' {me["grade"]}' if me["grade"] else "")
     sub = (f"Heat {heat}" if heat else "All entries") + " · Start, then tap each finisher"
@@ -1937,7 +1968,7 @@ def time_console(meid):
 <style>{CONSOLE_CSS}</style>
 <p class="muted"><a href="/phone/meet/{me['meet_id']}">← Track Timer</a></p>
 <h1>{escape(title)} <span class="muted" style="font-weight:400">· tap timer</span></h1>
-<p class="sub">{escape(sub)}</p>
+<p class="sub">{escape(sub)} <span class="muted">· shared across devices</span></p>
 <div class="card">
   <div id="clock" class="tc-clock">0:00:00.000</div>
   <div class="tc-btns">
@@ -1945,107 +1976,273 @@ def time_console(meid):
     <button id="btn-stop" onclick="stopRace()">⏹ Stop</button>
     <button class="ghost" onclick="resetRace()">🔄 Reset</button>
   </div>
-  <div id="status" class="tc-status wait">Not started.</div>
+  <div id="status" class="tc-status wait">Loading…</div>
   <button id="tapbtn" onclick="tap()" disabled
     style="font-size:1.7rem;padding:1.1rem;width:100%;max-width:440px;margin:.7rem auto 0;display:block">TAP finisher</button>
 </div>
 <div class="card"><h2>Finishers (<span id="cnt">0</span>)</h2>
   <table id="rows"></table>
-  <button onclick="save()" style="margin-top:.9rem">💾 Save results</button>
 </div>
 <script>
-const ENTS={ents_json};
-let START=null, STOP=null, taps=[];
+const RID={meid}, HEAT={hk};
+let OFFSET=0, START=null, STOPMS=null, STARTED=false, STOPPED=false, TAPS=[], ENTS=[], BUSY=false;
+function nowms(){{ return Date.now()+OFFSET; }}
 function fmt(sec){{ if(sec==null)return''; sec=Math.max(0,sec);
   const h=Math.floor(sec/3600), m=Math.floor((sec%3600)/60), s=sec-3600*h-60*m;
   return h+':'+String(m).padStart(2,'0')+':'+s.toFixed(3).padStart(6,'0'); }}
 function tick(){{ const c=document.getElementById('clock');
-  if(!START){{ c.textContent='0:00:00.000'; c.classList.remove('stopped'); return; }}
-  const end=STOP||Date.now(); c.textContent=fmt((end-START)/1000); c.classList.toggle('stopped',!!STOP); }}
+  if(!STARTED){{ c.textContent='0:00:00.000'; c.classList.remove('stopped'); return; }}
+  const end=STOPMS||nowms(); c.textContent=fmt((end-START)/1000); c.classList.toggle('stopped',STOPPED); }}
 function syncUI(){{
-  document.getElementById('btn-start').disabled = !!START && !STOP;
-  document.getElementById('btn-stop').disabled = !START || !!STOP;
-  document.getElementById('tapbtn').disabled = !START || !!STOP;
+  document.getElementById('btn-start').disabled = STARTED && !STOPPED;
+  document.getElementById('btn-stop').disabled = !STARTED || STOPPED;
+  document.getElementById('tapbtn').disabled = !STARTED || STOPPED;
   const st=document.getElementById('status');
-  if(!START){{ st.className='tc-status wait'; st.textContent='Not started.'; }}
-  else if(STOP){{ st.className='tc-status end'; st.textContent='🏁 Race ended — assign each finisher, then save.'; }}
+  if(!STARTED){{ st.className='tc-status wait'; st.textContent='Not started.'; }}
+  else if(STOPPED){{ st.className='tc-status end'; st.textContent='🏁 Race ended — assign each finisher.'; }}
   else {{ st.className='tc-status run'; st.textContent='🟢 Running — tap each runner as they cross.'; }}
 }}
-function startRace(){{ if(START&&!STOP)return; START=Date.now(); STOP=null; syncUI(); }}
-function stopRace(){{ if(START&&!STOP){{ STOP=Date.now(); syncUI(); }} }}
-function resetRace(){{ if(!confirm('Reset clears the clock and all taps. Continue?'))return;
-  START=null; STOP=null; taps=[]; syncUI(); render(); }}
-function buzz(){{ try{{ navigator.vibrate && navigator.vibrate(35); }}catch(e){{}} }}
-function tap(){{ if(!START||STOP)return; buzz();
-  taps.push({{t:((STOP||Date.now())-START)/1000, entry:''}}); render(); }}
-let WL=null; async function wlock(){{ try{{ WL=await navigator.wakeLock.request('screen'); }}catch(e){{}} }}
-document.addEventListener('visibilitychange',()=>{{ if(document.visibilityState==='visible')wlock(); }});
-wlock();
-function assign(i,v){{ taps[i].entry=v; render(); }}
-function removeTap(i){{ taps.splice(i,1); render(); }}
+function esc2(s){{ return String(s).replace(/[&<>"]/g,c=>({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}}[c])); }}
 function render(){{
-  document.getElementById('cnt').textContent=taps.length;
-  const taken={{}};                                    // entry id -> row that already claimed it
-  taps.forEach(function(tp,i){{ if(tp.entry) taken[tp.entry]=i; }});
-  if(!taps.length){{ document.getElementById('rows').innerHTML=
-    '<tr><td class="muted">No finishers yet — tap as runners cross.</td></tr>'; return; }}
+  document.getElementById('cnt').textContent=TAPS.length;
+  const taken={{}}; TAPS.forEach(t=>{{ if(t.entry_id) taken[t.entry_id]=t.id; }});
+  const rows=document.getElementById('rows');
+  if(!TAPS.length){{ rows.innerHTML='<tr><td class="muted">No finishers yet — tap as runners cross.</td></tr>'; return; }}
   let h='<tr><th>#</th><th>Time</th><th>Runner</th><th></th></tr>';
-  taps.forEach(function(tp,i){{
+  TAPS.forEach(function(t,i){{
     let opts='<option value="">— pick —</option>';
     ENTS.forEach(function(e){{
-      const mine=tp.entry==e.id, usedElsewhere=(taken[e.id]!=null && taken[e.id]!==i);
-      opts+='<option value="'+e.id+'"'+(mine?' selected':'')+(usedElsewhere?' disabled':'')
-        +'>'+esc(e.label)+(usedElsewhere?'  \\u2713 taken':'')+'</option>';
+      const mine=t.entry_id==e.id, used=(taken[e.id]&&taken[e.id]!=t.id);
+      opts+='<option value="'+e.id+'"'+(mine?' selected':'')+(used?' disabled':'')
+        +'>'+esc2(e.label)+(used?'  \\u2713 taken':'')+'</option>';
     }});
-    h+='<tr><td>'+(i+1)+'</td><td style="font-variant-numeric:tabular-nums">'+fmt(tp.t)+'</td>'
-      +'<td><select onchange="assign('+i+',this.value)">'+opts+'</select></td>'
-      +'<td style="text-align:right"><button class="danger" onclick="removeTap('+i+')">\\u2715</button></td></tr>';
+    h+='<tr><td>'+(i+1)+'</td><td style="font-variant-numeric:tabular-nums">'+fmt(t.elapsed)+'</td>'
+      +'<td><select onchange="assign('+t.id+',this.value)">'+opts+'</select></td>'
+      +'<td style="text-align:right"><button class="danger" onclick="delTap('+t.id+')">\\u2715</button></td></tr>';
   }});
-  document.getElementById('rows').innerHTML=h;
+  rows.innerHTML=h;
 }}
-async function save(){{
-  const marks=taps.filter(function(tp){{return tp.entry;}}).map(function(tp){{return {{entry_id:tp.entry,seconds:tp.t}};}});
-  if(!marks.length){{alert('Tap finishers and assign at least one runner first.');return;}}
-  try{{ await jpost('/meet-events/{meid}/time-save',{{marks}}); location.href='/phone/meet/{me['meet_id']}'; }}
-  catch(e){{ alert(e.message); }}
+async function load(){{
+  if(BUSY)return;
+  try{{
+    const s=await jget('/meet-events/'+RID+'/time/state?heat='+HEAT);
+    OFFSET=s.server_ms-Date.now(); START=s.start_ms; STOPMS=s.stop_ms;
+    STARTED=s.started; STOPPED=s.stopped; TAPS=s.taps; ENTS=s.entries;
+    syncUI(); render();
+  }}catch(e){{}}
 }}
-setInterval(tick,75); syncUI(); render();
+async function act(url, body){{
+  BUSY=true;
+  try{{ await jpost(url, body||{{}}); }}
+  catch(e){{ if(e&&e.message) alert(e.message); }}
+  finally{{ BUSY=false; }}
+  await load();
+}}
+async function startRace(){{
+  if(STARTED&&!STOPPED)return;
+  const body={{}};
+  if(STOPPED&&TAPS.length){{ if(!confirm('This heat already has an ended race with '+TAPS.length+' tap(s). Start over and CLEAR them?'))return; body.clear=true; }}
+  act('/meet-events/'+RID+'/time/start?heat='+HEAT, body);
+}}
+function stopRace(){{ if(STARTED&&!STOPPED) act('/meet-events/'+RID+'/time/stop?heat='+HEAT); }}
+function resetRace(){{ if(confirm('Reset clears the clock, all taps, and any results for this heat. Continue?'))
+  act('/meet-events/'+RID+'/time/reset?heat='+HEAT); }}
+function buzz(){{ try{{ navigator.vibrate && navigator.vibrate(35); }}catch(e){{}} }}
+function tap(){{ if(!STARTED||STOPPED)return; buzz(); act('/meet-events/'+RID+'/time/tap?heat='+HEAT); }}
+function assign(tid,v){{ act('/track-taps/'+tid+'/assign', {{entry_id:v}}); }}
+function delTap(tid){{ if(confirm('Remove this finish?')) act('/track-taps/'+tid+'/delete'); }}
+let WL=null; async function wlock(){{ try{{ WL=await navigator.wakeLock.request('screen'); }}catch(e){{}} }}
+document.addEventListener('visibilitychange',()=>{{ if(document.visibilityState==='visible'){{ wlock(); load(); }} }});
+wlock();
+setInterval(tick,75);
+setInterval(()=>{{ if(!document.hidden) load(); }},2000);
+load();
 </script>"""
     return shell(g.principal, body, active="phone", bare=True)
 
 
-@bp.post("/meet-events/<int:meid>/time-save")
+@bp.get("/meet-events/<int:meid>/time/state")
 @login_required
-def time_save(meid):
+def time_state(meid):
     me = load_meet_event(meid)
     m = load_meet(me["meet_id"])
     if not can_record_meet(m):
         abort(403)
-    marks = (request.get_json(silent=True) or {}).get("marks", [])
+    hk = _heat_key(request.args.get("heat", ""))
     conn = db.connect()
     meids = _combine_meids(conn, me)
-    qm = ",".join("?" * len(meids))
-    valid = {r[0] for r in conn.execute(
-        f"SELECT id FROM entries WHERE meet_event_id IN ({qm})", tuple(meids)).fetchall()}
-    saved = 0
-    for mk in marks:
-        try:
-            eid, sec = int(mk["entry_id"]), float(mk["seconds"])
-        except (TypeError, ValueError, KeyError):
-            continue
-        if eid not in valid or sec <= 0:
-            continue
-        e = conn.execute("SELECT * FROM entries WHERE id=?", (eid,)).fetchone()
-        name, bib, school = _entry_label(conn, e)
+    clk = conn.execute("SELECT * FROM track_clocks WHERE meet_event_id=? AND heat=?", (meid, hk)).fetchone()
+    taps = conn.execute("SELECT * FROM track_taps WHERE meet_event_id=? AND heat=? ORDER BY seq",
+                        (meid, hk)).fetchall()
+    ents = _tap_entries(conn, meids, hk)
+    conn.close()
+    start = _t_parse(clk["start_time"]) if clk else None
+    stop = _t_parse(clk["stop_time"]) if clk else None
+    return jsonify(
+        server_ms=_t_ms(_t_now()),
+        start_ms=_t_ms(start) if start else None,
+        stop_ms=_t_ms(stop) if stop else None,
+        started=bool(start), stopped=bool(stop),
+        taps=[{"id": t["id"], "seq": t["seq"], "elapsed": t["elapsed_seconds"],
+               "entry_id": t["entry_id"]} for t in taps],
+        entries=ents)
+
+
+@bp.post("/meet-events/<int:meid>/time/start")
+@login_required
+def time_start(meid):
+    me = load_meet_event(meid)
+    m = load_meet(me["meet_id"])
+    if not can_record_meet(m):
+        abort(403)
+    hk = _heat_key(request.args.get("heat", ""))
+    clear = bool((request.get_json(silent=True) or {}).get("clear"))
+    conn = db.connect()
+    clk = conn.execute("SELECT * FROM track_clocks WHERE meet_event_id=? AND heat=?", (meid, hk)).fetchone()
+    n = conn.execute("SELECT COUNT(*) FROM track_taps WHERE meet_event_id=? AND heat=?", (meid, hk)).fetchone()[0]
+    if clk and clk["start_time"] and clk["stop_time"] and n and not clear:
+        conn.close()
+        return jsonify(error=f"This heat already has an ended race with {n} tap(s).",
+                       needs_clear=True), 409
+    if clear:
+        conn.execute("DELETE FROM track_taps WHERE meet_event_id=? AND heat=?", (meid, hk))
+    conn.execute("INSERT INTO track_clocks (meet_event_id, heat, start_time, stop_time) VALUES (?,?,?,NULL) "
+                 "ON CONFLICT(meet_event_id, heat) DO UPDATE SET start_time=excluded.start_time, stop_time=NULL",
+                 (meid, hk, _t_iso(_t_now())))
+    conn.commit()
+    conn.close()
+    return jsonify(ok=True)
+
+
+@bp.post("/meet-events/<int:meid>/time/stop")
+@login_required
+def time_stop(meid):
+    me = load_meet_event(meid)
+    m = load_meet(me["meet_id"])
+    if not can_record_meet(m):
+        abort(403)
+    hk = _heat_key(request.args.get("heat", ""))
+    conn = db.connect()
+    conn.execute("UPDATE track_clocks SET stop_time=? WHERE meet_event_id=? AND heat=? AND stop_time IS NULL",
+                 (_t_iso(_t_now()), meid, hk))
+    conn.commit()
+    conn.close()
+    return jsonify(ok=True)
+
+
+@bp.post("/meet-events/<int:meid>/time/reset")
+@login_required
+def time_reset(meid):
+    me = load_meet_event(meid)
+    m = load_meet(me["meet_id"])
+    if not can_record_meet(m):
+        abort(403)
+    hk = _heat_key(request.args.get("heat", ""))
+    conn = db.connect()
+    meids = _combine_meids(conn, me)
+    # drop the results this heat produced (assigned taps), then the taps + clock
+    eids = [t["entry_id"] for t in conn.execute(
+        "SELECT entry_id FROM track_taps WHERE meet_event_id=? AND heat=? AND entry_id IS NOT NULL",
+        (meid, hk)).fetchall()]
+    for eid in eids:
         conn.execute("DELETE FROM results WHERE entry_id=?", (eid,))
-        conn.execute("INSERT INTO results (entry_id, mark_seconds, dq, snap_name, snap_bib, snap_school) "
-                     "VALUES (?,?,0,?,?,?)", (eid, sec, name, bib, school))
-        saved += 1
+    conn.execute("DELETE FROM track_taps WHERE meet_event_id=? AND heat=?", (meid, hk))
+    conn.execute("DELETE FROM track_clocks WHERE meet_event_id=? AND heat=?", (meid, hk))
     for m2 in meids:
         _recompute_places(conn, load_meet_event(m2))
     conn.commit()
     conn.close()
-    return jsonify(saved=saved)
+    return jsonify(ok=True)
+
+
+@bp.post("/meet-events/<int:meid>/time/tap")
+@login_required
+def time_tap(meid):
+    me = load_meet_event(meid)
+    m = load_meet(me["meet_id"])
+    if not can_record_meet(m):
+        abort(403)
+    hk = _heat_key(request.args.get("heat", ""))
+    conn = db.connect()
+    clk = conn.execute("SELECT * FROM track_clocks WHERE meet_event_id=? AND heat=?", (meid, hk)).fetchone()
+    if not clk or not clk["start_time"] or clk["stop_time"]:
+        conn.close()
+        return jsonify(error="Race is not running."), 409
+    elapsed = (_t_now() - _t_parse(clk["start_time"])).total_seconds()
+    seq = (conn.execute("SELECT COALESCE(MAX(seq),0) FROM track_taps WHERE meet_event_id=? AND heat=?",
+                        (meid, hk)).fetchone()[0]) + 1
+    conn.execute("INSERT INTO track_taps (meet_event_id, heat, seq, elapsed_seconds) VALUES (?,?,?,?)",
+                 (meid, hk, seq, elapsed))
+    conn.commit()
+    conn.close()
+    return jsonify(ok=True)
+
+
+@bp.post("/track-taps/<int:tid>/assign")
+@login_required
+def tap_assign(tid):
+    conn = db.connect()
+    t = conn.execute("SELECT * FROM track_taps WHERE id=?", (tid,)).fetchone()
+    if not t:
+        conn.close()
+        abort(404)
+    me = load_meet_event(t["meet_event_id"])
+    m = load_meet(me["meet_id"])
+    if not can_record_meet(m):
+        conn.close()
+        abort(403)
+    raw = (request.get_json(silent=True) or {}).get("entry_id")
+    # unassigning (or reassigning) frees the entry the tap previously held
+    if t["entry_id"]:
+        conn.execute("DELETE FROM results WHERE entry_id=?", (t["entry_id"],))
+    if raw in (None, "", 0, "0"):
+        conn.execute("UPDATE track_taps SET entry_id=NULL WHERE id=?", (tid,))
+    else:
+        try:
+            eid = int(raw)
+        except (TypeError, ValueError):
+            conn.close()
+            return jsonify(error="Bad runner"), 400
+        if conn.execute("SELECT 1 FROM track_taps WHERE entry_id=? AND id!=?", (eid, tid)).fetchone():
+            conn.close()
+            return jsonify(error="That runner is already assigned to another finish."), 400
+        e = conn.execute("SELECT * FROM entries WHERE id=?", (eid,)).fetchone()
+        if not e:
+            conn.close()
+            return jsonify(error="Unknown runner"), 400
+        name, bib, school = _entry_label(conn, e)
+        conn.execute("UPDATE track_taps SET entry_id=? WHERE id=?", (eid, tid))
+        conn.execute("DELETE FROM results WHERE entry_id=?", (eid,))
+        conn.execute("INSERT INTO results (entry_id, mark_seconds, dq, snap_name, snap_bib, snap_school) "
+                     "VALUES (?,?,0,?,?,?)", (eid, t["elapsed_seconds"], name, bib, school))
+    for m2 in _combine_meids(conn, me):
+        _recompute_places(conn, load_meet_event(m2))
+    conn.commit()
+    conn.close()
+    return jsonify(ok=True)
+
+
+@bp.post("/track-taps/<int:tid>/delete")
+@login_required
+def tap_delete(tid):
+    conn = db.connect()
+    t = conn.execute("SELECT * FROM track_taps WHERE id=?", (tid,)).fetchone()
+    if not t:
+        conn.close()
+        abort(404)
+    me = load_meet_event(t["meet_event_id"])
+    m = load_meet(me["meet_id"])
+    if not can_record_meet(m):
+        conn.close()
+        abort(403)
+    if t["entry_id"]:
+        conn.execute("DELETE FROM results WHERE entry_id=?", (t["entry_id"],))
+    conn.execute("DELETE FROM track_taps WHERE id=?", (tid,))
+    for m2 in _combine_meids(conn, me):
+        _recompute_places(conn, load_meet_event(m2))
+    conn.commit()
+    conn.close()
+    return jsonify(ok=True)
 
 
 # ------------------------------- heat sheet PDF -------------------------------

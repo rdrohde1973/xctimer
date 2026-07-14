@@ -336,6 +336,26 @@ def migrate(conn):
     conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_meet_events_combo "
                  "ON meet_events(meet_id, event_id, gender, grade)")
 
+    # Server-backed track tap timer so a distance/relay heat can be timed on one
+    # device and assigned on another (multi-device, like the XC race console).
+    # One clock row per (meet_event, heat); taps carry an elapsed time + optional
+    # assigned entry. heat 0 == "all entries" (no heat filter).
+    conn.execute("""CREATE TABLE IF NOT EXISTS track_clocks (
+        meet_event_id INTEGER NOT NULL,
+        heat INTEGER NOT NULL DEFAULT 0,
+        start_time TEXT,
+        stop_time TEXT,
+        PRIMARY KEY (meet_event_id, heat))""")
+    conn.execute("""CREATE TABLE IF NOT EXISTS track_taps (
+        id INTEGER PRIMARY KEY,
+        meet_event_id INTEGER NOT NULL,
+        heat INTEGER NOT NULL DEFAULT 0,
+        seq INTEGER,
+        elapsed_seconds REAL,
+        entry_id INTEGER,
+        created_at TEXT DEFAULT (datetime('now')))""")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_track_taps ON track_taps(meet_event_id, heat)")
+
     # Ensure the named points tables exist (older DBs seeded a different set).
     for name, vals in SEED_POINTS_TABLES:
         if not conn.execute("SELECT 1 FROM points_tables WHERE name=?", (name,)).fetchone():
