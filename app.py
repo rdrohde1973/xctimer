@@ -22,7 +22,7 @@ from .insights import bp as insights_bp
 from .phone import bp as phone_bp
 from .waivers import bp as waivers_bp
 
-APP_VERSION = "0.53.0-threads24"
+APP_VERSION = "0.53.1-benchz"
 
 LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width, initial-scale=1">
@@ -233,6 +233,26 @@ def create_app():
     @app.get("/healthz")
     def healthz():
         return jsonify(status="ok", version=APP_VERSION)
+
+    @app.get("/benchz")
+    def benchz():
+        # TEMPORARY load-test endpoint. Inert unless XC_BENCH=1 in the env. Performs a
+        # representative write transaction against a throwaway table (self-bounding, never
+        # touches real meet data) so a load generator can exercise SQLite write contention
+        # + the waitress thread pool. Remove after stress testing.
+        if os.environ.get("XC_BENCH") != "1":
+            from flask import abort
+            abort(404)
+        from datetime import datetime, timezone
+        conn = db.connect()
+        conn.execute("CREATE TABLE IF NOT EXISTS _bench (id INTEGER PRIMARY KEY, ts TEXT)")
+        conn.execute("INSERT INTO _bench (ts) VALUES (?)", (datetime.now(timezone.utc).isoformat(),))
+        n = conn.execute("SELECT COUNT(*) FROM _bench").fetchone()[0]
+        if n > 500:
+            conn.execute("DELETE FROM _bench WHERE id < ?", (n - 500,))
+        conn.commit()
+        conn.close()
+        return jsonify(ok=True, n=n)
 
     @app.get("/manifest.webmanifest")
     def manifest():
