@@ -364,6 +364,26 @@ def migrate(conn):
         created_at TEXT DEFAULT (datetime('now')))""")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_track_taps ON track_taps(meet_event_id, heat)")
 
+    # Audit log (compliance Phase 3): who viewed / changed / exported / deleted records.
+    # One row per auditable request (see audit.py). Retained ~13 months, pruned on the
+    # Console load. Lives in this DB, so it rides along in the nightly encrypted backup.
+    conn.execute("""CREATE TABLE IF NOT EXISTS audit_log (
+        id INTEGER PRIMARY KEY,
+        ts TEXT NOT NULL,
+        actor_id INTEGER,
+        actor_email TEXT,
+        actor_role TEXT,
+        district_id INTEGER,
+        action TEXT,
+        method TEXT,
+        path TEXT,
+        status INTEGER,
+        ip TEXT,
+        detail TEXT)""")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_ts ON audit_log(ts)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_district ON audit_log(district_id)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_audit_actor ON audit_log(actor_id)")
+
     # Ensure the named points tables exist (older DBs seeded a different set).
     for name, vals in SEED_POINTS_TABLES:
         if not conn.execute("SELECT 1 FROM points_tables WHERE name=?", (name,)).fetchone():

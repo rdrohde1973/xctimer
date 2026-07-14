@@ -18,7 +18,7 @@ _MT = ZoneInfo("America/Denver")   # Mountain Time (handles MST/MDT)
 from markupsafe import escape
 from flask import Blueprint, request, redirect, g, abort, jsonify, Response
 
-from . import db
+from . import db, audit
 from .auth import (login_required, role_required, create_user, issue_reset_token,
                    send_setup_email, hash_password, ROLES)
 from .tenancy import active_district_id, require_district, all_districts
@@ -884,6 +884,43 @@ def console():
                   f'<table><tr><th>When</th><th>Email</th><th>Role</th><th>Status</th><th>IP</th></tr>'
                   f'{lg_rows}</table></div>')
 
+    # --- Audit log (compliance): durable who-did-what, from the audit_log table ---
+    audit.prune()                                   # enforce retention lazily on view
+    aconn = db.connect()
+    arows = aconn.execute("SELECT * FROM audit_log ORDER BY id DESC LIMIT 200").fetchall()
+    atot = aconn.execute("SELECT COUNT(*) FROM audit_log").fetchone()[0]
+    aconn.close()
+
+    def _acolor(a, det):
+        if a == "delete":
+            return "color:var(--err)"
+        if a == "export":
+            return "color:var(--warn)"
+        if a == "login":
+            return "color:var(--err)" if det in ("fail", "throttled") else "color:var(--ok)"
+        return ""
+    audit_trs = "".join(
+        f'<tr data-text="{escape(" ".join(str(x or "") for x in (r["actor_email"], r["actor_role"], r["action"], r["method"], r["path"], r["ip"], r["detail"])).lower())}">'
+        f'<td style="white-space:nowrap">{escape(_ts_mt(r["ts"]))}</td>'
+        f'<td>{escape(r["actor_email"] or "—")}'
+        f'<br><span class="muted" style="font-size:.78rem">{escape(r["actor_role"] or "")}</span></td>'
+        f'<td style="{_acolor(r["action"], r["detail"])};font-weight:700">{escape(r["action"] or "")}'
+        f'{(" · " + escape(r["detail"])) if r["detail"] else ""}</td>'
+        f'<td class="muted" style="font-size:.82rem">{escape((r["method"] or "") + " " + (r["path"] or ""))}</td>'
+        f'<td>{r["status"] or ""}</td>'
+        f'<td class="muted" style="font-size:.85rem">{escape(r["ip"] or "")}</td></tr>'
+        for r in arows) or '<tr><td colspan=6 class="muted">No audit events yet.</td></tr>'
+    audit_card = (
+        f'<div class="card"><h2>Audit log <span class="muted">— who viewed / changed / '
+        f'exported / deleted records · showing {len(arows)} of {atot} · kept ~13 months</span></h2>'
+        f'<input id="afilter" placeholder="Filter by user, action, path, IP…" oninput="afilt()" '
+        f'style="max-width:340px;margin-bottom:.5rem">'
+        f'<table id="atbl"><tr><th>When (MT)</th><th>User</th><th>Action</th>'
+        f'<th>Method · Path</th><th>Status</th><th>IP</th></tr>{audit_trs}</table>'
+        f'<script>function afilt(){{var q=document.getElementById("afilter").value.toLowerCase();'
+        f'document.querySelectorAll("#atbl tr[data-text]").forEach(function(tr){{'
+        f'tr.style.display=tr.getAttribute("data-text").indexOf(q)>-1?"":"none";}});}}</script></div>')
+
     stream_seed = "\n".join(_line_mt(ln) for ln in _read_journal(since, cap=200)[-200:])
     stream_card = f"""<div class="card"><h2>Raw log stream <span class="muted">— live tail</span>
 <button class="ghost" onclick="PAUSED=!PAUSED;this.textContent=PAUSED?'▶ Resume':'⏸ Pause'"
@@ -907,7 +944,7 @@ setInterval(tail, 3000);
             f'<div><h1>Console <span class="pill">SUPER ADMIN</span></h1>'
             f'<p class="sub">Cross-tenant operational view — request firehose, errors, login events. '
             f'Showing the last {label}.</p></div><div>{tabs}</div></div>'
-            f'{tiles}{_server_card()}{ip_card}{p404_card}{login_card}{stream_card}')
+            f'{tiles}{_server_card()}{ip_card}{p404_card}{login_card}{audit_card}{stream_card}')
     return shell(g.principal, body, active="console",
                  active_district=active_district_id(), districts=_districts_for_switcher())
 

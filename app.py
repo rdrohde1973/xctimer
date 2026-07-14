@@ -12,7 +12,7 @@ import secrets
 
 from flask import Flask, jsonify, g, redirect, request
 
-from . import db, auth
+from . import db, auth, audit
 from .auth import bp as auth_bp
 from .tenancy import bp as tenancy_bp
 from .schools import bp as schools_bp
@@ -24,7 +24,7 @@ from .insights import bp as insights_bp
 from .phone import bp as phone_bp
 from .waivers import bp as waivers_bp
 
-APP_VERSION = "0.57.1-contact-email"
+APP_VERSION = "0.58.0-audit-log"
 
 LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width, initial-scale=1">
@@ -394,9 +394,17 @@ def create_app():
                 ip = (_request.headers.get("CF-Connecting-IP")
                       or _request.headers.get("X-Forwarded-For", "").split(",")[0].strip()
                       or _request.remote_addr or "-")
-                _acc.info(f"XCLOG REQ {ip} {resp.status_code} {_request.method} {p}")
+                prin = getattr(g, "principal", None)
+                who = (getattr(prin, "email", None)
+                       or ("meet-timer" if getattr(prin, "meet_scope", None) else "-")) if prin else "-"
+                _acc.info(f"XCLOG REQ {ip} {resp.status_code} {_request.method} {p} user={who}")
         except Exception:  # noqa: BLE001
             pass
+        return resp
+
+    @app.after_request
+    def _audit(resp):
+        audit.record_request(resp.status_code)
         return resp
 
     @app.get("/")
