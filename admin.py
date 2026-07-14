@@ -1048,8 +1048,9 @@ expiring email links for account setup and password reset.</li>
 <li><b>Expiry:</b> idle timeout (24h) plus an absolute cap (30 days); the session ID is rotated on
 login and fully invalidated on logout.</li>
 <li><b>Brute-force protection:</b> server-side rate-limiting and back-off on repeated failed logins.</li>
-<li><b>Multi-factor authentication:</b> {st("Partial")} — a per-user MFA control exists in the admin UI;
-email-code enforcement is being rolled out.</li>
+<li><b>Multi-factor authentication:</b> {st("Implemented")} — optional per-user email-code two-step
+verification. When enabled for an account, a one-time 6-digit code (10-minute expiry, limited attempts)
+is emailed and required after the password; users may opt to remember a trusted device for 30 days.</li>
 <li><b>Meet-day access:</b> optional no-login QR tokens let volunteer timers record finishes for a
 <b>single meet only</b>. These scoped tokens grant no access to rosters, other meets, or admin functions.</li>
 </ul>
