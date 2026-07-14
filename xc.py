@@ -837,6 +837,8 @@ PUB_CSS = """
 *{box-sizing:border-box}
 body{margin:0;font:15px/1.5 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:#eef1f5;color:#1b2b3a}
 .top{background:#12385f;color:#fff;padding:1rem 1.2rem;display:flex;gap:1rem;align-items:center;justify-content:space-between}
+.pubfoot{text-align:center;padding:1.6rem 1rem 2.4rem;color:#8a97a5;font-size:.85rem}
+.pubfoot .bx{color:#ea6a2d;font-weight:800}.pubfoot .bt{color:#12385f;font-weight:800}
 .top .mt{font-size:1.4rem;font-weight:800;line-height:1.15}
 .top .sub{opacity:.85;font-size:.85rem;margin-top:.25rem}
 .top .right{display:flex;align-items:center;gap:1rem;flex-shrink:0}
@@ -1075,6 +1077,7 @@ def _public_xc(m, mode):
   <div id="v-grade" style="display:none">{grade}</div>
   <div id="v-team" style="display:none">{team}</div>
 </main>
+<footer class="pubfoot">Powered by {BRAND_HTML}</footer>
 <script>
 function tab(n){{
   ['overall','grade','team'].forEach(function(k){{
@@ -1145,6 +1148,8 @@ def public_results(token):
 main{{max-width:960px;margin:0 auto;padding:1.4rem 1rem 4rem}}
 .pubhdr{{display:flex;align-items:center;gap:.7rem;padding:1rem;border-bottom:1px solid var(--line)}}
 .pubhdr .hostlogo{{height:48px;width:auto;max-width:80px;object-fit:contain;background:#fff;border-radius:8px;padding:4px}}
+.pubfoot{{text-align:center;padding:1.6rem 1rem 2.4rem;color:#8a97a5;font-size:.85rem}}
+.pubfoot .bx,.pubfoot .bt{{font-weight:800}}
 .livecard{{border:2px solid #e8622a;box-shadow:0 0 0 4px rgba(232,98,42,.12)}}
 .livehd{{font-weight:800;font-size:1.05rem;color:#e8622a;display:flex;align-items:center;gap:.5rem;margin-bottom:.2rem}}
 .livecard.final{{border-color:#2e9e5b;box-shadow:0 0 0 4px rgba(46,158,91,.12)}}
@@ -1156,11 +1161,12 @@ main{{max-width:960px;margin:0 auto;padding:1.4rem 1rem 4rem}}
 .livescroll table{{width:100%}}
 .livescroll td{{padding:.35rem .4rem}}
 </style></head><body>
-<div class="pubhdr">{_host_logo_tag(m)}<span style="font-weight:800;font-size:1.2rem">{BRAND_HTML}</span></div>
+<div class="pubhdr">{_host_logo_tag(m)}</div>
 <main><h1>{escape(m['name'])}</h1>
 <p class="sub">🎽 Track · {escape(m['date'] or '')}</p>
 <div id="livebox"></div>
 {inner}</main>
+<footer class="pubfoot">Powered by {BRAND_HTML}</footer>
 <script>
 const TOKEN={json.dumps(token)};
 let LOFFSET=0;
