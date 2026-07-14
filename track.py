@@ -221,7 +221,7 @@ def setup_section(m, setup):
     erows = []
     for me in mes:
         g_ = {"M": "Boys", "F": "Girls"}.get(me["gender"], "Open")
-        gr = f' · G{me["grade"]}' if me["grade"] else ""
+        gr = f' · {me["grade"]}' if me["grade"] else ""
         rm = (f'<form class="inline" method="post" action="/meet-events/{me["id"]}/delete" '
               f'onsubmit="return confirm(\'Remove event?\')"><button class="danger">✕</button></form>'
               if setup else "")
@@ -1043,7 +1043,7 @@ def meet_day_page(mid):
     conn.close()
 
     def div(me):
-        return {"M": "Boys", "F": "Girls"}.get(me["gender"], "Open") + (f" G{me['grade']}" if me["grade"] else "")
+        return {"M": "Boys", "F": "Girls"}.get(me["gender"], "Open") + (f" {me['grade']}" if me["grade"] else "")
 
     draw = ""
     if setup:
@@ -1093,6 +1093,24 @@ def meet_day_page(mid):
   </form>
 </details>"""
 
+    # Combined events share a lettered, color-coded chip (🔗 A, 🔗 B…) so you can
+    # SEE which ones run together, not just that they're combined with something.
+    _cpal = ["#3f8cff", "#3fbf7f", "#e0a83f", "#c968d8", "#f0625b", "#4fc3c8"]
+    _cgroups = []
+    for me in mes:
+        cid = me["combine_id"] if "combine_id" in me.keys() else None
+        if cid and cid not in _cgroups:
+            _cgroups.append(cid)
+
+    def _chip(cid):
+        if not cid:
+            return ""
+        k = _cgroups.index(cid)
+        col = _cpal[k % len(_cpal)]
+        return (f' <span style="background:{col}22;color:{col};border:1px solid {col};'
+                f'border-radius:999px;padding:.05rem .5rem;font-size:.75rem;font-weight:700;'
+                f'white-space:nowrap">🔗 {chr(65 + k)}</span>')
+
     rows = []
     for i, me in enumerate(mes):
         n = counts.get(me["id"], 0)
@@ -1102,7 +1120,7 @@ def meet_day_page(mid):
               f'Heat sheet</a>' if n else '<span class="muted">—</span>')
         rows.append(f'<tr data-order="{i}" data-gender="{me["gender"] or ""}" data-grade="{me["grade"] or 0}">'
                     f'<td><a href="/meet-events/{me["id"]}"><b>{escape(me["ename"])}</b></a> '
-                    f'<span class="muted">{div(me)}{" 🔗" if cid else ""}</span></td>'
+                    f'<span class="muted">{div(me)}</span>{_chip(cid)}</td>'
                     f'<td>{n} entries</td>'
                     f'<td>{status}</td>'
                     f'<td style="text-align:right">{hs}</td></tr>')
@@ -1503,7 +1521,7 @@ def event_page(meid):
     conn.close()
 
     div = {"M": "Boys", "F": "Girls"}.get(me["gender"], "Open")
-    ename = f'{me["ename"]} — {div}' + (f' (G{me["grade"]})' if me["grade"] else "")
+    ename = f'{me["ename"]} — {div}' + (f' {me["grade"]}' if me["grade"] else "")
     if combined:
         ename += " · 🔗 combined"
     _errs = {"limit": "That athlete has hit the meet event limit.",
@@ -1912,7 +1930,7 @@ def time_console(meid):
     conn.close()
     ents_json = json.dumps(ents)
     div = {"M": "Boys", "F": "Girls"}.get(me["gender"], "Open")
-    title = f'{me["ename"]} — {div}' + (f' G{me["grade"]}' if me["grade"] else "")
+    title = f'{me["ename"]} — {div}' + (f' {me["grade"]}' if me["grade"] else "")
     sub = (f"Heat {heat}" if heat else "All entries") + " · Start, then tap each finisher"
     from .xc import CONSOLE_CSS  # share the XC timing-console look
     body = f"""
@@ -2085,7 +2103,7 @@ def meet_heatsheets(mid):
             rows.append({"heat": e["heat"], "lane": e["lane"], "bib": bib,
                          "name": name, "school": school})
         div = {"M": "Boys", "F": "Girls"}.get(me["gender"], "Open")
-        title = f'{me["ename"]} — {div}' + (f' G{me["grade"]}' if me["grade"] else "")
+        title = f'{me["ename"]} — {div}' + (f' {me["grade"]}' if me["grade"] else "")
         kind = ("hj" if me["ename"] == "High Jump" else "field") if me["kind"] == "field" else "track"
         bars = None
         if kind == "hj" and me["bar_heights"]:
