@@ -316,20 +316,55 @@ def list_users():
     table = (f'<div class="card"><table>{hdr}{"".join(trs)}</table></div>'
              if rows else '<div class="card muted">No users yet.</div>')
 
-    # Create form (needs a resolved district).
-    if p.is_super and did is None:
-        form = '<p class="muted">Pick a district in the header to add users.</p>'
+    # Create form. Super admins pick the target district right in the form (so they
+    # don't have to switch the header first); district admins are fixed to their own.
+    role_opts = "".join(f'<option value="{r}">{r.replace("_"," ").title()}</option>'
+                        for r in _creatable_roles(p))
+    if p.is_super:
+        ds = all_districts()
+        if not ds:
+            form = '<p class="muted">Create a district first.</p>'
+        else:
+            dopts = "".join(
+                f'<option value="{d["id"]}" {"selected" if d["id"]==did else ""}>'
+                f'{escape(d["name"])}</option>' for d in ds)
+            district_block = (f'<label>District</label>'
+                              f'<select name="district_id" id="u_dist" required>{dopts}</select>')
+            conn = db.connect()
+            all_sch = conn.execute(
+                "SELECT id, name, district_id FROM schools ORDER BY name").fetchall()
+            conn.close()
+            school_opts = "".join(
+                f'<option value="{s["id"]}" data-d="{s["district_id"]}">{escape(s["name"])}</option>'
+                for s in all_sch)
     else:
-        role_opts = "".join(f'<option value="{r}">{r.replace("_"," ").title()}</option>'
-                            for r in _creatable_roles(p))
+        district_block = ""
         school_opts = "".join(f'<option value="{s["id"]}">{escape(s["name"])}</option>'
                               for s in schools)
+
+    if not p.is_super or all_districts():
         school_block = (
-            f'<label>Schools (coach/timer scope — hold ⌘/Ctrl to multi-select)</label>'
-            f'<select name="school_ids" multiple size="4">{school_opts}</select>'
+            f'<label>Schools <span class="muted">— coach/timer scope, hold ⌘/Ctrl to '
+            f'multi-select</span></label>'
+            f'<select name="school_ids" id="u_schools" multiple size="4">{school_opts}</select>'
             if school_opts else
             '<p class="muted">Add schools first to scope coaches/timers.</p>'
         )
+        # Super admin: filter the school list to the chosen district.
+        filter_js = ("""
+<script>
+(function(){
+  var d=document.getElementById('u_dist'), sel=document.getElementById('u_schools');
+  if(!d||!sel) return;
+  function sync(){
+    Array.prototype.forEach.call(sel.options,function(o){
+      var hide = o.getAttribute('data-d')!==d.value;
+      o.hidden=hide; if(hide) o.selected=false;
+    });
+  }
+  d.addEventListener('change',sync); sync();
+})();
+</script>""" if p.is_super else "")
         form = f"""
 <div class="card"><h2>Add a user</h2>
 <form method="post" action="/users">
@@ -337,6 +372,7 @@ def list_users():
     <div><label>Name</label><input name="name"></div>
     <div><label>Email</label><input name="email" type="email" required></div>
   </div>
+  {district_block}
   <label>Role</label><select name="role">{role_opts}</select>
   {school_block}
   <label style="display:flex;gap:.5rem;align-items:center;margin-top:.7rem;font-size:.9rem">
@@ -344,7 +380,7 @@ def list_users():
   <button type="submit" style="margin-top:1rem">Create &amp; send invite</button>
 </form>
 <p class="muted">An email with a setup link is sent so they can set their password.</p>
-</div>"""
+</div>{filter_js}"""
 
     body = f"<h1>Users</h1><p class='sub'>Coaches, timers, and district admins.</p>{table}{form}"
     return shell(p, body, active="users", msg=request.args.get("msg"),
@@ -355,8 +391,19 @@ def list_users():
 @role_required("super_admin", "district_admin")
 def create_user_route():
     p = g.principal
-    did = active_district_id()
+    # Super admins choose the district in the form; district admins are fixed to theirs.
+    if p.is_super:
+        fd = (request.form.get("district_id") or "").strip()
+        did = int(fd) if fd.isdigit() else None
+    else:
+        did = active_district_id()
     if did is None:
+        abort(400)
+    require_district(did)
+    conn = db.connect()
+    exists = conn.execute("SELECT 1 FROM districts WHERE id=?", (did,)).fetchone()
+    conn.close()
+    if not exists:
         abort(400)
     email = (request.form.get("email") or "").strip().lower()
     name = (request.form.get("name") or "").strip() or None
@@ -364,6 +411,9 @@ def create_user_route():
     if role not in _creatable_roles(p) or "@" not in email:
         abort(400)
     school_ids = [int(x) for x in request.form.getlist("school_ids") if x.isdigit()]
+    # Only coaches/timers are school-scoped; ignore any schools for admins.
+    if role not in ("coach", "timer"):
+        school_ids = []
     # Guard: chosen schools must belong to this district.
     if school_ids:
         conn = db.connect()
