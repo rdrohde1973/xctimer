@@ -887,7 +887,7 @@ def console():
     # --- Audit log (compliance): durable who-did-what, from the audit_log table ---
     audit.prune()                                   # enforce retention lazily on view
     aconn = db.connect()
-    arows = aconn.execute("SELECT * FROM audit_log ORDER BY id DESC LIMIT 200").fetchall()
+    arows = aconn.execute("SELECT * FROM audit_log ORDER BY id DESC LIMIT 50").fetchall()
     atot = aconn.execute("SELECT COUNT(*) FROM audit_log").fetchone()[0]
     aconn.close()
 
@@ -911,14 +911,16 @@ def console():
         f'<td class="muted" style="font-size:.85rem">{escape(r["ip"] or "")}</td></tr>'
         for r in arows) or '<tr><td colspan=6 class="muted">No audit events yet.</td></tr>'
     audit_card = (
+        f'<style>#atbl-wrap{{max-height:360px;overflow:auto;border:1px solid var(--line);'
+        f'border-radius:8px}}#atbl thead th{{position:sticky;top:0;background:var(--panel);z-index:1}}</style>'
         f'<div class="card"><h2>Audit log <span class="muted">— who viewed / changed / '
-        f'exported / deleted records · showing {len(arows)} of {atot} · kept ~13 months</span></h2>'
-        f'<input id="afilter" placeholder="Filter by user, action, path, IP…" oninput="afilt()" '
-        f'style="max-width:340px;margin-bottom:.5rem">'
-        f'<table id="atbl"><tr><th>When (MT)</th><th>User</th><th>Action</th>'
-        f'<th>Method · Path</th><th>Status</th><th>IP</th></tr>{audit_trs}</table>'
+        f'exported / deleted records · latest {len(arows)} of {atot} · kept ~13 months</span></h2>'
+        f'<input id="afilter" placeholder="Filter the latest {len(arows)} by user, action, path, IP…" '
+        f'oninput="afilt()" style="max-width:340px;margin-bottom:.5rem">'
+        f'<div id="atbl-wrap"><table id="atbl"><thead><tr><th>When (MT)</th><th>User</th><th>Action</th>'
+        f'<th>Method · Path</th><th>Status</th><th>IP</th></tr></thead><tbody>{audit_trs}</tbody></table></div>'
         f'<script>function afilt(){{var q=document.getElementById("afilter").value.toLowerCase();'
-        f'document.querySelectorAll("#atbl tr[data-text]").forEach(function(tr){{'
+        f'document.querySelectorAll("#atbl tbody tr[data-text]").forEach(function(tr){{'
         f'tr.style.display=tr.getAttribute("data-text").indexOf(q)>-1?"":"none";}});}}</script></div>')
 
     stream_seed = "\n".join(_line_mt(ln) for ln in _read_journal(since, cap=200)[-200:])
