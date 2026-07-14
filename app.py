@@ -22,12 +22,12 @@ from .insights import bp as insights_bp
 from .phone import bp as phone_bp
 from .waivers import bp as waivers_bp
 
-APP_VERSION = "0.54.0-marketing-live"
+APP_VERSION = "0.54.1-coach-parent"
 
 LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width, initial-scale=1">
 <title>XCTimer — meet timing &amp; coach management for junior high &amp; middle school XC &amp; track</title>
-<meta name="description" content="Affordable, simple cross-country and track & field meet timing and roster management built for junior high & middle school — AI roster import and athlete insights, by a coach with 7 years of timing experience.">
+<meta name="description" content="Affordable, simple cross-country and track & field meet timing and roster management built for junior high & middle school — live results the whole crowd can follow, AI roster import, and athlete insights. Built by a coach of 7 years and a parent of three XC & track kids.">
 <style>
   :root{--navy:#164271;--navy-d:#0f3157;--orange:#ea6a2d;--orange-d:#cf5a22;
         --gray:#868686;--ink:#20303f;--bg:#f5f8fc;--card:#ffffff;--line:#e3e9f1}
@@ -155,6 +155,8 @@ LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
 #live .livelist{list-style:none;padding:0;margin:1.3rem 0 0;display:grid;gap:.65rem}
 #live .livelist li{display:flex;gap:.6rem;align-items:flex-start;color:#3a4f63;font-size:1.02rem}
 #live .livelist .ck{color:#2e8b57;font-weight:800;flex-shrink:0}
+#live .livenote{margin:1.3rem 0 0;font-style:italic;color:#4a5f73;font-size:1.02rem;
+                border-left:3px solid var(--orange);padding-left:.9rem}
 .livedemo{background:#fff;border:2px solid var(--orange);border-radius:18px;padding:1.2rem 1.3rem;
           box-shadow:0 16px 38px rgba(22,66,113,.18);max-width:340px;margin:0 auto}
 .livedemo .hd{display:flex;align-items:center;gap:.5rem;font-weight:800;color:var(--orange);font-size:.92rem}
@@ -183,6 +185,8 @@ LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
       <li><span class="ck">✓</span> One QR code — hundreds can watch at once</li>
       <li><span class="ck">✓</span> No app, no login, works on any phone</li>
     </ul>
+    <p class="livenote">"I spent years in those stands as a parent of three runners — this is the
+    feature I always wished I had."</p>
   </div>
   <div>
     <div class="livedemo">
@@ -199,18 +203,18 @@ LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
 </div></section>
 
 <section class="band"><div class="wrap">
-  <h2>Built by a coach who's been on the track.</h2>
-  <p class="lead">XCTimer was built by a former junior high coach who's personally timed meets
-  for seven years — with one goal: make something simple enough that <b style="color:#fff">any
-  junior high coach could run it themselves</b>, without a timing company, special training, or a
-  big budget. Every feature comes from real meet-day experience — the bib stickers, the tap
-  timer, the make/miss high jump grid, scanning a marked-up sheet. It works the way a meet
-  actually runs, because it was built by someone running them.</p>
-  <div class="quote">"I wanted a tool any coach could pick up and run their own meet with."</div>
+  <h2>Built by a coach — and a cross-country &amp; track parent.</h2>
+  <p class="lead">XCTimer was built by a former junior high coach who personally timed meets for
+  seven years — <b style="color:#fff">and a parent of three cross-country and track kids</b> who
+  spent just as many seasons in the stands. That's both sides of every meet: running it from the
+  finish line, and standing in the bleachers wanting to know, right now, how your own kid just did.
+  Every feature comes from that real experience — the bib stickers, the tap timer, the make/miss
+  high jump grid, scanning a marked-up sheet, and the live results the whole crowd can follow.</p>
+  <div class="quote">"As a coach, I wanted a tool any coach could run. As a parent, I wanted to see my kid's race the moment it happened."</div>
   <div class="stat">
     <div><b>7 yrs</b><span>timing meets</span></div>
-    <div><b>XC + Track</b><span>one platform</span></div>
-    <div><b>Jr high</b><span>who it's for</span></div>
+    <div><b>3 kids</b><span>XC &amp; track athletes</span></div>
+    <div><b>Both sides</b><span>coach &amp; parent</span></div>
   </div>
 </div></section>
 
