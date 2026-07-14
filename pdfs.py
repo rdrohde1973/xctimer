@@ -67,7 +67,7 @@ def bib_stickers_pdf(school_name, athletes, *, template="5160", qr_prefix="", lo
 _HOWTO = {
     "track": "HOW TO RECORD: write each athlete's finish TIME (e.g. 1:02.34), then photograph this sheet on the Scan tab.",
     "field": "HOW TO RECORD: write each of the 3 attempts (F = foul); the best legal mark scores. Then scan this sheet.",
-    "hj": "HOW TO RECORD: write bar heights across the top; per bar mark O=clear, X=miss, P=pass. Then scan this sheet.",
+    "hj": "HOW TO RECORD: in each athlete's BEST HEIGHT box write the highest height they cleared (feet-inches, e.g. 4-08). Optionally note total misses. Then scan this sheet.",
 }
 
 
@@ -152,56 +152,69 @@ def _draw_field_section(c, ph, pw, left, title, rows, hj, token=None, bars=None)
     c.drawString(left, y, _HOWTO["hj"] if hj else _HOWTO["field"])
     c.setFillGray(0)
 
-    if hj:                       # no school -> room for big, readable bar boxes
-        name_x, gx = left + 0.5 * inch, left + 2.4 * inch
-        cols, cw, gap, boxh, rowh = 9, 0.46 * inch, 0.52 * inch, 0.46 * inch, 0.6 * inch
-        y -= 0.85 * inch         # drop the wide grid clear below the top-right QR/token
-        c.setFont("Helvetica-Bold", 7)
-        c.setFillGray(0.4)
-        c.drawString(gx, y + 0.24 * inch, "BAR HEIGHTS — write each height, then mark O / X / P below")
+    if hj:
+        # High Jump: one line per athlete — write the BEST height cleared (+ optional
+        # misses). No O/X grid: a single written height per row scans far more reliably.
+        if bars:
+            y -= 0.22 * inch
+            c.setFont("Helvetica", 8)
+            c.setFillGray(0.4)
+            c.drawString(left, y, "Bar progression (low → high): " + "   ".join(bars))
+            c.setFillGray(0)
+        name_x = left + 0.7 * inch
+        best_x = pw - 3.1 * inch
+        miss_x = pw - 1.25 * inch
+        y -= 0.42 * inch
+        c.setFont("Helvetica-Bold", 9)
+        c.setFillGray(0.35)
+        c.drawString(left, y, "BIB")
+        c.drawString(name_x, y, "NAME")
+        c.drawString(best_x, y, "BEST HEIGHT (ft-in)")
+        c.drawString(miss_x, y, "MISSES")
         c.setFillGray(0)
-    else:
-        name_x, gx = left + 0.7 * inch, left + 4.5 * inch
-        y -= 0.34 * inch
+        y -= 0.14 * inch
+        c.line(left, y, pw - 0.5 * inch, y)
+        y -= 0.46 * inch
+        for r in list(rows) + [None] * 3:
+            if y < 0.9 * inch:
+                c.showPage()
+                y = ph - 0.9 * inch
+            c.setFont("Helvetica", 11)
+            if r:
+                c.drawString(left, y, "" if r["bib"] is None else str(r["bib"]))
+                c.drawString(name_x, y, (r["name"] or "")[:34])
+            c.rect(best_x, y - 0.14 * inch, 1.55 * inch, 0.42 * inch)
+            c.rect(miss_x, y - 0.14 * inch, 0.7 * inch, 0.42 * inch)
+            y -= 0.6 * inch
+        c.showPage()
+        return
 
+    # Long Jump / Shot Put: three attempt boxes per athlete.
+    name_x, gx = left + 0.7 * inch, left + 4.5 * inch
+    y -= 0.34 * inch
     c.setFont("Helvetica-Bold", 9)
     c.setFillGray(0.35)
     c.drawString(left, y, "BIB")
     c.drawString(name_x, y, "NAME")
     c.setFillGray(0)
-    if hj:
-        c.setFont("Helvetica-Bold", 13)
-        for i in range(cols):
-            cx = gx + i * gap
-            if i < len(bars):
-                c.drawCentredString(cx + cw / 2, y, bars[i])       # printed height
-            else:
-                c.rect(cx, y - 0.06 * inch, cw, 0.28 * inch)       # blank box to write it
-    else:
-        c.setFont("Helvetica-Bold", 9)
-        for i, lbl in enumerate(("ATT 1", "ATT 2", "ATT 3")):
-            c.drawString(gx + i * 0.85 * inch, y, lbl)
+    c.setFont("Helvetica-Bold", 9)
+    for i, lbl in enumerate(("ATT 1", "ATT 2", "ATT 3")):
+        c.drawString(gx + i * 0.85 * inch, y, lbl)
     y -= 0.14 * inch
     c.line(left, y, pw - 0.5 * inch, y)
-    y -= (0.42 if hj else 0.3) * inch
+    y -= 0.3 * inch
 
-    display = list(rows) + [None] * 3  # blank rows for additions
-    for r in display:
+    for r in list(rows) + [None] * 3:  # blank rows for additions
         if y < 0.9 * inch:
             c.showPage()
             y = ph - 0.9 * inch
         c.setFont("Helvetica", 11)
         if r:
             c.drawString(left, y, "" if r["bib"] is None else str(r["bib"]))
-            c.drawString(name_x, y, (r["name"] or "")[:24 if hj else 40])
-        if hj:
-            for i in range(cols):
-                c.rect(gx + i * gap, y - 0.12 * inch, cw, boxh)
-            y -= rowh
-        else:
-            for i in range(3):
-                c.rect(gx + i * 0.85 * inch, y - 0.05 * inch, 0.7 * inch, 0.26 * inch)
-            y -= 0.42 * inch
+            c.drawString(name_x, y, (r["name"] or "")[:40])
+        for i in range(3):
+            c.rect(gx + i * 0.85 * inch, y - 0.05 * inch, 0.7 * inch, 0.26 * inch)
+        y -= 0.42 * inch
     c.showPage()
 
 

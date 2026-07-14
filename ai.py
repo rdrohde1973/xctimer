@@ -160,6 +160,43 @@ def vision_read_field(image_bytes, media_type="image/jpeg"):
     return {"sheet_code": (str(code).strip() if code else None), "rows": rows}
 
 
+_HJ_SYS = (
+    "You read a photographed HIGH JUMP results sheet. Each row has a PRINTED bib number and "
+    "name, and the official has HANDWRITTEN that athlete's BEST height cleared, in feet-inches "
+    "(e.g. 4-08, 5-02, 4-10; sometimes written 5'2\"). There may also be a small MISSES count "
+    "written in a separate box. Read the printed bib and the handwritten best height for each "
+    "row. In the TOP-RIGHT corner a sheet code is printed next to a QR like 'XCTSHEET E123' — "
+    "read it exactly. "
+    'Return ONLY JSON, no prose: {"sheet_code": "<code exactly as printed, or null>", '
+    '"rows": [{"bib": <int or null>, "name": "<string or null>", '
+    '"height": "<best height in feet-inches exactly as written, or empty>", '
+    '"misses": <int or null>}]}. Skip rows with no height written. Do NOT convert, round, or '
+    "invent a height; copy exactly what is written."
+)
+
+
+def vision_read_hj(image_bytes, media_type="image/jpeg"):
+    """Read a High Jump sheet's code + each athlete's best cleared height (+ misses)."""
+    out = claude_vision(_HJ_SYS, "Read this high jump sheet's code, bibs, and best heights.",
+                        image_bytes, media_type=media_type, max_tokens=4000)
+    obj = _find_json_object(out)
+    rows = []
+    for r in (obj.get("rows", []) if isinstance(obj, dict) else []):
+        if not isinstance(r, dict):
+            continue
+        ht = "" if r.get("height") is None else str(r.get("height")).strip()
+        if not ht:
+            continue
+        m = r.get("misses")
+        try:
+            m = int(m) if (m is not None and str(m).strip() != "") else None
+        except (ValueError, TypeError):
+            m = None
+        rows.append({"bib": r.get("bib"), "name": r.get("name"), "height": ht, "misses": m})
+    code = obj.get("sheet_code") if isinstance(obj, dict) else None
+    return {"sheet_code": (str(code).strip() if code else None), "rows": rows}
+
+
 def _find_json_object(s):
     """Locate and parse the first JSON object from a model response (handles fences)."""
     s = (s or "").strip()

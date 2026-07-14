@@ -382,10 +382,15 @@ async function doScan(){{
   const r=await fetch('/track/scan',{{method:'POST',body:fd}});
   const j=await r.json();
   if(!r.ok){{document.getElementById('scanout').innerHTML='<p class="msg err">'+esc(j.error||'Could not read the sheet')+'</p>';return;}}
-  SCAN_MEID=j.meid; window.SCAN_FIELD=!!j.field;
+  SCAN_MEID=j.meid; window.SCAN_FIELD=!!j.field; window.SCAN_HJ=!!j.hj;
   if(!(j.marks||[]).length){{document.getElementById('scanout').innerHTML='<p class="msg err">Read <b>'+esc(j.label)+'</b> but found no marks — retake the photo.</p>';return;}}
   let h='<p><b>Detected:</b> '+esc(j.label)+'</p><p class="muted">Review, then post.</p><table>';
-  if(SCAN_FIELD){{
+  if(SCAN_HJ){{
+    h+='<tr><th>Bib</th><th>Best height</th><th>Misses</th></tr>';
+    j.marks.forEach(function(m,i){{h+='<tr><td><input id="sb'+i+'" value="'+esc(m.bib==null?'':m.bib)+'" style="width:56px"></td>'
+      +'<td><input id="sh'+i+'" value="'+esc(m.height==null?'':m.height)+'" placeholder="4-08" style="width:80px"></td>'
+      +'<td><input id="sx'+i+'" value="'+esc(m.misses==null?'':m.misses)+'" style="width:50px"></td></tr>';}});
+  }} else if(SCAN_FIELD){{
     h+='<tr><th>Bib</th><th>A1</th><th>A2</th><th>A3</th></tr>';
     j.marks.forEach(function(m,i){{ var a=m.attempts||['','',''];
       h+='<tr><td><input id="sb'+i+'" value="'+esc(m.bib==null?'':m.bib)+'" style="width:56px"></td>'
@@ -402,7 +407,9 @@ async function postScan(n){{
   if(!SCAN_MEID)return;
   const marks=[];
   for(let i=0;i<n;i++){{const b=document.getElementById('sb'+i).value.trim();if(!b)continue;
-    if(window.SCAN_FIELD){{var a=[0,1,2].map(function(k){{return document.getElementById('sa'+i+'_'+k).value.trim();}});
+    if(window.SCAN_HJ){{var ht=document.getElementById('sh'+i).value.trim();var mi=document.getElementById('sx'+i).value.trim();
+      if(ht)marks.push({{bib:b,height:ht,misses:mi?parseInt(mi):null}});}}
+    else if(window.SCAN_FIELD){{var a=[0,1,2].map(function(k){{return document.getElementById('sa'+i+'_'+k).value.trim();}});
       if(a.some(function(x){{return x;}})) marks.push({{bib:b,attempts:a}});}}
     else {{const mk=document.getElementById('sm'+i).value.trim();if(mk)marks.push({{bib:b,mark:mk}});}}
   }}
