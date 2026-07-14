@@ -340,7 +340,7 @@ def _track_timer(conn, m):
   <select id="tev" onchange="fillHeats()">{''.join(ev_opts)}</select>
   <label>Heat / section</label>
   <select id="tht" onchange="upd()"></select>
-  <button id="startbtn" onclick="startRace()" disabled style="width:100%;margin-top:1rem;padding:.8rem">▶ Start race</button>
+  <button id="startbtn" onclick="startRace()" disabled style="width:100%;margin-top:1rem;padding:.8rem">Open race timer →</button>
 </div>
 
 <div class="card" id="tab-scan" style="display:none">
