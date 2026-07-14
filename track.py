@@ -1561,16 +1561,23 @@ def time_console(meid):
     div = {"M": "Boys", "F": "Girls"}.get(me["gender"], "Open")
     title = f'{me["ename"]} — {div}' + (f' G{me["grade"]}' if me["grade"] else "")
     sub = (f"Heat {heat}" if heat else "All entries") + " · Start, then tap each finisher"
+    from .xc import CONSOLE_CSS  # share the XC timing-console look
     body = f"""
+<style>{CONSOLE_CSS}</style>
 <p class="muted"><a href="/phone/meet/{me['meet_id']}">← Track Timer</a></p>
-<h1>⏱ {escape(title)}</h1><p class="sub">{escape(sub)}</p>
-<div class="card" style="position:sticky;top:.5rem;text-align:center">
-  <div id="clock" style="font-size:2.8rem;font-weight:800;font-variant-numeric:tabular-nums">0:00.0</div>
-  <div style="margin:.5rem 0">
-    <button id="startbtn" onclick="startRace()">Start</button>
-    <button class="ghost" onclick="stopRace()">Stop</button></div>
+<h1>{escape(title)} <span class="muted" style="font-weight:400">· tap timer</span></h1>
+<p class="sub">{escape(sub)}</p>
+<div class="card">
+  <div id="clock" class="tc-clock">0:00:00.000</div>
+  <div class="tc-btns">
+    <button id="btn-start" onclick="startRace()">🚦 Start</button>
+    <button id="btn-stop" onclick="stopRace()">⏹ Stop</button>
+    <button class="ghost" onclick="resetRace()">🔄 Reset</button>
+    <a class="btn ghost" href="/meets/{me['meet_id']}/results">📊 Results</a>
+  </div>
+  <div id="status" class="tc-status wait">Not started.</div>
   <button id="tapbtn" onclick="tap()" disabled
-    style="font-size:1.7rem;padding:1.2rem;width:100%;max-width:440px">TAP finisher</button>
+    style="font-size:1.7rem;padding:1.1rem;width:100%;max-width:440px;margin:.7rem auto 0;display:block">TAP finisher</button>
 </div>
 <div class="card"><h2>Finishers (<span id="cnt">0</span>)</h2>
   <table id="rows"></table>
@@ -1579,19 +1586,45 @@ def time_console(meid):
 <script>
 const ENTS={ents_json};
 let START=null, STOP=null, taps=[];
-function fmt(s){{const m=Math.floor(s/60);return m+':'+(s-60*m).toFixed(1).padStart(4,'0');}}
-function tick(){{ if(!START)return; const end=STOP||Date.now(); document.getElementById('clock').textContent=fmt((end-START)/1000); }}
-function startRace(){{START=Date.now();STOP=null;taps=[];document.getElementById('tapbtn').disabled=false;document.getElementById('startbtn').textContent='Restart';render();}}
-function stopRace(){{STOP=Date.now();}}
-function tap(){{ if(!START)return; taps.push({{t:((STOP||Date.now())-START)/1000, entry:''}}); render(); }}
+function fmt(sec){{ if(sec==null)return''; sec=Math.max(0,sec);
+  const h=Math.floor(sec/3600), m=Math.floor((sec%3600)/60), s=sec-3600*h-60*m;
+  return h+':'+String(m).padStart(2,'0')+':'+s.toFixed(3).padStart(6,'0'); }}
+function tick(){{ const c=document.getElementById('clock');
+  if(!START){{ c.textContent='0:00:00.000'; c.classList.remove('stopped'); return; }}
+  const end=STOP||Date.now(); c.textContent=fmt((end-START)/1000); c.classList.toggle('stopped',!!STOP); }}
+function syncUI(){{
+  document.getElementById('btn-start').disabled = !!START && !STOP;
+  document.getElementById('btn-stop').disabled = !START || !!STOP;
+  document.getElementById('tapbtn').disabled = !START || !!STOP;
+  const st=document.getElementById('status');
+  if(!START){{ st.className='tc-status wait'; st.textContent='Not started.'; }}
+  else if(STOP){{ st.className='tc-status end'; st.textContent='🏁 Race ended — assign each finisher, then save.'; }}
+  else {{ st.className='tc-status run'; st.textContent='🟢 Running — tap each runner as they cross.'; }}
+}}
+function startRace(){{ if(START&&!STOP)return; START=Date.now(); STOP=null; syncUI(); }}
+function stopRace(){{ if(START&&!STOP){{ STOP=Date.now(); syncUI(); }} }}
+function resetRace(){{ if(!confirm('Reset clears the clock and all taps. Continue?'))return;
+  START=null; STOP=null; taps=[]; syncUI(); render(); }}
+function tap(){{ if(!START||STOP)return; taps.push({{t:((STOP||Date.now())-START)/1000, entry:''}}); render(); }}
+function assign(i,v){{ taps[i].entry=v; render(); }}
+function removeTap(i){{ taps.splice(i,1); render(); }}
 function render(){{
   document.getElementById('cnt').textContent=taps.length;
-  let h='<tr><th>#</th><th>Time</th><th>Runner</th></tr>';
+  const taken={{}};                                    // entry id -> row that already claimed it
+  taps.forEach(function(tp,i){{ if(tp.entry) taken[tp.entry]=i; }});
+  if(!taps.length){{ document.getElementById('rows').innerHTML=
+    '<tr><td class="muted">No finishers yet — tap as runners cross.</td></tr>'; return; }}
+  let h='<tr><th>#</th><th>Time</th><th>Runner</th><th></th></tr>';
   taps.forEach(function(tp,i){{
     let opts='<option value="">— pick —</option>';
-    ENTS.forEach(function(e){{opts+='<option value="'+e.id+'" '+(tp.entry==e.id?'selected':'')+'>'+esc(e.label)+'</option>';}});
-    h+='<tr><td>'+(i+1)+'</td><td>'+fmt(tp.t)+'</td>'
-      +'<td><select onchange="taps['+i+'].entry=this.value">'+opts+'</select></td></tr>';
+    ENTS.forEach(function(e){{
+      const mine=tp.entry==e.id, usedElsewhere=(taken[e.id]!=null && taken[e.id]!==i);
+      opts+='<option value="'+e.id+'"'+(mine?' selected':'')+(usedElsewhere?' disabled':'')
+        +'>'+esc(e.label)+(usedElsewhere?'  \\u2713 taken':'')+'</option>';
+    }});
+    h+='<tr><td>'+(i+1)+'</td><td style="font-variant-numeric:tabular-nums">'+fmt(tp.t)+'</td>'
+      +'<td><select onchange="assign('+i+',this.value)">'+opts+'</select></td>'
+      +'<td style="text-align:right"><button class="danger" onclick="removeTap('+i+')">\\u2715</button></td></tr>';
   }});
   document.getElementById('rows').innerHTML=h;
 }}
@@ -1601,7 +1634,7 @@ async function save(){{
   try{{ await jpost('/meet-events/{meid}/time-save',{{marks}}); location.href='/phone/meet/{me['meet_id']}'; }}
   catch(e){{ alert(e.message); }}
 }}
-setInterval(tick,100);
+setInterval(tick,75); syncUI(); render();
 </script>"""
     return shell(g.principal, body, active="phone", bare=True)
 
