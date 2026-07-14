@@ -670,10 +670,19 @@ def _meminfo():
     return info
 
 
+def _env_ci(*names):
+    """Look up an env var by any of the given names, case-insensitively."""
+    want = {n.lower() for n in names}
+    for k, v in os.environ.items():
+        if k.lower() in want and (v or "").strip():
+            return v.strip()
+    return None
+
+
 def _hetzner_traffic():
     """Outbound traffic vs. included quota from the Hetzner Cloud API, cached 5 min.
-    Needs HETZNER_API_TOKEN in the env; HETZNER_SERVER_ID is optional (else first server)."""
-    token = os.environ.get("HETZNER_API_TOKEN")
+    Reads a token from HETZNER_API_TOKEN/HETZNER_API_KEY (any case); server id optional."""
+    token = _env_ci("HETZNER_API_TOKEN", "HETZNER_API_KEY", "HETZNER_TOKEN")
     if not token:
         return None
     if _HZ_CACHE["exp"] > time.monotonic():
@@ -681,7 +690,7 @@ def _hetzner_traffic():
     hdr = {"Authorization": f"Bearer {token}"}
     data = None
     try:
-        sid = os.environ.get("HETZNER_SERVER_ID")
+        sid = _env_ci("HETZNER_SERVER_ID")
         if not sid:
             req = urllib.request.Request("https://api.hetzner.cloud/v1/servers?per_page=1", headers=hdr)
             with urllib.request.urlopen(req, timeout=4) as r:
