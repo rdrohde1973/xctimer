@@ -686,13 +686,25 @@ def save_assign(mid):
                          "(SELECT id FROM entries WHERE meet_event_id=? AND runner_id=?)", (meid, aid))
             conn.execute("DELETE FROM entries WHERE meet_event_id=? AND runner_id=?", (meid, aid))
 
-    # relay squads: members = the athletes (this school) who checked that relay
+    # relay squads: members = the athletes (this school) who checked that relay.
     for meid, kind in valid_me.items():
         if kind != "relay":
             continue
         members = [a["name"] for a in athletes if meid in sel[a["id"]]][:4]
-        conn.execute("DELETE FROM entries WHERE meet_event_id=? AND school_id=? AND runner_id IS NULL",
-                     (meid, sid))
+        existing = conn.execute(
+            "SELECT id, members_json FROM entries "
+            "WHERE meet_event_id=? AND school_id=? AND runner_id IS NULL", (meid, sid)).fetchone()
+        try:
+            existing_members = json.loads(existing["members_json"] or "[]") if existing else []
+        except (ValueError, TypeError):
+            existing_members = []
+        if members == existing_members:
+            continue  # unchanged — keep the entry and any recorded relay result
+        # Squad changed: clear the old entry (and its result) first to satisfy the
+        # results→entries foreign key, then insert the new squad.
+        if existing:
+            conn.execute("DELETE FROM results WHERE entry_id=?", (existing["id"],))
+            conn.execute("DELETE FROM entries WHERE id=?", (existing["id"],))
         if members:
             conn.execute("INSERT INTO entries (meet_event_id, school_id, relay_label, members_json) "
                          "VALUES (?,?,?,?)", (meid, sid, "A", json.dumps(members)))
