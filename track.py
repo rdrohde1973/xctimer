@@ -595,12 +595,26 @@ def assign_page(mid):
         parts += [box(me, a["id"], me["id"] in relcur, True) for me in relay_mes if _eligible(me, a)]
         boxes = "".join(parts) or '<span class="muted">no eligible events</span>'
         rows.append(
-            f'<tr><td><b>{escape(a["name"])}</b><br><span class="muted">gr {a["grade"] or "?"} '
+            f'<tr class="arow" data-g="{a["gender"] or ""}" data-gr="{a["grade"] or ""}">'
+            f'<td><b>{escape(a["name"])}</b><br><span class="muted">gr {a["grade"] or "?"} '
             f'{a["gender"] or ""}{" · bib "+str(a["bib"]) if a["bib"] else ""}</span></td>'
             f'<td>{boxes}<div class="muted" id="c{a["id"]}"></div></td></tr>')
     hdr = f'Events (limit {limit}; relays 🔗 not counted)' if relay_mes else f'Events (limit {limit})'
     ath_tbl = (f'<table><tr><th>Athlete</th><th>{hdr}</th></tr>{"".join(rows)}</table>'
                if athletes else '<p class="muted">No athletes on this roster.</p>')
+    # Filter dropdowns (gender / grade) over the athlete list.
+    grades_present = sorted({a["grade"] for a in athletes if a["grade"] is not None})
+    grade_opts = '<option value="">All grades</option>' + "".join(
+        f'<option value="{g}">{g}th grade</option>' for g in grades_present)
+    filter_bar = ("" if not athletes else
+                  '<div class="row" style="gap:.6rem;flex-wrap:wrap;margin:.2rem 0 .8rem">'
+                  '<div><label>Gender</label>'
+                  '<select id="fg" onchange="filterAth()" style="max-width:140px">'
+                  '<option value="">All</option><option value="M">Boys</option>'
+                  '<option value="F">Girls</option></select></div>'
+                  '<div><label>Grade</label>'
+                  f'<select id="fgr" onchange="filterAth()" style="max-width:140px">{grade_opts}</select></div>'
+                  '</div>')
     relay_block = ""
 
     body = f"""
@@ -609,7 +623,7 @@ def assign_page(mid):
 <div class="card" style="display:flex;flex-wrap:wrap;gap:.45rem;align-items:center">
   <b style="margin-right:.2rem">School:</b> {picker}</div>
 <form method="post" action="/meets/{mid}/assign?school={sid}">
-  <div class="card"><h2>{escape(school['name'])} — assign athletes</h2>{ath_tbl}</div>
+  <div class="card"><h2>{escape(school['name'])} — assign athletes</h2>{filter_bar}{ath_tbl}</div>
   {relay_block}
   <button type="submit">💾 Save entries</button>
 </form>
@@ -627,6 +641,13 @@ function cnt(aid){{
   el.style.color = n>LIMIT ? 'var(--err)' : 'var(--mut)';
 }}
 document.querySelectorAll('input[data-ath]:not([data-relay])').forEach(b=>cnt(b.dataset.ath));
+function filterAth(){{
+  const g=document.getElementById('fg').value, gr=document.getElementById('fgr').value;
+  document.querySelectorAll('tr.arow').forEach(function(r){{
+    const okG = !g || r.dataset.g===g, okGr = !gr || r.dataset.gr===gr;
+    r.style.display = (okG && okGr) ? '' : 'none';
+  }});
+}}
 </script>
 """
     return shell(g.principal, body, active="meets")
