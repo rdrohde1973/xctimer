@@ -1963,6 +1963,7 @@ def time_console(meid):
     div = {"M": "Boys", "F": "Girls"}.get(me["gender"], "Open")
     title = f'{me["ename"]} — {div}' + (f' {me["grade"]}' if me["grade"] else "")
     sub = (f"Heat {heat}" if heat else "All entries") + " · Start, then tap each finisher"
+    allow_bib = "true" if me["kind"] != "relay" else "false"   # bibs = individuals only
     from .xc import CONSOLE_CSS  # share the XC timing-console look
     body = f"""
 <style>{CONSOLE_CSS}</style>
@@ -1985,7 +1986,7 @@ def time_console(meid):
   <button onclick="doneRace()" style="margin-top:1.1rem;width:100%">✅ Done — back to heats</button>
 </div>
 <script>
-const RID={meid}, HEAT={hk};
+const RID={meid}, HEAT={hk}, ALLOW_BIB={allow_bib};
 let OFFSET=0, START=null, STOPMS=null, STARTED=false, STOPPED=false, TAPS=[], ENTS=[], BUSY=false, PICKING=false;
 function nowms(){{ return Date.now()+OFFSET; }}
 function fmt(sec){{ if(sec==null)return''; sec=Math.max(0,sec);
@@ -2017,6 +2018,7 @@ function render(){{
       if(used) return;                       // already assigned elsewhere -> drop from this picker
       opts+='<option value="'+e.id+'"'+(mine?' selected':'')+'>'+esc2(e.label)+'</option>';
     }});
+    if(ALLOW_BIB) opts+='<option value="__bib__">➕ Bib not listed…</option>';
     h+='<tr><td>'+(i+1)+'</td><td style="font-variant-numeric:tabular-nums">'+fmt(t.elapsed)+'</td>'
       +'<td><select onfocus="PICKING=true" onblur="setTimeout(function(){{PICKING=false}},350)" onchange="assign('+t.id+',this.value)">'+opts+'</select></td>'
       +'<td style="text-align:right"><button class="danger" onclick="delTap('+t.id+')">\\u2715</button></td></tr>';
@@ -2050,7 +2052,16 @@ function resetRace(){{ if(confirm('Reset clears the clock, all taps, and any res
   act('/meet-events/'+RID+'/time/reset?heat='+HEAT); }}
 function buzz(){{ try{{ navigator.vibrate && navigator.vibrate(35); }}catch(e){{}} }}
 function tap(){{ if(!STARTED||STOPPED)return; buzz(); act('/meet-events/'+RID+'/time/tap?heat='+HEAT); }}
-function assign(tid,v){{ PICKING=false; act('/track-taps/'+tid+'/assign', {{entry_id:v}}); }}
+function assign(tid,v){{
+  PICKING=false;
+  if(v==='__bib__'){{
+    const b=prompt('Runner not in the list — enter their bib number:');
+    if(!b||!b.trim()){{ load(); return; }}   // cancelled -> restore the row
+    act('/track-taps/'+tid+'/assign-bib', {{bib:b.trim()}});
+    return;
+  }}
+  act('/track-taps/'+tid+'/assign', {{entry_id:v}});
+}}
 function delTap(tid){{ if(confirm('Remove this finish?')) act('/track-taps/'+tid+'/delete'); }}
 async function doneRace(){{
   if(STARTED&&!STOPPED){{ if(!confirm('The clock is still running. Stop the race and return to the heats menu?'))return;
@@ -2222,6 +2233,60 @@ def tap_assign(tid):
         conn.execute("INSERT INTO results (entry_id, mark_seconds, dq, snap_name, snap_bib, snap_school) "
                      "VALUES (?,?,0,?,?,?)", (eid, t["elapsed_seconds"], name, bib, school))
     for m2 in _combine_meids(conn, me):
+        _recompute_places(conn, load_meet_event(m2))
+    conn.commit()
+    conn.close()
+    return jsonify(ok=True)
+
+
+@bp.post("/track-taps/<int:tid>/assign-bib")
+@login_required
+def tap_assign_bib(tid):
+    """Assign a finish to a runner who wasn't entered in this event: look the bib up
+    among athletes at this meet, enter them on the spot, then assign as usual."""
+    conn = db.connect()
+    t = conn.execute("SELECT * FROM track_taps WHERE id=?", (tid,)).fetchone()
+    if not t:
+        conn.close()
+        abort(404)
+    me = load_meet_event(t["meet_event_id"])
+    m = load_meet(me["meet_id"])
+    if not can_record_meet(m):
+        conn.close()
+        abort(403)
+    try:
+        bib = int(str((request.get_json(silent=True) or {}).get("bib", "")).strip())
+    except (TypeError, ValueError):
+        conn.close()
+        return jsonify(error="Enter a valid bib number."), 400
+    meids = _combine_meids(conn, me)
+    qm = ",".join("?" * len(meids))
+    # reuse an existing entry for this bib in the event (group), else enter them now
+    e = conn.execute(
+        f"SELECT en.* FROM entries en JOIN athletes a ON a.id=en.runner_id "
+        f"WHERE en.meet_event_id IN ({qm}) AND a.bib=?", (*meids, bib)).fetchone()
+    if not e:
+        a = conn.execute(
+            "SELECT a.id, a.school_id FROM athletes a "
+            "JOIN schools s ON s.id=a.school_id JOIN meet_schools ms ON ms.school_id=s.id "
+            "WHERE ms.meet_id=? AND a.bib=? AND a.active=1", (m["id"], bib)).fetchone()
+        if not a:
+            conn.close()
+            return jsonify(error=f"No athlete with bib #{bib} at this meet."), 400
+        eid = conn.execute("INSERT INTO entries (meet_event_id, runner_id, school_id, heat) "
+                           "VALUES (?,?,?,?)", (me["id"], a["id"], a["school_id"], t["heat"] or None)).lastrowid
+        e = conn.execute("SELECT * FROM entries WHERE id=?", (eid,)).fetchone()
+    if conn.execute("SELECT 1 FROM track_taps WHERE entry_id=? AND id!=?", (e["id"], tid)).fetchone():
+        conn.close()
+        return jsonify(error="That runner is already assigned to another finish."), 400
+    name, ebib, school = _entry_label(conn, e)
+    if t["entry_id"]:
+        conn.execute("DELETE FROM results WHERE entry_id=?", (t["entry_id"],))
+    conn.execute("UPDATE track_taps SET entry_id=? WHERE id=?", (e["id"], tid))
+    conn.execute("DELETE FROM results WHERE entry_id=?", (e["id"],))
+    conn.execute("INSERT INTO results (entry_id, mark_seconds, dq, snap_name, snap_bib, snap_school) "
+                 "VALUES (?,?,0,?,?,?)", (e["id"], t["elapsed_seconds"], name, ebib, school))
+    for m2 in meids:
         _recompute_places(conn, load_meet_event(m2))
     conn.commit()
     conn.close()
