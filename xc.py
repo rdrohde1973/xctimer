@@ -715,22 +715,27 @@ def _results_inner(meet, results, name_mode=None):
             f'<td>{escape(i["school"] or "")}</td>'
             f'<td>{i["grade"] or ""}</td></tr>'
             for i in g_["individuals"])
+        html.append(
+            f'<div class="card"><h2>{g_["label"]}</h2>'
+            f'<table><thead><tr><th>Pl</th><th>Time</th><th>Bib</th><th>Runner</th>'
+            f'<th>School</th><th>Gr</th></tr></thead><tbody>{rows}</tbody></table></div>')
+    # Team scores broken out by grade × gender (real jr-high XC scores per grade race).
+    tparts = []
+    for label, teams in _team_grade_gender_groups(meet["id"]):
+        if not teams:
+            continue
         team_rows = "".join(
             f'<tr><td>{t["rank"]}</td><td>{escape(t["school"])}</td>'
             f'<td><b>{t["score"]}</b></td>'
             f'<td class="muted">{" + ".join(str(p) for p in t["places"])}'
             f'{" (" + str(t["sixth"]) + ("," + str(t["seventh"]) if t["seventh"] else "") + ")" if t["sixth"] else ""}</td></tr>'
-            for t in g_["teams"])
-        team_block = (f'<h3>{g_["label"]} — Team scores</h3>'
-                      f'<table><thead><tr><th>Rank</th><th>School</th><th>Score</th>'
-                      f'<th>Top 5 (6th,7th)</th></tr></thead><tbody>{team_rows}</tbody></table>'
-                      if team_rows else
-                      f'<p class="muted">{g_["label"]}: no complete teams (need 5+).</p>')
-        html.append(
-            f'<div class="card"><h2>{g_["label"]}</h2>'
-            f'<table><thead><tr><th>Pl</th><th>Time</th><th>Bib</th><th>Runner</th>'
-            f'<th>School</th><th>Gr</th></tr></thead><tbody>{rows}</tbody></table>'
-            f'{team_block}</div>')
+            for t in teams)
+        tparts.append(
+            f'<h3>{escape(label)} — Team scores</h3>'
+            f'<table><thead><tr><th>Rank</th><th>School</th><th>Score</th>'
+            f'<th>Top 5 (6th,7th)</th></tr></thead><tbody>{team_rows}</tbody></table>')
+    if tparts:
+        html.append(f'<div class="card"><h2>🏆 Team scores — by grade &amp; gender</h2>{"".join(tparts)}</div>')
     return "".join(html)
 
 
@@ -884,6 +889,36 @@ def _grade_gender_groups(mid):
     return groups
 
 
+def _team_grade_gender_groups(mid):
+    """Team scores computed WITHIN each grade×gender group, sorted grade then gender.
+    Real jr-high XC runs grade-level races, so teams score per grade + gender —
+    not lumped across all grades."""
+    conn = db.connect()
+    ts = conn.execute("SELECT team_scoring FROM meets WHERE id=?", (mid,)).fetchone()
+    conn.close()
+    team_on = bool(ts["team_scoring"]) if ts else True
+    fins = [f for f in _meet_finishers(mid) if f["elapsed_seconds"] is not None]
+    buckets = {}
+    for f in fins:
+        buckets.setdefault((f["snap_grade"], f["snap_gender"]), []).append(f)
+
+    def sk(k):
+        grade, gender = k
+        return (grade if grade is not None else 999, {"F": 0, "M": 1}.get(gender, 2))
+
+    groups = []
+    for key in sorted(buckets, key=sk):
+        grade, gender = key
+        runners = [{"school": f["snap_school"]}
+                   for f in sorted(buckets[key], key=lambda f: f["elapsed_seconds"])
+                   if not f["dq"] and f["snap_school"]]
+        teams = team_scores(runners) if team_on else []
+        gword = {"F": "Girls", "M": "Boys"}.get(gender, "Other")
+        label = f"{grade}th Grade {gword}" if grade is not None else gword
+        groups.append((label, teams))
+    return groups
+
+
 def _public_xc(m, mode):
     mid = m["id"]
     results = build_results(mid)
@@ -906,21 +941,20 @@ def _public_xc(m, mode):
         or '<div class="sec"><h2>No results yet</h2></div>'
 
     team_parts = []
-    for key, lbl in (("F", "Girls"), ("M", "Boys"), ("U", "Other")):
-        g_ = results.get(key)
-        if not g_ or not g_["teams"]:
+    for label, teams in _team_grade_gender_groups(mid):
+        if not teams:
             continue
         trows = "".join(
             f'<tr><td class="pl">{t["rank"]}</td><td>{escape(t["school"])}</td>'
             f'<td class="tm">{t["score"]}</td><td class="mut">'
             f'{" + ".join(str(p) for p in t["places"])}'
             f'{" (" + str(t["sixth"]) + ((", " + str(t["seventh"])) if t["seventh"] else "") + ")" if t["sixth"] else ""}'
-            f'</td></tr>' for t in g_["teams"])
+            f'</td></tr>' for t in teams)
         team_parts.append(
-            f'<div class="sec"><h2>{lbl} — Team Scores</h2><table><thead>'
+            f'<div class="sec"><h2>{escape(label)} — Team Scores</h2><table><thead>'
             f'<tr><th>Rank</th><th>School</th><th>Score</th><th>Top 5 (6th, 7th)</th></tr>'
             f'</thead><tbody>{trows}</tbody></table></div>')
-    team = "".join(team_parts) or '<div class="sec"><h2>No complete teams yet (need 5+ per school)</h2></div>'
+    team = "".join(team_parts) or '<div class="sec"><h2>No complete teams yet (need 5+ per school in a grade)</h2></div>'
 
     sub = escape(m["date"] or "") + (f" · {status}" if status else "")
     return f"""<!doctype html><html lang=en><head><meta charset=utf-8>
