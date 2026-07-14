@@ -10,6 +10,7 @@
 Access: super_admin (any), district_admin (own district), coach (own schools).
 Timers get no roster access.
 """
+import io
 import os
 
 from markupsafe import escape
@@ -455,6 +456,8 @@ Past results are never changed.</p>
 <div class="card"><h2>Import roster</h2>
 <p class="muted">Upload Excel/CSV/PDF/Word, or paste a Google Sheet link. Claude
 normalizes names, then you confirm before anything is saved.</p>
+<p><a class="btn ghost" href="/roster-template.xlsx">⬇ Download roster template (Excel)</a>
+ <span class="muted">— fill in athletes plus contact, parent &amp; emergency info, then upload it back here.</span></p>
 <div class="row">
   <div>
     <label>File</label>
@@ -520,6 +523,65 @@ async function commitImport(){{
 </form></div>"""
     return shell(g.principal, body, active="schools",
                  active_district=active_district_id(), districts=_districts_for_switcher())
+
+
+_TEMPLATE_COLS = ["Name", "Grade", "Gender", "Athlete Email", "Athlete Phone",
+                  "Parent/Guardian Name", "Parent Email", "Parent Phone",
+                  "Emergency Contact", "Emergency Phone"]
+_TEMPLATE_SAMPLES = [
+    ["Alex Rivers", 7, "M", "", "", "Jordan Rivers", "jordan.rivers@example.com",
+     "555-0142", "Jordan Rivers", "555-0142"],
+    ["Sam Brooks", 8, "F", "sam.brooks@example.com", "", "Taylor Brooks",
+     "taylor.brooks@example.com", "555-0199", "Casey Brooks", "555-0177"],
+]
+
+
+def _roster_template_xlsx():
+    """A fill-in Excel roster template: header row, two example rows, and an
+    Instructions sheet. Columns match what the importer reads back in."""
+    import openpyxl
+    from openpyxl.styles import Font
+    from openpyxl.utils import get_column_letter
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    ws.title = "Roster"
+    ws.append(_TEMPLATE_COLS)
+    for c in ws[1]:
+        c.font = Font(bold=True)
+    for row in _TEMPLATE_SAMPLES:
+        ws.append(row)
+    widths = [20, 7, 8, 24, 14, 22, 26, 14, 22, 16]
+    for i, w in enumerate(widths, 1):
+        ws.column_dimensions[get_column_letter(i)].width = w
+    ws.freeze_panes = "A2"
+    tips = wb.create_sheet("Instructions")
+    for i, line in enumerate([
+            "XCTimer — roster template",
+            "",
+            "1. Replace the two example rows on the 'Roster' tab with your athletes.",
+            "2. Keep the header row exactly as-is.",
+            "3. Name = First Last.  Grade = a number (6, 7, 8, 9).  Gender = M or F.",
+            "4. Contact / parent / emergency columns are optional — fill what you have.",
+            "5. Bibs are assigned automatically on import (you don't enter them here).",
+            "6. Save the file, then upload it on the school's Import roster card.",
+            "",
+            "You can also upload your own spreadsheet — the importer reads matching",
+            "column headers — but this template is the easiest way to capture everything."],
+            start=1):
+        tips[f"A{i}"] = line
+    tips["A1"].font = Font(bold=True, size=14)
+    tips.column_dimensions["A"].width = 78
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+@bp.get("/roster-template.xlsx")
+@login_required
+def roster_template():
+    return Response(_roster_template_xlsx(),
+                    mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    headers={"Content-Disposition": 'attachment; filename="xctimer-roster-template.xlsx"'})
 
 
 @bp.post("/schools/<int:sid>/athletes")
