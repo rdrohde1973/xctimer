@@ -1985,7 +1985,7 @@ def time_console(meid):
 </div>
 <script>
 const RID={meid}, HEAT={hk};
-let OFFSET=0, START=null, STOPMS=null, STARTED=false, STOPPED=false, TAPS=[], ENTS=[], BUSY=false;
+let OFFSET=0, START=null, STOPMS=null, STARTED=false, STOPPED=false, TAPS=[], ENTS=[], BUSY=false, PICKING=false;
 function nowms(){{ return Date.now()+OFFSET; }}
 function fmt(sec){{ if(sec==null)return''; sec=Math.max(0,sec);
   const h=Math.floor(sec/3600), m=Math.floor((sec%3600)/60), s=sec-3600*h-60*m;
@@ -2017,18 +2017,18 @@ function render(){{
         +'>'+esc2(e.label)+(used?'  \\u2713 taken':'')+'</option>';
     }});
     h+='<tr><td>'+(i+1)+'</td><td style="font-variant-numeric:tabular-nums">'+fmt(t.elapsed)+'</td>'
-      +'<td><select onchange="assign('+t.id+',this.value)">'+opts+'</select></td>'
+      +'<td><select onfocus="PICKING=true" onblur="setTimeout(function(){{PICKING=false}},350)" onchange="assign('+t.id+',this.value)">'+opts+'</select></td>'
       +'<td style="text-align:right"><button class="danger" onclick="delTap('+t.id+')">\\u2715</button></td></tr>';
   }});
   rows.innerHTML=h;
 }}
 async function load(){{
-  if(BUSY)return;
+  if(BUSY||PICKING)return;                 // never rebuild rows while a picker is open
   try{{
     const s=await jget('/meet-events/'+RID+'/time/state?heat='+HEAT);
     OFFSET=s.server_ms-Date.now(); START=s.start_ms; STOPMS=s.stop_ms;
     STARTED=s.started; STOPPED=s.stopped; TAPS=s.taps; ENTS=s.entries;
-    syncUI(); render();
+    syncUI(); if(!PICKING) render();
   }}catch(e){{}}
 }}
 async function act(url, body){{
@@ -2049,7 +2049,7 @@ function resetRace(){{ if(confirm('Reset clears the clock, all taps, and any res
   act('/meet-events/'+RID+'/time/reset?heat='+HEAT); }}
 function buzz(){{ try{{ navigator.vibrate && navigator.vibrate(35); }}catch(e){{}} }}
 function tap(){{ if(!STARTED||STOPPED)return; buzz(); act('/meet-events/'+RID+'/time/tap?heat='+HEAT); }}
-function assign(tid,v){{ act('/track-taps/'+tid+'/assign', {{entry_id:v}}); }}
+function assign(tid,v){{ PICKING=false; act('/track-taps/'+tid+'/assign', {{entry_id:v}}); }}
 function delTap(tid){{ if(confirm('Remove this finish?')) act('/track-taps/'+tid+'/delete'); }}
 let WL=null; async function wlock(){{ try{{ WL=await navigator.wakeLock.request('screen'); }}catch(e){{}} }}
 document.addEventListener('visibilitychange',()=>{{ if(document.visibilityState==='visible'){{ wlock(); load(); }} }});
