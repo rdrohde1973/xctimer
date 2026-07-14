@@ -1982,6 +1982,7 @@ def time_console(meid):
 </div>
 <div class="card"><h2>Finishers (<span id="cnt">0</span>)</h2>
   <table id="rows"></table>
+  <button onclick="doneRace()" style="margin-top:1.1rem;width:100%">✅ Done — back to heats</button>
 </div>
 <script>
 const RID={meid}, HEAT={hk};
@@ -2051,6 +2052,11 @@ function buzz(){{ try{{ navigator.vibrate && navigator.vibrate(35); }}catch(e){{
 function tap(){{ if(!STARTED||STOPPED)return; buzz(); act('/meet-events/'+RID+'/time/tap?heat='+HEAT); }}
 function assign(tid,v){{ PICKING=false; act('/track-taps/'+tid+'/assign', {{entry_id:v}}); }}
 function delTap(tid){{ if(confirm('Remove this finish?')) act('/track-taps/'+tid+'/delete'); }}
+async function doneRace(){{
+  if(STARTED&&!STOPPED){{ if(!confirm('The clock is still running. Stop the race and return to the heats menu?'))return;
+    try{{ await jpost('/meet-events/'+RID+'/time/stop?heat='+HEAT, {{}}); }}catch(e){{}} }}
+  location.href='/phone/meet/{me['meet_id']}';
+}}
 let WL=null; async function wlock(){{ try{{ WL=await navigator.wakeLock.request('screen'); }}catch(e){{}} }}
 document.addEventListener('visibilitychange',()=>{{ if(document.visibilityState==='visible'){{ wlock(); load(); }} }});
 wlock();
