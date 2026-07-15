@@ -737,18 +737,24 @@ def end_season(sid):
 @login_required
 def delete_athlete(aid):
     conn = db.connect()
-    a = conn.execute("SELECT * FROM athletes WHERE id=?", (aid,)).fetchone()
-    if not a:
+    try:
+        a = conn.execute("SELECT * FROM athletes WHERE id=?", (aid,)).fetchone()
+        if not a:
+            abort(404)
+        s = conn.execute("SELECT * FROM schools WHERE id=?", (a["school_id"],)).fetchone()
+        if not _can_access_school(s):
+            abort(403)
+        # An athlete who has competed is referenced by meet entries + waivers (FKs). A bare
+        # DELETE hits a FK constraint and, left unclosed, leaks a WRITE-LOCKED connection —
+        # which cascaded into a site-wide "database is locked" outage. Detach entries (their
+        # results keep name snapshots) and drop waivers first, then delete. try/finally
+        # guarantees the connection is released even if anything above raises.
+        conn.execute("DELETE FROM athlete_waivers WHERE athlete_id=?", (aid,))
+        conn.execute("UPDATE entries SET runner_id=NULL WHERE runner_id=?", (aid,))
+        conn.execute("DELETE FROM athletes WHERE id=?", (aid,))
+        conn.commit()
+    finally:
         conn.close()
-        abort(404)
-    s = conn.execute("SELECT * FROM schools WHERE id=?", (a["school_id"],)).fetchone()
-    conn.close()
-    if not _can_access_school(s):
-        abort(403)
-    conn = db.connect()
-    conn.execute("DELETE FROM athletes WHERE id=?", (aid,))
-    conn.commit()
-    conn.close()
     return redirect(f"/schools/{a['school_id']}")
 
 
