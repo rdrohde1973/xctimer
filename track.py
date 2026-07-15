@@ -579,7 +579,6 @@ def _track_tabs(mid, active):
             + tab(f"/meets/{mid}", "⚙️ Setup", "setup")
             + tab(f"/meets/{mid}/assign", "👤 Assign athletes", "assign")
             + tab(f"/meets/{mid}/meet-day", "🏁 Meet day", "meetday")
-            + tab(f"/meets/{mid}/pit", "🏖 Open pit", "pit")
             + tab(f"/meets/{mid}/track-results", "📊 Results", "results")
             + '</div>')
 
@@ -963,7 +962,7 @@ def pit_console(mid):
         opts = '<option value="">— no field events at this meet —</option>'
     body = f"""
 <p class="muted"><a href="/meets">← Meets</a></p>
-<h1>{escape(m['name'])}</h1>{_track_tabs(mid, 'pit')}
+<h1>{escape(m['name'])}</h1>{_track_tabs(mid, 'meetday')}
 <h2>🏖 Open pit</h2>
 <p class="sub">Record whoever steps up, by bib. The mark files into the athlete's own
 division automatically. Enter feet-inches — just type <b>10 6</b> for 10'6" (a dash or
