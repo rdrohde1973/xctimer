@@ -344,10 +344,16 @@ def meet_detail(mid):
 
     hs = (f' <a class="btn ghost" href="/meets/{mid}/heatsheets.pdf">Heat sheets</a>'
           if not is_xc else "")
+    # Track stickers carry each athlete's events, which don't fit Avery 5160 — 5163 only.
+    if is_xc:
+        sticker_btns = (
+            f'<a class="btn ghost" href="/meets/{mid}/stickers.pdf?template=5160">Stickers 5160</a> '
+            f'<a class="btn ghost" href="/meets/{mid}/stickers.pdf?template=5163">Stickers 5163</a> ')
+    else:
+        sticker_btns = f'<a class="btn ghost" href="/meets/{mid}/stickers.pdf?template=5163">Stickers (5163)</a> '
     print_bar = (
         f'<div class="card"><b>Print — all attending schools:</b> '
-        f'<a class="btn ghost" href="/meets/{mid}/stickers.pdf?template=5160">Stickers 5160</a> '
-        f'<a class="btn ghost" href="/meets/{mid}/stickers.pdf?template=5163">Stickers 5163</a> '
+        f'{sticker_btns}'
         f'<a class="btn ghost" href="/meets/{mid}/biblist.pdf">Bib lists</a>{hs}</div>')
 
     if is_xc:
@@ -626,6 +632,8 @@ def meet_stickers(mid):
     if not can_view_meet(m):
         abort(403)
     template = request.args.get("template", "5160")
+    if m["sport"] == "track":     # track stickers carry events — 5160 is too small
+        template = "5163"
     groups = _sticker_groups(mid, with_events=(m["sport"] == "track"),
                              fill_to=pdfs.per_page(template))
     # QR encodes just the bib number (no URL).
@@ -670,6 +678,8 @@ def school_meet_stickers(mid, sid):
     if not can_view_meet(m):
         abort(403)
     template = request.args.get("template", "5160")
+    if m["sport"] == "track":     # track stickers carry events — 5160 is too small
+        template = "5163"
     groups = _sticker_groups(mid, with_events=(m["sport"] == "track"),
                              fill_to=pdfs.per_page(template), only_sid=sid)
     pdf = pdfs.meet_stickers_pdf(groups, template=template, qr_prefix="")
