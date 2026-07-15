@@ -367,7 +367,7 @@ def _track_timer(conn, m):
   <p class="sub">Record whoever steps up, by bib — the mark files into that athlete's own
   division automatically. Long Jump &amp; Shot Put, feet-inches, <b>F</b> = foul.</p>
   <label>Event</label>
-  <select id="pev">{field_opts}</select>
+  <select id="pev" onchange="pitLookup()">{field_opts}</select>
   <label>Enter bib #</label>
   <input id="pbib" inputmode="numeric" autocomplete="off" placeholder="enter bib #"
     oninput="pitLookup()"
@@ -411,14 +411,26 @@ function pitLookup(){{
   info.innerHTML='<span class="muted">…</span>';
   _pitLT=setTimeout(async function(){{
     try{{
-      const j=await jget('/meets/{m['id']}/pit/lookup?bib='+encodeURIComponent(bib));
+      const ev=document.getElementById('pev').value;
+      const j=await jget('/meets/{m['id']}/pit/lookup?bib='+encodeURIComponent(bib)+'&event='+encodeURIComponent(ev));
       if(document.getElementById('pbib').value.trim()!==bib) return;   // stale
-      if(j.found){{
-        info.innerHTML='<b style="color:var(--ok)">✔ '+esc(j.name)+'</b>'
-          +'<span class="muted"> · '+esc(j.school)+' · '+esc(j.division)+'</span>';
-      }}else{{
+      if(!j.found){{
         info.innerHTML='<span style="color:var(--warn)">no athlete with bib '+esc(bib)+' at this meet</span>';
+        return;
       }}
+      let s='<b style="color:var(--ok)">✔ '+esc(j.name)+'</b>'
+        +'<span class="muted"> · '+esc(j.school)+' · '+esc(j.division)+'</span>';
+      // already-recorded attempts for this event: legal marks green, fouls red
+      const att=(j.attempts||[]).filter(function(x){{return x;}});
+      if(att.length){{
+        const chips=att.map(function(x){{
+          const red=/^\\s*f/i.test(x);
+          return '<b style="color:'+(red?'var(--err)':'var(--ok)')+'">'+esc(x)+'</b>';
+        }}).join(' , ');
+        s+='<br><span style="color:var(--warn)">⚠ already recorded:</span> '+chips
+          +(j.best?' <span class="muted">(best '+esc(j.best)+')</span>':'');
+      }}
+      info.innerHTML=s;
     }}catch(e){{ info.textContent=''; }}
   }}, 250);
 }}

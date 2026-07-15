@@ -1019,15 +1019,39 @@ def pit_lookup(mid):
         return jsonify(found=False)
     conn = db.connect()
     a = conn.execute(
-        "SELECT a.name, a.grade, a.gender, s.name AS sname FROM athletes a "
+        "SELECT a.id, a.name, a.grade, a.gender, s.name AS sname FROM athletes a "
         "JOIN schools s ON s.id=a.school_id JOIN meet_schools ms ON ms.school_id=s.id "
         "WHERE ms.meet_id=? AND a.bib=? AND a.active=1", (mid, bib)).fetchone()
-    conn.close()
     if not a:
+        conn.close()
         return jsonify(found=False)
     gword = {"M": "Boys", "F": "Girls"}.get(a["gender"], "Open")
     division = gword + (f" {a['grade']}th" if a["grade"] else "")
-    return jsonify(found=True, name=a["name"], school=a["sname"], division=division)
+    # Already-recorded attempts for THIS event (so the pit doesn't double-enter).
+    attempts, best = None, None
+    ev = request.args.get("event")
+    if ev and str(ev).isdigit():
+        me = conn.execute(
+            "SELECT id FROM meet_events WHERE meet_id=? AND event_id=? AND gender=? AND grade=?",
+            (mid, int(ev), a["gender"] or "", a["grade"])).fetchone()
+        if me:
+            r = conn.execute(
+                "SELECT r.mark_metric, r.mark_seconds, r.attempts_json FROM results r "
+                "JOIN entries en ON en.id=r.entry_id WHERE en.meet_event_id=? AND en.runner_id=?",
+                (me["id"], a["id"])).fetchone()
+            if r:
+                if r["attempts_json"]:
+                    try:
+                        attempts = list(json.loads(r["attempts_json"]))
+                    except Exception:  # noqa: BLE001
+                        attempts = None
+                if r["mark_metric"] is not None:
+                    best = _fmt_ht(r["mark_metric"])
+                elif r["mark_seconds"] is not None:
+                    best = fmt_time(r["mark_seconds"])
+    conn.close()
+    return jsonify(found=True, name=a["name"], school=a["sname"], division=division,
+                   attempts=attempts, best=best)
 
 
 @bp.post("/meets/<int:mid>/pit/post")
