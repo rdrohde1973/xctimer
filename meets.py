@@ -238,6 +238,8 @@ def create_meet():
                          (mid, hn, "tap"))
     elif sport == "road":
         # Road: one mass-start race; results split by gender x age group afterward.
+        # Individual placing only — no team scoring.
+        conn.execute("UPDATE meets SET team_scoring=0 WHERE id=?", (mid,))
         conn.execute("INSERT INTO races (meet_id, name, capture_mode) VALUES (?,?,?)",
                      (mid, "Open Race", "tap"))
     else:

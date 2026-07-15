@@ -347,6 +347,10 @@ def migrate(conn):
     if "public_names" not in mcols:     # public results: 'full' | 'initials' | 'bib'
         conn.execute("ALTER TABLE meets ADD COLUMN public_names TEXT")
 
+    fcols = _column_names(conn, "finishers")
+    if "snap_age" not in fcols:          # road races: snapshot age for gender×age grouping
+        conn.execute("ALTER TABLE finishers ADD COLUMN snap_age INTEGER")
+
     mecols = _column_names(conn, "meet_events")
     if "combine_id" not in mecols:
         conn.execute("ALTER TABLE meet_events ADD COLUMN combine_id INTEGER")

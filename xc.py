@@ -75,7 +75,7 @@ def _race_or_403(rid, check):
 
 def _athlete_for_bib(conn, meet_id, bib):
     return conn.execute(
-        "SELECT a.name, a.grade, a.gender, s.name AS sname FROM athletes a "
+        "SELECT a.name, a.grade, a.age, a.gender, s.name AS sname FROM athletes a "
         "JOIN schools s ON s.id=a.school_id "
         "JOIN meet_schools ms ON ms.school_id=a.school_id "
         "WHERE ms.meet_id=? AND a.bib=? LIMIT 1", (meet_id, bib)).fetchone()
@@ -94,8 +94,9 @@ def setup_section(m, setup):
         "WHERE r.meet_id=? GROUP BY r.id", (m["id"],)).fetchall()}
     conn.close()
 
+    is_road = m["sport"] == "road"
     ts_toggle = ""
-    if setup:
+    if setup and not is_road:
         chk = "checked" if m["team_scoring"] else ""
         ts_toggle = (
             f'<form method="post" action="/meets/{m["id"]}/scoring" style="margin-bottom:.6rem">'
@@ -133,7 +134,58 @@ def setup_section(m, setup):
             f'var f=document.createElement("form");f.method="post";f.action="/races/"+id+"/rename";'
             f'var i=document.createElement("input");i.name="name";i.value=n;f.appendChild(i);'
             f'document.body.appendChild(f);f.submit();}}</script>')
-    return f'<div class="card"><h2>Heats</h2>{ts_toggle}{tbl}{add}</div>'
+    age_card = ""
+    if is_road:
+        try:
+            s = _json.loads(m["settings_json"] or "{}")
+        except (ValueError, TypeError):
+            s = {}
+        cur_text = s.get("age_brackets_text") or ", ".join(
+            b.get("label", "") for b in (s.get("age_brackets") or []))
+        chips = "".join(
+            f'<span style="display:inline-block;background:#eef3f9;border:1px solid #d5dde6;'
+            f'border-radius:999px;padding:.15rem .6rem;margin:.15rem .25rem 0 0;font-size:.85rem">'
+            f'{escape(b.get("label",""))}</span>'
+            for b in (s.get("age_brackets") or []))
+        chips = f'<div style="margin:.2rem 0 .6rem">{chips}</div>' if chips else ''
+        editor = ""
+        if setup:
+            editor = (
+                f'<form method="post" action="/meets/{m["id"]}/age-groups" style="margin-top:.4rem">'
+                f'<label class="muted">One group per line or comma-separated. '
+                f'Examples: <code>10 &amp; Under, 11-14, 15-19, 20-29, 30-39, 40+</code></label>'
+                f'<textarea name="brackets" rows="3" style="width:100%;margin:.3rem 0" '
+                f'placeholder="10 &amp; Under, 11-14, 15-19, 20-29, 30+">{escape(cur_text)}</textarea>'
+                f'<button type="submit">Save age groups</button></form>')
+        age_card = (
+            f'<div class="card"><h2>Age groups</h2>'
+            f'<p class="muted" style="margin-top:0">Road results are placed individually by '
+            f'gender × age group. Athletes need an <b>Age</b> on their roster entry.</p>'
+            f'{chips}{editor}</div>')
+
+    return f'<div class="card"><h2>{"Race" if is_road else "Heats"}</h2>{ts_toggle}{tbl}{add}</div>{age_card}'
+
+
+@bp.post("/meets/<int:mid>/age-groups")
+@login_required
+def save_age_brackets(mid):
+    m = load_meet(mid)
+    if not can_setup_meet(m):
+        abort(403)
+    text = request.form.get("brackets") or ""
+    parsed = _parse_brackets(text)
+    conn = db.connect()
+    row = conn.execute("SELECT settings_json FROM meets WHERE id=?", (mid,)).fetchone()
+    try:
+        s = json.loads((row["settings_json"] if row else None) or "{}")
+    except (ValueError, TypeError):
+        s = {}
+    s["age_brackets"] = parsed
+    s["age_brackets_text"] = text
+    conn.execute("UPDATE meets SET settings_json=? WHERE id=?", (json.dumps(s), mid))
+    conn.commit()
+    conn.close()
+    return redirect(f"/meets/{mid}")
 
 
 # ------------------------------- races -------------------------------
@@ -495,7 +547,8 @@ def race_finish(rid):
         return jsonify(error=f"Bib {bib}{nm} already recorded"), 400
     a = _athlete_for_bib(conn, m["id"], bib)
     snap = (a["name"] if a else None, a["grade"] if a else None,
-            a["gender"] if a else None, a["sname"] if a else None)
+            a["gender"] if a else None, a["sname"] if a else None,
+            a["age"] if a else None)
     if r["capture_mode"] == "scan":
         start = _parse(r["start_time"])
         if not start or r["stop_time"]:
@@ -506,7 +559,7 @@ def race_finish(rid):
                             (rid,)).fetchone()[0]) + 1
         conn.execute(
             "INSERT INTO finishers (race_id, seq, finish_time, elapsed_seconds, bib, "
-            "snap_name, snap_grade, snap_gender, snap_school) VALUES (?,?,?,?,?,?,?,?,?)",
+            "snap_name, snap_grade, snap_gender, snap_school, snap_age) VALUES (?,?,?,?,?,?,?,?,?,?)",
             (rid, seq, _iso(_now()), elapsed, bib, *snap))
         remaining = 0
     else:
@@ -516,7 +569,7 @@ def race_finish(rid):
             conn.close()
             return jsonify(error="No open slots — tap a finisher first"), 400
         conn.execute("UPDATE finishers SET bib=?, snap_name=?, snap_grade=?, snap_gender=?, "
-                     "snap_school=? WHERE id=?", (bib, *snap, slot["id"]))
+                     "snap_school=?, snap_age=? WHERE id=?", (bib, *snap, slot["id"]))
         remaining = conn.execute("SELECT COUNT(*) FROM finishers WHERE race_id=? AND bib IS NULL",
                                  (rid,)).fetchone()[0]
     conn.commit()
@@ -560,7 +613,7 @@ def finisher_bib(fid):
     conn = db.connect()
     if raw in (None, "", "0"):
         conn.execute("UPDATE finishers SET bib=NULL, snap_name=NULL, snap_grade=NULL, "
-                     "snap_gender=NULL, snap_school=NULL WHERE id=?", (fid,))
+                     "snap_gender=NULL, snap_school=NULL, snap_age=NULL WHERE id=?", (fid,))
     else:
         try:
             bib = int(str(raw).strip())
@@ -575,9 +628,11 @@ def finisher_bib(fid):
             return jsonify(error=f"Bib {bib}{nm} is already on finisher #{dup['seq']}"), 400
         a = _athlete_for_bib(conn, f["meet_id"], bib)
         conn.execute(
-            "UPDATE finishers SET bib=?, snap_name=?, snap_grade=?, snap_gender=?, snap_school=? WHERE id=?",
+            "UPDATE finishers SET bib=?, snap_name=?, snap_grade=?, snap_gender=?, snap_school=?, "
+            "snap_age=? WHERE id=?",
             (bib, a["name"] if a else None, a["grade"] if a else None,
-             a["gender"] if a else None, a["sname"] if a else None, fid))
+             a["gender"] if a else None, a["sname"] if a else None,
+             a["age"] if a else None, fid))
     conn.commit()
     conn.close()
     return jsonify(ok=True)
@@ -697,6 +752,94 @@ def _meet_finishers(mid):
 GENDERS = [("M", "Boys"), ("F", "Girls")]
 
 
+# ------------------------------- road: gender × age-group -------------------------------
+def _parse_brackets(text):
+    """Parse a free-form age-group list into ordered {label,min,max} dicts.
+    Accepts '10 & Under', '10U', '11-14', '15 to 19', '30+', '40 & over', plain '12'."""
+    import re
+    out = []
+    for raw in re.split(r"[\n,;]", text or ""):
+        t = raw.strip()
+        if not t:
+            continue
+        low = t.lower().replace("–", "-").replace("—", "-")
+        nums = re.findall(r"\d+", low)
+        if not nums:
+            continue
+        n0 = int(nums[0])
+        rng = re.search(r"(\d+)\s*(?:-|to)\s*(\d+)", low)
+        if rng:
+            a, b = int(rng.group(1)), int(rng.group(2))
+            lo, hi = min(a, b), max(a, b)
+        elif re.search(r"\+|over|older|\bup\b", low):
+            lo, hi = n0, 200
+        elif re.search(r"under|younger|u\b|u$", low):
+            lo, hi = 0, n0
+        else:
+            lo = hi = n0
+        out.append({"label": t, "min": lo, "max": hi})
+    return out
+
+
+def _road_brackets(m):
+    """The meet's saved age brackets (ordered list of {label,min,max}), or []."""
+    try:
+        s = json.loads((m["settings_json"] if "settings_json" in m.keys() else None) or "{}")
+    except (ValueError, TypeError):
+        return []
+    br = s.get("age_brackets") or []
+    return [b for b in br if isinstance(b, dict) and "label" in b]
+
+
+def _bracket_index_label(age, brackets):
+    """(sort_index, label) for an age within the bracket list; unmatched → trailing 'No age'."""
+    if age is not None:
+        for i, b in enumerate(brackets):
+            try:
+                if int(b["min"]) <= age <= int(b["max"]):
+                    return i, b["label"]
+            except (ValueError, TypeError, KeyError):
+                continue
+    return len(brackets), "No age listed"
+
+
+def build_road_results(m):
+    """Ordered list of (group_label, individuals[]) grouped by gender × age bracket.
+    Individual placing only — no team scoring for road races."""
+    mid = m["id"]
+    fins = [f for f in _meet_finishers(mid) if f["elapsed_seconds"] is not None]
+    brackets = _road_brackets(m)
+    buckets = {}
+    for f in fins:
+        grank, gword = {"F": (0, "Women"), "M": (1, "Men")}.get(f["snap_gender"], (2, "Open"))
+        if brackets:
+            bi, blabel = _bracket_index_label(f["snap_age"], brackets)
+        else:
+            bi, blabel = 0, ""
+        buckets.setdefault((grank, gword, bi, blabel), []).append(f)
+
+    groups = []
+    for key in sorted(buckets):
+        _, gword, _, blabel = key
+        place = 0
+        indiv = []
+        for f in sorted(buckets[key], key=lambda f: f["elapsed_seconds"]):
+            if not f["dq"]:
+                place += 1
+                p = place
+            else:
+                p = None
+            indiv.append({
+                "place": p, "time": f["elapsed_seconds"], "bib": f["bib"],
+                "name": f["snap_name"] or (f"Bib {f['bib']}" if f["bib"] else "—"),
+                "school": f["snap_school"], "grade": None, "age": f["snap_age"],
+                "gender": f["snap_gender"], "dq": bool(f["dq"]),
+            })
+        label = (gword + (" · " + blabel if blabel else "")).strip()
+        groups.append((label, indiv))
+    return groups
+
+
 def build_results(mid):
     """Return {gender_key: {'label','individuals','teams'}} plus 'overall'."""
     fins = [f for f in _meet_finishers(mid)
@@ -787,7 +930,10 @@ def results_page(mid):
     m = load_meet(mid)
     if not can_view_meet(m):
         abort(403)
-    inner = _results_inner(m, build_results(mid), name_mode=demo.mode_for(g.principal))
+    if m["sport"] == "road":
+        inner = _road_results_inner(m, build_road_results(m), name_mode=demo.mode_for(g.principal))
+    else:
+        inner = _results_inner(m, build_results(mid), name_mode=demo.mode_for(g.principal))
     import os
     import base64
     import qrcode
@@ -1144,10 +1290,140 @@ setInterval(function(){{ if(!document.hidden) location.reload(); }}, 20000);
 </body></html>"""
 
 
+# ------------------------------- road: results (HTML) -------------------------------
+def _road_results_inner(m, groups, name_mode=None):
+    if not any(indiv for _, indiv in groups):
+        return '<div class="card muted">No results yet.</div>'
+    html = []
+    for label, indiv in groups:
+        if not indiv:
+            continue
+        rows = "".join(
+            f'<tr><td>{"" if i["place"] is None else i["place"]}</td>'
+            f'<td>{fmt_hms(i["time"])}</td>'
+            f'<td>{"" if i["bib"] is None or name_mode else i["bib"]}</td>'
+            f'<td>{"<s>" if i["dq"] else ""}{escape(demo.display(i["name"], name_mode))}'
+            f'{" (DQ)" if i["dq"] else ""}{"</s>" if i["dq"] else ""}</td>'
+            f'<td>{escape(i["school"] or "")}</td>'
+            f'<td>{i["age"] if i["age"] is not None else ""}</td></tr>'
+            for i in indiv)
+        html.append(
+            f'<div class="card"><h2>{escape(label)}</h2>'
+            f'<table><thead><tr><th>Pl</th><th>Time</th><th>Bib</th><th>Name</th>'
+            f'<th>Team/Club</th><th>Age</th></tr></thead><tbody>{rows}</tbody></table></div>')
+    return "".join(html)
+
+
+def _pub_road_table(label, individuals, mode):
+    rows = []
+    for i in individuals:
+        nm = i["name"]
+        if mode != "bib" and i["bib"] and (not nm or nm == f"Bib {i['bib']}"):
+            disp = "Bib not found"
+        else:
+            disp = demo.public_ident(nm, i["bib"], mode)
+        pl = "" if i["place"] is None else i["place"]
+        dq = " (DQ)" if i["dq"] else ""
+        rows.append(
+            f'<tr><td class="pl">{pl}</td><td>{escape(disp)}{dq}</td>'
+            f'<td>{escape(i["school"] or "")}</td>'
+            f'<td>{i["age"] if i["age"] is not None else ""}</td>'
+            f'<td class="tm">{fmt_hms(i["time"])}</td></tr>')
+    head = '<tr><th>Pl</th><th>Name</th><th>Team/Club</th><th>Age</th><th>Time</th></tr>'
+    return (f'<div class="sec"><h2>{escape(label)}</h2><table><thead>{head}</thead>'
+            f'<tbody>{"".join(rows)}</tbody></table></div>')
+
+
+def _public_road(m, mode):
+    mid = m["id"]
+    groups = build_road_results(m)
+    conn = db.connect()
+    races = conn.execute("SELECT start_time, stop_time FROM races WHERE meet_id=?", (mid,)).fetchall()
+    conn.close()
+    if races and all(r["stop_time"] for r in races):
+        status = "Final"
+    elif any(r["start_time"] for r in races):
+        status = "Live"
+    else:
+        status = ""
+    body = "".join(_pub_road_table(lbl, indiv, mode) for lbl, indiv in groups if indiv) \
+        or '<div class="sec"><h2>No results yet</h2></div>'
+    sub = escape(m["date"] or "") + (f" · {status}" if status else "")
+    return f"""<!doctype html><html lang=en><head><meta charset=utf-8>
+<meta name=viewport content="width=device-width, initial-scale=1">
+<title>{escape(m['name'])} — Results</title>{HEAD_EXTRA}<style>{PUB_CSS}
+#livebox{{margin:0 0 1.1rem}}
+.livecard{{background:#fff;border:2px solid #e8622a;border-radius:12px;padding:.85rem 1rem;margin:0 0 .8rem;box-shadow:0 0 0 4px rgba(232,98,42,.12)}}
+.livehd{{font-weight:800;font-size:1.02rem;color:#e8622a;display:flex;align-items:center;gap:.5rem;margin-bottom:.15rem}}
+.livecard.final{{border-color:#2e9e5b;box-shadow:0 0 0 4px rgba(46,158,91,.12)}}
+.livehd.final{{color:#2e9e5b}}
+.livedot{{width:.7rem;height:.7rem;border-radius:50%;background:#2e9e5b;animation:lblink 1s infinite}}
+@keyframes lblink{{50%{{opacity:.2}}}}
+.liveclock{{font-size:2.6rem;font-weight:800;font-variant-numeric:tabular-nums;text-align:center;margin:.1rem 0;color:#12385f;letter-spacing:.5px}}
+</style></head><body>
+<div class="top">
+  <div style="display:flex;align-items:center;gap:.8rem">{_host_logo_tag(m)}
+    <div><div class="mt">🛣 {escape(m['name'])}</div><div class="sub">{sub}</div></div>
+  </div>
+</div>
+<main>
+  <div id="livebox"></div>
+  {body}
+</main>
+<footer class="pubfoot">Powered by {BRAND_HTML}</footer>
+<script>
+const LTOKEN=location.pathname.replace(/^\\/r\\//,'').split('/')[0];
+let LOFFSET=0, LTIMER=null;
+function lfmt(sec){{ if(sec==null)return''; sec=Math.max(0,sec);
+  const h=Math.floor(sec/3600), mm=Math.floor((sec%3600)/60), s=sec-3600*h-60*mm;
+  return h+':'+String(mm).padStart(2,'0')+':'+s.toFixed(1).padStart(4,'0'); }}
+function lesc(s){{ return String(s==null?'':s).replace(/[&<>"]/g,c=>({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}}[c])); }}
+function renderLive(heats){{
+  const box=document.getElementById('livebox');
+  if(!heats.length){{ box.innerHTML=''; return; }}
+  let h='';
+  heats.forEach(function(ht){{
+    const hd = ht.ended
+      ? '<div class="livehd final">✅ FINAL · '+lesc(ht.name)+'</div>'
+      : '<div class="livehd"><span class="livedot"></span> LIVE · '+lesc(ht.name)+'</div>';
+    const clk='<div class="liveclock" data-start="'+ht.start_ms+'"'
+      +(ht.ended?(' data-stop="'+ht.stop_ms+'"'):'')+'>0:00:00.0</div>';
+    h+='<div class="livecard'+(ht.ended?' final':'')+'">'+hd+clk+'</div>';
+  }});
+  box.innerHTML=h;
+}}
+function tickLive(){{
+  const now=Date.now()+LOFFSET;
+  document.querySelectorAll('.liveclock').forEach(function(c){{
+    const st=parseInt(c.getAttribute('data-start'),10);
+    const sp=parseInt(c.getAttribute('data-stop'),10);
+    if(st) c.textContent=lfmt(((sp||now)-st)/1000);
+  }});
+}}
+async function pollLive(){{
+  if(LTIMER){{ clearTimeout(LTIMER); LTIMER=null; }}
+  try{{
+    const r=await fetch('/r/'+LTOKEN+'/live'); const d=await r.json();
+    LOFFSET=d.server_ms-Date.now();
+    window.__LIVE_ACTIVE=!!(d.heats&&d.heats.length);
+    renderLive(d.heats||[]);
+  }}catch(e){{}}
+  const gap = document.hidden ? 15000 : (window.__LIVE_ACTIVE ? 2500 : 8000);
+  LTIMER=setTimeout(pollLive, gap);
+}}
+document.addEventListener('visibilitychange',function(){{ if(!document.hidden) pollLive(); }});
+setInterval(tickLive,100); pollLive();
+setInterval(function(){{ if(!document.hidden && !window.__LIVE_ACTIVE) location.reload(); }}, 20000);
+</script>
+</body></html>"""
+
+
 @bp.get("/r/<token>")
 def public_results(token):
     m = _meet_by_token(token)
     mode = _public_mask(m)
+    if m["sport"] == "road":
+        return _public_road(m, mode)
     if m["sport"] == "track":
         from . import track  # lazy import avoids a circular import at module load
         inner = track.results_inner(m["id"], name_mode=mode)
