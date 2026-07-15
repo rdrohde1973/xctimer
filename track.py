@@ -966,7 +966,8 @@ def pit_console(mid):
 <h1>{escape(m['name'])}</h1>{_track_tabs(mid, 'pit')}
 <h2>🏖 Open pit</h2>
 <p class="sub">Record whoever steps up, by bib. The mark files into the athlete's own
-division automatically (Long Jump / Shot Put, feet-inches, F = foul).
+division automatically. Enter feet-inches — just type <b>10 6</b> for 10'6" (a dash or
+apostrophe works too); <b>F</b> = foul.
 <b>On a phone?</b> Use the 🏖 Pit tab in the Track Timer app for a touch-friendly version.</p>
 <div class="card">
   <div class="row" style="flex-wrap:wrap;gap:.6rem">

@@ -365,7 +365,8 @@ def _track_timer(conn, m):
 <div class="card" id="tab-pit" style="display:none">
   <h2>🏖 Open pit</h2>
   <p class="sub">Record whoever steps up, by bib — the mark files into that athlete's own
-  division automatically. Long Jump &amp; Shot Put, feet-inches, <b>F</b> = foul.</p>
+  division automatically. Enter feet-inches — just type <b>10 6</b> for 10&#39;6&quot; (a dash or
+  apostrophe works too). <b>F</b> = foul.</p>
   <label>Event</label>
   <select id="pev" onchange="pitLookup()">{field_opts}</select>
   <label>Enter bib #</label>
