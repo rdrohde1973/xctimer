@@ -644,7 +644,19 @@ def meet_biblist(mid):
         groups = [(nm, arr) for nm, _logo, arr in _sticker_groups(mid, with_events=True)]
     else:
         groups = _attending_groups(mid)
-    pdf = pdfs.meet_biblist_pdf(f'{m["name"]} — bib lists', groups)
+    # Cover page: host-school logo, welcome + instructions, QR to the public results.
+    import os as _os
+    base = _os.environ.get("XC_PUBLIC_URL") or request.host_url.rstrip("/")
+    results_url = f"{base}/r/{m['public_token']}" if m["public_token"] else None
+    logo_path = None
+    if m["host_school_id"]:
+        conn = db.connect()
+        hs = conn.execute("SELECT logo_path FROM schools WHERE id=?",
+                          (m["host_school_id"],)).fetchone()
+        conn.close()
+        logo_path = hs["logo_path"] if hs else None
+    cover = {"meet_name": m["name"], "logo_path": logo_path, "results_url": results_url}
+    pdf = pdfs.meet_biblist_pdf(f'{m["name"]} — bib lists', groups, cover=cover)
     return Response(pdf, mimetype="application/pdf",
                     headers={"Content-Disposition": 'inline; filename="meet-biblist.pdf"'})
 

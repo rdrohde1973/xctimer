@@ -44,6 +44,99 @@ def _qr_image(text):
     return ImageReader(buf)
 
 
+# Athlete/timing instructions shown on the meet-day bib-list cover page.
+_COVER_INSTRUCTIONS = [
+    "Place your sticker on the front of your jersey, centered on your chest.",
+    "Need a blank sticker? Check in at the timing tent before your race begins.",
+    "If you lose your sticker during the race, remember your bib number so you can "
+    "give it to the timer at the finish.",
+    "When you cross the finish line, stay in a single-file line and walk to the timing "
+    "tent in the exact order you finished.",
+    "Once you have been scanned in, remove your sticker and hand it to the timing crew.",
+]
+
+
+def _wrap(text, font, size, max_w):
+    from reportlab.pdfbase.pdfmetrics import stringWidth
+    lines, cur = [], ""
+    for w in text.split():
+        trial = (cur + " " + w).strip()
+        if stringWidth(trial, font, size) <= max_w or not cur:
+            cur = trial
+        else:
+            lines.append(cur)
+            cur = w
+    if cur:
+        lines.append(cur)
+    return lines
+
+
+def _fit_size(text, font, max_w, start, floor):
+    from reportlab.pdfbase.pdfmetrics import stringWidth
+    s = start
+    while s > floor and stringWidth(text, font, s) > max_w:
+        s -= 1
+    return s
+
+
+def _draw_cover(c, pw, ph, meet_name, logo, qr_img, url):
+    """Welcome / instructions / results-QR cover page for the meet-day bib list."""
+    cx = pw / 2.0
+    y = ph - 0.7 * inch
+    if logo:
+        try:
+            iw, ih = logo.getSize()
+            sc = min((2.3 * inch) / iw, (1.4 * inch) / ih)
+            w, h = iw * sc, ih * sc
+            c.drawImage(logo, cx - w / 2, y - h, w, h, mask="auto")
+            y -= h + 0.35 * inch
+        except Exception:  # noqa: BLE001
+            y -= 0.1 * inch
+    else:
+        y -= 0.1 * inch
+    # Welcome heading (navy, shrink-to-fit)
+    c.setFillColorRGB(*NAVY)
+    head = f"Welcome to {meet_name}"
+    hs = _fit_size(head, "Helvetica-Bold", pw - 1.4 * inch, 26, 15)
+    c.setFont("Helvetica-Bold", hs)
+    c.drawCentredString(cx, y, head)
+    y -= 0.42 * inch
+    c.setFillGray(0.35)
+    c.setFont("Helvetica-Oblique", 12)
+    c.drawCentredString(cx, y, "Athlete & timing instructions")
+    y -= 0.5 * inch
+    c.setFillGray(0)
+    # Numbered, wrapped instructions
+    left = 0.95 * inch
+    numw = 0.34 * inch
+    maxw = pw - left - 0.95 * inch - numw
+    for i, text in enumerate(_COVER_INSTRUCTIONS, 1):
+        c.setFont("Helvetica-Bold", 13)
+        c.drawString(left, y, f"{i}.")
+        c.setFont("Helvetica", 13)
+        for ln in _wrap(text, "Helvetica", 13, maxw):
+            c.drawString(left + numw, y, ln)
+            y -= 0.245 * inch
+        y -= 0.1 * inch
+    y -= 0.2 * inch
+    # Results + QR, centered
+    c.setFillColorRGB(*NAVY)
+    c.setFont("Helvetica-Bold", 15)
+    c.drawCentredString(cx, y, "Results can be found here")
+    c.setFillGray(0)
+    y -= 0.25 * inch
+    if qr_img:
+        qs = 1.7 * inch
+        c.drawImage(qr_img, cx - qs / 2, y - qs, qs, qs)
+        y -= qs + 0.02 * inch
+        if url:
+            c.setFont("Helvetica", 9)
+            c.setFillGray(0.45)
+            c.drawCentredString(cx, y, url)
+            c.setFillGray(0)
+    c.showPage()
+
+
 def per_page(template):
     t = TEMPLATES.get(template, TEMPLATES["5160"])
     return t["cols"] * t["rows"]
@@ -468,11 +561,17 @@ def meet_stickers_pdf(groups, *, template="5160", qr_prefix=""):
     return buf.read()
 
 
-def meet_biblist_pdf(title, groups):
-    """Meet-wide bib list: one titled section per school."""
+def meet_biblist_pdf(title, groups, cover=None):
+    """Meet-wide bib list: optional welcome/instructions/QR cover page, then one
+    titled section per school. `cover` = {meet_name, logo_path, results_url}."""
     buf = io.BytesIO()
     c = pdfcanvas.Canvas(buf, pagesize=letter)
     pw, ph = letter
+    if cover:
+        url = cover.get("results_url")
+        _draw_cover(c, pw, ph, cover.get("meet_name") or "",
+                    _logo_reader(cover.get("logo_path")),
+                    _qr_image(url) if url else None, url)
     left = 0.75 * inch
     y = ph - 0.9 * inch
     c.setFont("Helvetica-Bold", 16)
