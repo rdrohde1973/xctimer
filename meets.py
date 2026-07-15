@@ -655,7 +655,8 @@ def meet_biblist(mid):
                           (m["host_school_id"],)).fetchone()
         conn.close()
         logo_path = hs["logo_path"] if hs else None
-    cover = {"meet_name": m["name"], "logo_path": logo_path, "results_url": results_url}
+    cover = {"meet_name": m["name"], "logo_path": logo_path, "results_url": results_url,
+             "sport": m["sport"]}
     pdf = pdfs.meet_biblist_pdf(f'{m["name"]} — bib lists', groups, cover=cover)
     return Response(pdf, mimetype="application/pdf",
                     headers={"Content-Disposition": 'inline; filename="meet-biblist.pdf"'})

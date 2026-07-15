@@ -44,8 +44,9 @@ def _qr_image(text):
     return ImageReader(buf)
 
 
-# Athlete/timing instructions shown on the meet-day bib-list cover page.
-_COVER_INSTRUCTIONS = [
+# Athlete/timing instructions on the meet-day bib-list cover — sport-specific.
+# Cross country: one race, finish chute, scan in, hand back the sticker.
+_COVER_INSTRUCTIONS_XC = [
     "Place your sticker on the front of your jersey, centered on your chest.",
     "Need a blank sticker? Check in at the timing tent before your race begins.",
     "If you lose your sticker during the race, remember your bib number so you can "
@@ -53,6 +54,14 @@ _COVER_INSTRUCTIONS = [
     "When you cross the finish line, stay in a single-file line and walk to the timing "
     "tent in the exact order you finished.",
     "Once you have been scanned in, remove your sticker and hand it to the timing crew.",
+]
+# Track: multiple events across the day — keep the sticker on the whole time.
+_COVER_INSTRUCTIONS_TRACK = [
+    "Place your sticker on the front of your jersey, centered on your chest.",
+    "Need a blank sticker? Check in at the timing tent before your first event.",
+    "Keep your sticker on all day — you compete in multiple events and will be scanned "
+    "at each one.",
+    "If you lose your sticker, remember your bib number so you can give it to the timer.",
 ]
 
 
@@ -79,7 +88,7 @@ def _fit_size(text, font, max_w, start, floor):
     return s
 
 
-def _draw_cover(c, pw, ph, meet_name, logo, qr_img, url):
+def _draw_cover(c, pw, ph, meet_name, logo, qr_img, url, instructions):
     """Welcome / instructions / results-QR cover page for the meet-day bib list."""
     cx = pw / 2.0
     y = ph - 0.7 * inch
@@ -110,7 +119,7 @@ def _draw_cover(c, pw, ph, meet_name, logo, qr_img, url):
     left = 0.95 * inch
     numw = 0.34 * inch
     maxw = pw - left - 0.95 * inch - numw
-    for i, text in enumerate(_COVER_INSTRUCTIONS, 1):
+    for i, text in enumerate(instructions, 1):
         c.setFont("Helvetica-Bold", 13)
         c.drawString(left, y, f"{i}.")
         c.setFont("Helvetica", 13)
@@ -569,9 +578,11 @@ def meet_biblist_pdf(title, groups, cover=None):
     pw, ph = letter
     if cover:
         url = cover.get("results_url")
+        insts = (_COVER_INSTRUCTIONS_TRACK if cover.get("sport") == "track"
+                 else _COVER_INSTRUCTIONS_XC)
         _draw_cover(c, pw, ph, cover.get("meet_name") or "",
                     _logo_reader(cover.get("logo_path")),
-                    _qr_image(url) if url else None, url)
+                    _qr_image(url) if url else None, url, insts)
     left = 0.75 * inch
     y = ph - 0.9 * inch
     c.setFont("Helvetica-Bold", 16)
