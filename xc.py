@@ -159,7 +159,7 @@ def setup_section(m, setup):
 
 def _road_setup_section(m, setup, races, counts, _json, rename_js):
     """Road setup: meet-wide default age groups + per-event list with per-event
-    age-group override and an inline athlete-assignment checklist."""
+    age-group override. Athlete→event assignment lives on the dedicated Assign tab."""
     try:
         s = _json.loads(m["settings_json"] or "{}")
     except (ValueError, TypeError):
@@ -167,20 +167,11 @@ def _road_setup_section(m, setup, races, counts, _json, rename_js):
     default_brackets = s.get("age_brackets") or []
     default_text = s.get("age_brackets_text") or _brackets_to_text(default_brackets)
 
-    # Roster eligible for assignment: 🛣 Road athletes in the meet's schools.
     conn = db.connect()
-    roster = conn.execute(
-        "SELECT a.id, a.name, a.bib, a.age FROM athletes a "
-        "JOIN schools sc ON sc.id=a.school_id "
-        "JOIN meet_schools ms ON ms.school_id=a.school_id "
-        "WHERE ms.meet_id=? AND a.active=1 AND a.does_road=1 "
-        "ORDER BY a.name", (m["id"],)).fetchall()
-    ent = conn.execute("SELECT race_id, athlete_id FROM race_entries WHERE meet_id=?",
-                       (m["id"],)).fetchall()
+    ent = conn.execute("SELECT race_id, COUNT(*) AS n FROM race_entries WHERE meet_id=? "
+                       "GROUP BY race_id", (m["id"],)).fetchall()
     conn.close()
-    assigned_by_race = {}
-    for e in ent:
-        assigned_by_race.setdefault(e["race_id"], set()).add(e["athlete_id"])
+    assigned_count = {e["race_id"]: e["n"] for e in ent}
 
     # --- meet-wide default age groups ---
     dflt_editor = ""
@@ -213,10 +204,9 @@ def _road_setup_section(m, setup, races, counts, _json, rename_js):
             groups_line = ('<span class="muted">Uses default: </span>'
                            + (str(_bracket_chips(default_brackets)) if default_brackets
                               else '<span class="muted">none set</span>'))
-        aset = assigned_by_race.get(r["id"], set())
+        nassigned = assigned_count.get(r["id"], 0)
         act = f'<a class="btn" href="/races/{r["id"]}/console">⏱ Time</a>'
         override = ""
-        assign = ""
         if setup:
             nm = _json.dumps(r["name"])
             act += (
@@ -232,37 +222,16 @@ def _road_setup_section(m, setup, races, counts, _json, rename_js):
                 f'placeholder="Leave blank to use the meet default">{escape(_brackets_to_text(own))}</textarea>'
                 f'<button type="submit">Save</button> '
                 f'<span class="muted">Blank = use the default above.</span></form></details>')
-            if roster:
-                items = []
-                for a in roster:
-                    chk = "checked" if a["id"] in aset else ""
-                    bib = f'#{a["bib"]}' if a["bib"] is not None else ""
-                    agei = f' · age {a["age"]}' if a["age"] is not None else ""
-                    items.append(
-                        f'<label style="display:flex;gap:.5rem;align-items:center;padding:.18rem 0">'
-                        f'<input type="checkbox" class="raC" data-aid="{a["id"]}" {chk} style="width:auto" '
-                        f'onchange="assignAth({r["id"]},{a["id"]},this)"> '
-                        f'<span>{escape(a["name"])} '
-                        f'<span class="muted">{bib}{agei}</span></span></label>')
-                roster_list = "".join(items)
-            else:
-                roster_list = ('<p class="muted" style="margin:.3rem 0">No road athletes yet — mark '
-                               'athletes as 🛣 Road on their school roster first.</p>')
-            assign = (
-                f'<details style="margin-top:.4rem"><summary class="muted" style="cursor:pointer">'
-                f'Assign athletes (<span class="acnt" data-rid="{r["id"]}">{len(aset)}</span>)</summary>'
-                f'<p class="muted" style="margin:.3rem 0">Each runner does one event — checking here '
-                f'moves them off any other event.</p>'
-                f'<div style="max-height:260px;overflow:auto;border:1px solid var(--line);'
-                f'border-radius:10px;padding:.4rem .7rem">{roster_list}</div></details>')
         ev_blocks.append(
             f'<div class="card" style="padding:.8rem 1rem">'
             f'<div style="display:flex;justify-content:space-between;align-items:center;gap:.6rem;flex-wrap:wrap">'
             f'<div><b>{escape(r["name"])}</b> <span class="muted">· {r["capture_mode"]} · {status} · '
-            f'{len(aset)} assigned · {counts.get(r["id"], 0)} finishers</span></div>'
+            f'{nassigned} assigned · {counts.get(r["id"], 0)} finishers</span></div>'
             f'<div style="text-align:right">{act}</div></div>'
-            f'<div style="margin-top:.3rem">{groups_line}</div>{override}{assign}</div>')
+            f'<div style="margin-top:.3rem">{groups_line}</div>{override}</div>')
     events_html = "".join(ev_blocks) or '<p class="muted">No events yet — add one below.</p>'
+    assign_link = (f'<p style="margin:.2rem 0 0"><a class="btn ghost" href="/meets/{m["id"]}/road-assign">'
+                   f'🧭 Assign athletes to events →</a></p>' if (setup and races) else '')
 
     add = ""
     if setup:
@@ -273,21 +242,7 @@ def _road_setup_section(m, setup, races, counts, _json, rename_js):
             f'<div style="max-width:200px"><select name="capture_mode">{opts}</select></div>'
             f'<div style="display:flex;align-items:flex-end"><button type="submit">+ Add event</button></div>'
             f'</form>')
-    assign_js = (
-        '<script>'
-        'async function assignAth(rid, aid, el){'
-        '  const on=el.checked;'
-        '  try{ await jpost("/races/"+rid+"/assign", {athlete_id:aid, on:on}); }'
-        '  catch(e){ alert(e.message); el.checked=!on; return; }'
-        '  if(on){ document.querySelectorAll(".raC[data-aid=\\""+aid+"\\"]").forEach(function(c){'
-        '    if(c!==el && c.checked){ c.checked=false; bumpCnt(c); } }); }'
-        '  bumpCnt(el);'
-        '}'
-        'function bumpCnt(cb){ var det=cb.closest("details"); if(!det) return;'
-        '  var span=det.querySelector(".acnt");'
-        '  if(span) span.textContent=det.querySelectorAll(".raC:checked").length; }'
-        '</script>')
-    events_card = f'<div class="card"><h2>Events</h2>{events_html}{add}{rename_js}{assign_js}</div>'
+    events_card = f'<div class="card"><h2>Events</h2>{events_html}{assign_link}{add}{rename_js}</div>'
     return default_card + events_card
 
 
@@ -369,6 +324,157 @@ def save_event_brackets(rid):
     return redirect(f"/meets/{m['id']}")
 
 
+def _norm_event(s):
+    import re
+    return re.sub(r"\s+", "", (s or "").strip().lower())
+
+
+def _match_event(label, races):
+    """Loosely match a roster event label to one of the meet's races.
+    Exact (normalized) first; else a substring match either direction. race_id or None."""
+    n = _norm_event(label)
+    if not n:
+        return None
+    norms = [(r["id"], _norm_event(r["name"])) for r in races]
+    for rid, rn in norms:                       # exact normalized
+        if rn == n:
+            return rid
+    for rid, rn in norms:                        # roster label inside event name ("5k" in "5krun")
+        if rn and n in rn:
+            return rid
+    for rid, rn in norms:                        # event name inside roster label
+        if rn and rn in n:
+            return rid
+    return None
+
+
+@bp.get("/meets/<int:mid>/road-assign")
+@login_required
+def road_assign(mid):
+    m = load_meet(mid)
+    if not can_view_meet(m) or m["sport"] != "road":
+        abort(403)
+    editable = can_setup_meet(m)
+    conn = db.connect()
+    races = conn.execute("SELECT * FROM races WHERE meet_id=? ORDER BY id", (mid,)).fetchall()
+    roster = conn.execute(
+        "SELECT a.id, a.name, a.bib, a.age, a.road_event FROM athletes a "
+        "JOIN meet_schools ms ON ms.school_id=a.school_id "
+        "WHERE ms.meet_id=? AND a.active=1 AND a.does_road=1 ORDER BY a.name", (mid,)).fetchall()
+    ent = {e["athlete_id"]: e["race_id"]
+           for e in conn.execute("SELECT athlete_id, race_id FROM race_entries WHERE meet_id=?",
+                                 (mid,)).fetchall()}
+    conn.close()
+
+    ev_opts = "".join(f'<option value="{r["id"]}">{escape(r["name"])}</option>' for r in races)
+    by_event = {r["id"]: [] for r in races}
+    unassigned = []
+    for a in roster:
+        rid = ent.get(a["id"])
+        if rid in by_event:
+            by_event[rid].append(a)
+        else:
+            unassigned.append(a)
+
+    def arow(a, assigned_rid=None):
+        bib = f'#{a["bib"]}' if a["bib"] is not None else '<span class="muted">no bib</span>'
+        age = f'age {a["age"]}' if a["age"] is not None else '<span class="muted">no age</span>'
+        rlab = (f' <span class="muted">· roster: {escape(a["road_event"])}</span>'
+                if a["road_event"] else "")
+        if not editable:
+            return f'<div class="arow"><span>{escape(a["name"])}</span><span class="muted">{bib} · {age}</span></div>'
+        if assigned_rid is not None:
+            btn = (f'<button class="ghost" onclick="unassign({assigned_rid},{a["id"]})">✕ remove</button>')
+        else:
+            sel = (f'<select onchange="assignTo(this.value,{a["id"]})">'
+                   f'<option value="">— assign to —</option>{ev_opts}</select>')
+            btn = sel
+        return (f'<div class="arow" data-name="{escape((a["name"] or "").lower())}">'
+                f'<span><b>{escape(a["name"])}</b> <span class="muted">{bib} · {age}{rlab}</span></span>'
+                f'<span>{btn}</span></div>')
+
+    ev_cards = []
+    for r in races:
+        rows = "".join(arow(a, r["id"]) for a in by_event.get(r["id"], []))
+        ev_cards.append(
+            f'<div class="card"><h3 style="margin:.1rem 0 .5rem">{escape(r["name"])} '
+            f'<span class="muted">— {len(by_event.get(r["id"], []))} assigned</span></h3>'
+            f'{rows or "<p class=muted>None yet.</p>"}</div>')
+    un_rows = "".join(arow(a) for a in unassigned)
+    un_card = (
+        f'<div class="card"><h3 style="margin:.1rem 0 .5rem">Unassigned '
+        f'<span class="muted">— {len(unassigned)}</span></h3>'
+        f'<input id="asearch" placeholder="Search name…" oninput="filt()" '
+        f'style="width:100%;margin-bottom:.5rem" {"" if editable else "disabled"}>'
+        f'<div id="unlist">{un_rows or "<p class=muted>Everyone is assigned. 🎉</p>"}</div></div>')
+
+    auto = ""
+    if editable and races:
+        auto = (f'<form method="post" action="/meets/{mid}/road-assign/auto" style="margin:.2rem 0 1rem">'
+                f'<button type="submit">⚡ Auto-assign from roster</button> '
+                f'<span class="muted">Fills unassigned runners by matching their roster event '
+                f'to an event here (loose match).</span></form>')
+    msg = request.args.get("msg", "")
+    msg_html = f'<div class="card" style="border-color:var(--ok)">{escape(msg)}</div>' if msg else ""
+
+    body = (
+        f'<p class="muted"><a href="/meets">← Meets</a></p><h1>{escape(m["name"])} — Assign</h1>'
+        f'{_xc_tabs(mid, "assign", road=True)}'
+        f'<style>.arow{{display:flex;justify-content:space-between;align-items:center;gap:.6rem;'
+        f'padding:.35rem .2rem;border-bottom:1px solid var(--line);flex-wrap:wrap}}'
+        f'.arow:last-child{{border-bottom:0}}.arow select,.arow button{{font-size:.9rem}}</style>'
+        f'{msg_html}{auto}'
+        f'<p class="muted">Each runner does exactly one event — assigning moves them off any other.</p>'
+        f'{"".join(ev_cards)}{un_card}'
+        '<script>'
+        'async function assignTo(rid, aid){ if(!rid) return;'
+        '  try{ await jpost("/races/"+rid+"/assign", {athlete_id:aid, on:true}); location.reload(); }'
+        '  catch(e){ alert(e.message); } }'
+        'async function unassign(rid, aid){'
+        '  try{ await jpost("/races/"+rid+"/assign", {athlete_id:aid, on:false}); location.reload(); }'
+        '  catch(e){ alert(e.message); } }'
+        'function filt(){ var q=document.getElementById("asearch").value.toLowerCase();'
+        '  document.querySelectorAll("#unlist .arow").forEach(function(r){'
+        '    r.style.display=(!q || (r.getAttribute("data-name")||"").indexOf(q)>=0)?"":"none"; }); }'
+        '</script>')
+    return shell(g.principal, body, active="meets")
+
+
+@bp.post("/meets/<int:mid>/road-assign/auto")
+@login_required
+def road_assign_auto(mid):
+    m = load_meet(mid)
+    if not can_setup_meet(m) or m["sport"] != "road":
+        abort(403)
+    conn = db.connect()
+    races = conn.execute("SELECT * FROM races WHERE meet_id=? ORDER BY id", (mid,)).fetchall()
+    already = {e["athlete_id"] for e in
+               conn.execute("SELECT athlete_id FROM race_entries WHERE meet_id=?", (mid,)).fetchall()}
+    roster = conn.execute(
+        "SELECT a.id, a.road_event FROM athletes a "
+        "JOIN meet_schools ms ON ms.school_id=a.school_id "
+        "WHERE ms.meet_id=? AND a.active=1 AND a.does_road=1", (mid,)).fetchall()
+    assigned, unmatched = 0, 0
+    for a in roster:
+        if a["id"] in already:
+            continue  # never override a manual assignment
+        if not a["road_event"]:
+            continue
+        rid = _match_event(a["road_event"], races)
+        if rid is None:
+            unmatched += 1
+            continue
+        conn.execute("INSERT OR IGNORE INTO race_entries (meet_id, race_id, athlete_id) VALUES (?,?,?)",
+                     (mid, rid, a["id"]))
+        assigned += 1
+    conn.commit()
+    conn.close()
+    msg = f"Auto-assigned {assigned} runner(s)."
+    if unmatched:
+        msg += f" {unmatched} had a roster event with no matching event here."
+    return redirect(f"/meets/{mid}/road-assign?msg={msg.replace(' ', '+')}")
+
+
 # ------------------------------- races -------------------------------
 @bp.post("/meets/<int:mid>/races")
 @login_required
@@ -417,16 +523,18 @@ def delete_race(rid):
 
 
 # ------------------------------- meet-day tabs -------------------------------
-def _xc_tabs(mid, active):
-    """Tab bar for XC meets (parallels track's). XC has no per-event assignment,
-    so: Setup (config) · Meet day (run the heats + print) · Results."""
+def _xc_tabs(mid, active, road=False):
+    """Tab bar for XC/road meets (parallels track's). XC: Setup · Meet day · Results.
+    Road adds an Assign tab (athletes are assigned to events, like track)."""
     def tab(href, label, key):
         on = "background:var(--panel2);color:var(--fg)" if active == key else "color:var(--mut)"
         return (f'<a href="{href}" style="padding:.4rem .9rem;border-radius:8px;'
                 f'text-decoration:none;{on}">{label}</a>')
+    assign_tab = tab(f"/meets/{mid}/road-assign", "🧭 Assign", "assign") if road else ""
     return ('<div style="display:flex;gap:.3rem;margin:.4rem 0 1rem;border-bottom:1px solid var(--line);'
             'padding-bottom:.5rem;flex-wrap:wrap">'
             + tab(f"/meets/{mid}", "⚙️ Setup", "setup")
+            + assign_tab
             + tab(f"/meets/{mid}/xc-day", "🏁 Meet day", "meetday")
             + tab(f"/meets/{mid}/results", "📊 Results", "results")
             + '</div>')
@@ -462,7 +570,7 @@ def xc_meet_day(mid):
         f'<a class="btn ghost" href="/meets/{mid}/stickers.pdf?template=5163">Stickers 5163</a> '
         f'<a class="btn ghost" href="/meets/{mid}/biblist.pdf">Bib lists</a></div>')
     body = (f'<p class="muted"><a href="/meets">← Meets</a></p><h1>{escape(m["name"])}</h1>'
-            f'{_xc_tabs(mid, "meetday")}{tbl}{print_bar}')
+            f'{_xc_tabs(mid, "meetday", road=(m["sport"]=="road"))}{tbl}{print_bar}')
     return shell(g.principal, body, active="meets")
 
 
@@ -1171,7 +1279,7 @@ def results_page(mid):
                f'or a flyer.</span><br><a href="{url}" target="_blank">{escape(url)}</a></div></div>')
     body = (f'<p class="muted"><a href="/meets/{mid}">← {escape(m["name"])}</a></p>'
             f'<h1>{escape(m["name"])} — Results</h1>'
-            f'{_xc_tabs(mid, "results")}'
+            f'{_xc_tabs(mid, "results", road=(m["sport"]=="road"))}'
             f'<div class="row"><a class="btn ghost" href="/r/{m["public_token"]}" target="_blank">'
             f'Public page ↗</a> <a class="btn ghost" href="/meets/{mid}/results.xlsx">Export xlsx</a></div>'
             f'{qr_card}{inner}')

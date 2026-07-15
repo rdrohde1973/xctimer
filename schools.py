@@ -428,10 +428,12 @@ async function openEdit(aid){{
   catch(e){{ b.innerHTML='<p class="msg err">Could not load.</p>'; }}
 }}
 async function saveCore(aid){{
+  const re=document.getElementById('e_road_event');
   const f={{name:document.getElementById('e_name').value,
            grade:document.getElementById('e_grade').value,
            age:document.getElementById('e_age').value,
-           gender:document.getElementById('e_gender').value}};
+           gender:document.getElementById('e_gender').value,
+           road_event: re?re.value:undefined}};
   if(!f.name.trim()){{ alert('Name is required.'); return; }}
   try{{ await jpost('/athletes/'+aid+'/edit', f); location.reload(); }}
   catch(e){{ alert(e.message); }}
@@ -461,6 +463,8 @@ async function tog(aid, sport, el){
     road_add_cb = ('<label style="display:flex;gap:.4rem;align-items:center">'
                    '<input type="checkbox" name="does_road" value="1" checked style="width:auto"> '
                    '🛣 Road</label>') if road_on else ""
+    road_event_field = ('<div style="max-width:150px"><label>Event</label>'
+                        '<input name="road_event" placeholder="e.g. 5K"></div>') if road_on else ""
     age_hint = "age (road)" if road_on else ""
     if not ro:
         body += f"""
@@ -474,6 +478,7 @@ async function tog(aid, sport, el){
     <div style="max-width:100px"><label>Age</label><input name="age" type="number" min="0" placeholder="{age_hint}"></div>
     <div style="max-width:110px"><label>Sex</label>
       <select name="gender"><option value="">—</option><option>M</option><option>F</option></select></div>
+    {road_event_field}
   </div>
   <div style="display:flex;gap:1.2rem;margin-top:.7rem">
     <label style="display:flex;gap:.4rem;align-items:center"><input type="checkbox" name="does_xc"
@@ -612,13 +617,13 @@ history. This can't be undone, so export anything you want to keep first.</p>
                  active_district=active_district_id(), districts=_districts_for_switcher())
 
 
-_TEMPLATE_COLS = ["Name", "Grade", "Gender", "Cross Country", "Track", "Date of Birth",
-                  "Athlete Email", "Athlete Phone", "Parent/Guardian Name", "Parent Email",
-                  "Parent Phone", "Emergency Contact", "Emergency Phone"]
+_TEMPLATE_COLS = ["Name", "Grade", "Age", "Gender", "Cross Country", "Track", "Event",
+                  "Date of Birth", "Athlete Email", "Athlete Phone", "Parent/Guardian Name",
+                  "Parent Email", "Parent Phone", "Emergency Contact", "Emergency Phone"]
 _TEMPLATE_SAMPLES = [
-    ["Alex Rivers", 7, "M", "Yes", "Yes", "2013-04-18", "", "", "Jordan Rivers",
+    ["Alex Rivers", 7, 13, "M", "Yes", "Yes", "5K", "2013-04-18", "", "", "Jordan Rivers",
      "jordan.rivers@example.com", "555-0142", "Jordan Rivers", "555-0142"],
-    ["Sam Brooks", 8, "F", "No", "Yes", "2012-09-05", "sam.brooks@example.com", "",
+    ["Sam Brooks", 8, 12, "F", "No", "Yes", "10K", "2012-09-05", "sam.brooks@example.com", "",
      "Taylor Brooks", "taylor.brooks@example.com", "555-0199", "Casey Brooks", "555-0177"],
 ]
 
@@ -690,7 +695,8 @@ def add_athlete(sid):
     bib_raw = (request.form.get("bib") or "").strip()
     dx = 1 if request.form.get("does_xc") else 0
     dt = 1 if request.form.get("does_track") else 0
-    dr = 1 if request.form.get("does_road") else 0
+    road_event = (request.form.get("road_event") or "").strip() or None
+    dr = 1 if (request.form.get("does_road") or road_event) else 0
     conn = db.connect()
     bib = int(bib_raw) if bib_raw.isdigit() else _next_bib(conn, s)
     # Manual bib must be unique across the district (stickers/scans key on it).
@@ -702,9 +708,9 @@ def add_athlete(sid):
         return redirect(f"/schools/{sid}?err=Bib+{bib}+is+already+assigned+to+"
                         f"{dup['name'].replace(' ', '+')}+({dup['sname'].replace(' ', '+')})")
     conn.execute(
-        "INSERT INTO athletes (school_id, bib, name, grade, age, gender, does_xc, does_track, does_road) "
-        "VALUES (?,?,?,?,?,?,?,?,?)",
-        (sid, bib, name, grade, age, gender, dx, dt, dr),
+        "INSERT INTO athletes (school_id, bib, name, grade, age, gender, does_xc, does_track, does_road, road_event) "
+        "VALUES (?,?,?,?,?,?,?,?,?,?)",
+        (sid, bib, name, grade, age, gender, dx, dt, dr, road_event),
     )
     conn.commit()
     conn.close()
@@ -929,6 +935,12 @@ def athlete_editcard(aid):
     grade = "" if a["grade"] is None else a["grade"]
     agev = "" if a["age"] is None else a["age"]
     gsel = lambda v: "selected" if (a["gender"] or "") == v else ""
+    road_on = _road_enabled(s["district_id"])
+    rev = escape(a["road_event"]) if ("road_event" in a.keys() and a["road_event"]) else ""
+    road_ev_row = (f'<div class="row" style="margin-top:.4rem"><div style="max-width:200px">'
+                   f'<label>🛣 Road event</label>'
+                   f'<input id="e_road_event" value="{rev}" placeholder="e.g. 5K"></div></div>'
+                   ) if road_on else ""
     return f"""
 <h2 style="margin:.1em 0 1rem">Edit athlete</h2>
 <label>Name</label>
@@ -945,6 +957,7 @@ def athlete_editcard(aid):
       <option value="F" {gsel("F")}>F</option>
     </select></div>
 </div>
+{road_ev_row}
 <div style="margin-top:1rem;display:flex;gap:.5rem">
   <button onclick="saveCore({aid})">Save</button>
   <button class="ghost" onclick="closeCard()">Cancel</button>
@@ -977,14 +990,18 @@ def athlete_edit(aid):
     conn = db.connect()
     conn.execute("UPDATE athletes SET name=?, grade=?, age=?, gender=? WHERE id=?",
                  (name, grade, age, gender, aid))
+    if "road_event" in d:   # only touch when the (road-only) field was on the form
+        road_event = (str(d.get("road_event") or "").strip() or None)
+        conn.execute("UPDATE athletes SET road_event=?, does_road=CASE WHEN ? IS NULL "
+                     "THEN does_road ELSE 1 END WHERE id=?", (road_event, road_event, aid))
     # Resync recorded snapshots so a post-race typo fix reaches results/exports:
-    # track results link by entries.runner_id; XC finishers match bib + school.
+    # track results link by entries.runner_id; XC/road finishers match bib + school.
     conn.execute("UPDATE results SET snap_name=? WHERE entry_id IN "
                  "(SELECT id FROM entries WHERE runner_id=?)", (name, aid))
     if a["bib"] is not None:
         conn.execute(
-            "UPDATE finishers SET snap_name=?, snap_grade=?, snap_gender=? "
-            "WHERE bib=? AND snap_school=?", (name, grade, gender, a["bib"], s["name"]))
+            "UPDATE finishers SET snap_name=?, snap_grade=?, snap_gender=?, snap_age=? "
+            "WHERE bib=? AND snap_school=?", (name, grade, gender, age, a["bib"], s["name"]))
     conn.commit()
     conn.close()
     return jsonify(ok=True)
@@ -1077,12 +1094,13 @@ def import_commit(sid):
             dx = dt = 1
         else:
             dx, dt = (1 if dx else 0), (1 if dt else 0)
-        dr = 1 if r.get("does_road") else 0
+        road_event = (str(r.get("event") or r.get("road_event") or "").strip() or None)
+        dr = 1 if (r.get("does_road") or road_event) else 0  # having an event implies road
         conn.execute(
             "INSERT INTO athletes (school_id, bib, name, grade, age, gender, does_xc, does_track, does_road, "
-            "dob, email, phone, parent_name, parent_email, parent_phone, emergency_name, emergency_phone) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            (sid, bib, name, grade, age, gender, dx, dt, dr, cf["dob"], cf["email"], cf["phone"],
+            "road_event, dob, email, phone, parent_name, parent_email, parent_phone, emergency_name, emergency_phone) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (sid, bib, name, grade, age, gender, dx, dt, dr, road_event, cf["dob"], cf["email"], cf["phone"],
              cf["parent_name"], cf["parent_email"], cf["parent_phone"], cf["emergency_name"],
              cf["emergency_phone"]),
         )

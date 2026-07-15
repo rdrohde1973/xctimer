@@ -302,8 +302,10 @@ def _docx_text(data):
 _ROSTER_SYS = (
     "You extract a cross-country / track team roster from messy text (spreadsheet "
     "dumps, PDFs, exports). Return ONLY a JSON array, no prose. Each element: "
-    '{"name": "First Last", "grade": <int 6-12 or null>, "gender": "M"|"F"|null, '
+    '{"name": "First Last", "grade": <int 6-12 or null>, "age": <int or null>, '
+    '"gender": "M"|"F"|null, '
     '"does_xc": true|false|null, "does_track": true|false|null, '
+    '"event": <road-race event label like "5K"/"10K" from an Event/Distance/Race column, or null>, '
     '"dob": <date of birth as written, or null>, '
     '"email": <string or null>, "phone": <string or null>, '
     '"parent_name": <string or null>, "parent_email": <string or null>, '
@@ -367,11 +369,18 @@ def _parse_json_array(s):
             grade = int(grade) if grade not in (None, "") else None
         except (TypeError, ValueError):
             grade = None
+        age = r.get("age")
+        try:
+            age = int(age) if age not in (None, "") else None
+        except (TypeError, ValueError):
+            age = None
         gender = r.get("gender")
         gender = gender.upper()[0] if isinstance(gender, str) and gender else None
         if gender not in ("M", "F"):
             gender = None
-        row = {"name": name, "grade": grade, "gender": gender}
+        event = r.get("event")
+        event = str(event).strip() if isinstance(event, (str, int)) and str(event).strip() else None
+        row = {"name": name, "grade": grade, "age": age, "gender": gender, "event": event}
         for k in _CONTACT_FIELDS:
             v = r.get(k)
             row[k] = str(v).strip() if isinstance(v, (str, int)) and str(v).strip() else None

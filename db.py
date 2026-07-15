@@ -336,6 +336,8 @@ def migrate(conn):
         conn.execute("ALTER TABLE athletes ADD COLUMN age INTEGER")
     if "does_road" not in acols:   # road: opt-in per athlete (only shown in road-enabled districts)
         conn.execute("ALTER TABLE athletes ADD COLUMN does_road INTEGER DEFAULT 0")
+    if "road_event" not in acols:  # road: roster-designated event label (e.g. "5K"), auto-assigned
+        conn.execute("ALTER TABLE athletes ADD COLUMN road_event TEXT")
     # Contact / parent / emergency / physical fields (importable from the roster file).
     for col in ("email", "phone", "parent_name", "parent_email", "parent_phone",
                 "emergency_name", "emergency_phone", "physical_date", "dob"):
