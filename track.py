@@ -711,14 +711,20 @@ def assign_page(mid):
   <a class="btn ghost" href="/meets/{mid}/school/{sid}/stickers.pdf?template=5160">Stickers 5160</a>
   <a class="btn ghost" href="/meets/{mid}/school/{sid}/stickers.pdf?template=5163">Stickers 5163</a>
   <a class="btn ghost" href="/meets/{mid}/school/{sid}/biblist.pdf">Bib list + events</a></div>
-<form method="post" action="/meets/{mid}/assign?school={sid}">
-  <div class="card"><h2>{escape(school['name'])} — assign athletes</h2>{filter_bar}{ath_tbl}</div>
-  {relay_block}
-  <button type="submit">💾 Save entries</button>
-</form>
-<form method="post" action="/meets/{mid}/carryover?school={sid}" style="margin-top:.6rem">
-  <button class="ghost" type="submit" onclick="return confirm('Carry each athlete\\'s events forward from their last meet?')">↩ Carry over last meet</button>
-</form>"""
+<div class="card">
+  <div class="row" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.5rem">
+    <h2 style="margin:0">{escape(school['name'])} — assign athletes</h2>
+    <form method="post" action="/meets/{mid}/carryover?school={sid}" style="margin:0">
+      <button class="ghost" type="submit" onclick="return confirm('Carry each athlete\\'s events forward from their last meet?')">↩ Carry over last meet</button>
+    </form>
+  </div>
+  {filter_bar}
+  <form method="post" action="/meets/{mid}/assign?school={sid}">
+    {ath_tbl}
+    {relay_block}
+    <button type="submit">💾 Save entries</button>
+  </form>
+</div>"""
     body += f"""
 <script>
 const LIMIT={limit};
