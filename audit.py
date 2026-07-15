@@ -53,7 +53,12 @@ def _ip():
 
 
 def record_request(status):
-    """after_request hook: write one audit row for an auditable request. Never raises."""
+    """after_request hook: write one audit row for an auditable request. Never raises,
+    and ALWAYS closes its connection (a leaked write-locked connection was cascading into
+    site-wide 'database is locked' 500s). Set XC_AUDIT_DISABLE=1 to turn auditing off."""
+    if os.environ.get("XC_AUDIT_DISABLE"):
+        return
+    conn = None
     try:
         path = request.path or "-"
         method = request.method
@@ -84,18 +89,31 @@ def record_request(status):
             (datetime.now(timezone.utc).isoformat(), actor_id, actor_email, actor_role,
              district_id, _action(method, path), method, path, status, _ip(), detail))
         conn.commit()
-        conn.close()
     except Exception:      # noqa: BLE001 — auditing must never break the request
         pass
+    finally:
+        if conn is not None:
+            try:
+                conn.close()          # ALWAYS release the connection/lock
+            except Exception:
+                pass
 
 
 def prune():
     """Delete audit rows past the retention window. Called on Console load."""
+    if os.environ.get("XC_AUDIT_DISABLE"):
+        return
+    conn = None
     try:
         cutoff = (datetime.now(timezone.utc) - timedelta(days=RETAIN_DAYS)).isoformat()
         conn = db.connect()
         conn.execute("DELETE FROM audit_log WHERE ts < ?", (cutoff,))
         conn.commit()
-        conn.close()
     except Exception:      # noqa: BLE001
         pass
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass

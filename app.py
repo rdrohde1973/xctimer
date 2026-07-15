@@ -24,7 +24,7 @@ from .insights import bp as insights_bp
 from .phone import bp as phone_bp
 from .waivers import bp as waivers_bp
 
-APP_VERSION = "0.62.3-db-lock-fix"
+APP_VERSION = "0.62.4-audit-killswitch"
 
 LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width, initial-scale=1">
