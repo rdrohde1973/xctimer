@@ -137,6 +137,13 @@ def list_districts():
         mask_btn = (f'<form class="inline" method="post" action="/districts/{d["id"]}/mask">'
                     f'<button class="{"btn" if masked else "ghost"}" type="submit">'
                     f'{"Masked" if masked else "Full names"}</button></form>')
+        try:
+            road_on = bool(json.loads(d["settings_json"] or "{}").get("road_enabled"))
+        except (ValueError, TypeError):
+            road_on = False
+        road_btn = (f'<form class="inline" method="post" action="/districts/{d["id"]}/road">'
+                    f'<button class="{"btn" if road_on else "ghost"}" type="submit">'
+                    f'{"🛣 On" if road_on else "Off"}</button></form>')
         thumb = (f'<img src="{escape(d["logo_path"])}" style="height:26px;background:#fff;'
                  f'border-radius:5px;padding:2px;vertical-align:middle;margin-right:.4rem"> '
                  if d["logo_path"] else '')
@@ -149,13 +156,15 @@ def list_districts():
             f'<td>{logo_cell}</td>'
             f'<td>{sc} schools</td><td>{us} users</td>'
             f'<td>{mask_btn}</td>'
+            f'<td>{road_btn}</td>'
             f'<td style="text-align:right">'
             f'<form class="inline" method="post" action="/districts/{d["id"]}/delete" '
             f'onsubmit="return confirm(\'Delete {escape(d["name"])} and ALL its data?\')">'
             f'<button class="danger" type="submit">Delete</button></form></td></tr>'
         )
     table = (f'<div class="card"><table><tr><th>District</th><th>Logo</th><th>Schools</th>'
-             f'<th>Users</th><th>Public results</th><th></th></tr>{"".join(body_rows)}</table></div>'
+             f'<th>Users</th><th>Public results</th><th>Road races</th><th></th></tr>'
+             f'{"".join(body_rows)}</table></div>'
              if rows else '<div class="card muted">No districts yet.</div>')
 
     form = """
@@ -210,6 +219,23 @@ def toggle_mask(did):
         conn.close(); abort(404)
     settings = json.loads(d["settings_json"] or "{}")
     settings["mask_public"] = not settings.get("mask_public")
+    conn.execute("UPDATE districts SET settings_json=? WHERE id=?", (json.dumps(settings), did))
+    conn.commit()
+    conn.close()
+    return redirect("/districts")
+
+
+@bp.post("/districts/<int:did>/road")
+@role_required("super_admin")
+def toggle_road(did):
+    """Enable/disable the Road-race sport for this district (super admin only)."""
+    conn = db.connect()
+    d = conn.execute("SELECT settings_json FROM districts WHERE id=?", (did,)).fetchone()
+    if not d:
+        conn.close()
+        abort(404)
+    settings = json.loads(d["settings_json"] or "{}")
+    settings["road_enabled"] = not settings.get("road_enabled")
     conn.execute("UPDATE districts SET settings_json=? WHERE id=?", (json.dumps(settings), did))
     conn.commit()
     conn.close()

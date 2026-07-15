@@ -24,6 +24,19 @@ from .ui import shell
 bp = Blueprint("meets", __name__)
 
 
+def _road_enabled(did):
+    """Whether the Road-race sport is turned on for this district (super-admin gated)."""
+    if did is None:
+        return False
+    conn = db.connect()
+    d = conn.execute("SELECT settings_json FROM districts WHERE id=?", (did,)).fetchone()
+    conn.close()
+    try:
+        return bool(json.loads((d["settings_json"] if d else None) or "{}").get("road_enabled"))
+    except (ValueError, TypeError):
+        return False
+
+
 def _now():
     return datetime.now(timezone.utc)
 
@@ -129,7 +142,7 @@ def list_meets():
     show_x = p.is_admin   # super / district admin get a delete X per row
     trs = []
     for m in rows:
-        sport = "🏃 XC" if m["sport"] == "xc" else "🎽 Track"
+        sport = {"xc": "🏃 XC", "track": "🎽 Track", "road": "🛣 Road"}.get(m["sport"], "🎽 Track")
         dcol = f'<td>{escape(m["dname"])}</td>' if show_d else ""
         xcol = ""
         if show_x:
@@ -150,6 +163,7 @@ def list_meets():
 
     form = ""
     can_create = p.is_admin   # only super / district admins create meets
+    road_opt = ('<option value="road">Road race</option>' if _road_enabled(did) else '')
     if can_create and not (p.is_super and did is None):
         schools = _district_schools(did)
         host_opts = '<option value="">— none —</option>' + "".join(
@@ -165,7 +179,7 @@ def list_meets():
     <div><label>Name</label><input name="name" required></div>
     <div style="max-width:140px"><label>Sport</label>
       <select name="sport"><option value="xc">Cross-country</option>
-      <option value="track">Track &amp; Field</option></select></div>
+      <option value="track">Track &amp; Field</option>{road_opt}</select></div>
     <div style="max-width:170px"><label>Date</label><input name="date" type="date" required></div>
   </div>
   <label>Host school</label><select name="host_school_id">{host_opts}</select>
@@ -194,7 +208,8 @@ def create_meet():
     if not p.is_admin:   # only super / district admins create meets
         abort(403)
     name = (request.form.get("name") or "").strip()
-    sport = request.form.get("sport") if request.form.get("sport") in ("xc", "track") else "xc"
+    allowed_sports = ("xc", "track") + (("road",) if _road_enabled(did) else ())
+    sport = request.form.get("sport") if request.form.get("sport") in allowed_sports else "xc"
     date = (request.form.get("date") or "").strip()
     if not name or not date:
         abort(400)
@@ -221,6 +236,10 @@ def create_meet():
         for hn in ("Boys", "Girls"):
             conn.execute("INSERT INTO races (meet_id, name, capture_mode) VALUES (?,?,?)",
                          (mid, hn, "tap"))
+    elif sport == "road":
+        # Road: one mass-start race; results split by gender x age group afterward.
+        conn.execute("INSERT INTO races (meet_id, name, capture_mode) VALUES (?,?,?)",
+                     (mid, "Open Race", "tap"))
     else:
         pt = conn.execute("SELECT id FROM points_tables WHERE name=?",
                           ("Invitational 10-8-6-4-2-1",)).fetchone()
@@ -339,7 +358,7 @@ def meet_detail(mid):
     att_ids = {s["id"] for s in att}
     setup = can_setup_meet(m)
     base = os.environ.get("XC_PUBLIC_URL", request.host_url.rstrip("/"))
-    is_xc = m["sport"] == "xc"
+    is_xc = m["sport"] in ("xc", "road")   # road reuses the XC race engine
     # Results / Public / Export live on the Results tab — not duplicated here.
 
     hs = (f' <a class="btn ghost" href="/meets/{mid}/heatsheets.pdf">Heat sheets</a>'
@@ -442,7 +461,7 @@ def meet_detail(mid):
     body = f"""
 <p class="muted"><a href="/meets">← Meets</a></p>
 <h1>{escape(m['name'])}</h1>
-<p class="sub">{"🏃 Cross-country" if is_xc else "🎽 Track & Field"} · {escape(m['date'] or '')}
+<p class="sub">{{"xc":"🏃 Cross-country","road":"🛣 Road race","track":"🎽 Track & Field"}}.get(m['sport'],'') · {escape(m['date'] or '')}
  · host: {escape(host['name']) if host else '—'}</p>
 {edit_card}
 {tabs}
@@ -471,7 +490,7 @@ def public_directory():
         if r["dname"] not in groups:
             groups[r["dname"]] = []
             order.append(r["dname"])
-        icon = "🏃" if r["sport"] == "xc" else "🎽"
+        icon = {"xc": "🏃", "track": "🎽", "road": "🛣"}.get(r["sport"], "🎽")
         groups[r["dname"]].append(
             f'<a class="mrow" href="/r/{r["public_token"]}"><span>{icon} {escape(r["name"])}</span>'
             f'<span class="md">{escape(r["date"] or "")}</span></a>')

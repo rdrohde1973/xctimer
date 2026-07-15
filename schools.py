@@ -405,6 +405,7 @@ async function openEdit(aid){{
 async function saveCore(aid){{
   const f={{name:document.getElementById('e_name').value,
            grade:document.getElementById('e_grade').value,
+           age:document.getElementById('e_age').value,
            gender:document.getElementById('e_gender').value}};
   if(!f.name.trim()){{ alert('Name is required.'); return; }}
   try{{ await jpost('/athletes/'+aid+'/edit', f); location.reload(); }}
@@ -441,6 +442,7 @@ async function tog(aid, sport, el){
     <div><label>Name</label><input name="name" required></div>
     <div style="max-width:110px"><label>Bib</label><input name="bib" type="number" placeholder="auto"></div>
     <div style="max-width:90px"><label>Grade</label><input name="grade" type="number"></div>
+    <div style="max-width:80px"><label>Age</label><input name="age" type="number" placeholder="road"></div>
     <div style="max-width:110px"><label>Sex</label>
       <select name="gender"><option value="">—</option><option>M</option><option>F</option></select></div>
   </div>
@@ -650,6 +652,8 @@ def add_athlete(sid):
         abort(400)
     grade = (request.form.get("grade") or "").strip()
     grade = int(grade) if grade.isdigit() else None
+    age = (request.form.get("age") or "").strip()
+    age = int(age) if age.isdigit() else None
     gender = (request.form.get("gender") or "").strip().upper() or None
     if gender not in ("M", "F", None):
         gender = None
@@ -667,9 +671,9 @@ def add_athlete(sid):
         return redirect(f"/schools/{sid}?err=Bib+{bib}+is+already+assigned+to+"
                         f"{dup['name'].replace(' ', '+')}+({dup['sname'].replace(' ', '+')})")
     conn.execute(
-        "INSERT INTO athletes (school_id, bib, name, grade, gender, does_xc, does_track) "
-        "VALUES (?,?,?,?,?,?,?)",
-        (sid, bib, name, grade, gender, dx, dt),
+        "INSERT INTO athletes (school_id, bib, name, grade, age, gender, does_xc, does_track) "
+        "VALUES (?,?,?,?,?,?,?,?)",
+        (sid, bib, name, grade, age, gender, dx, dt),
     )
     conn.commit()
     conn.close()
@@ -889,6 +893,7 @@ def athlete_editcard(aid):
     if not _can_access_school(s) or g.principal.is_demo:
         abort(403)
     grade = "" if a["grade"] is None else a["grade"]
+    agev = "" if a["age"] is None else a["age"]
     gsel = lambda v: "selected" if (a["gender"] or "") == v else ""
     return f"""
 <h2 style="margin:.1em 0 1rem">Edit athlete</h2>
@@ -897,6 +902,8 @@ def athlete_editcard(aid):
 <div class="row" style="margin-top:.4rem">
   <div style="max-width:120px"><label>Grade</label>
     <input id="e_grade" type="number" inputmode="numeric" value="{grade}"></div>
+  <div style="max-width:110px"><label>Age</label>
+    <input id="e_age" type="number" inputmode="numeric" value="{agev}"></div>
   <div style="max-width:140px"><label>Sex</label>
     <select id="e_gender">
       <option value="" {gsel("")}>—</option>
@@ -928,12 +935,14 @@ def athlete_edit(aid):
         return jsonify(error="Name is required"), 400
     gr = str(d.get("grade") or "").strip()
     grade = int(gr) if gr.isdigit() else None
+    ag = str(d.get("age") or "").strip()
+    age = int(ag) if ag.isdigit() else None
     gender = (str(d.get("gender") or "").strip().upper() or None)
     if gender not in ("M", "F", None):
         gender = None
     conn = db.connect()
-    conn.execute("UPDATE athletes SET name=?, grade=?, gender=? WHERE id=?",
-                 (name, grade, gender, aid))
+    conn.execute("UPDATE athletes SET name=?, grade=?, age=?, gender=? WHERE id=?",
+                 (name, grade, age, gender, aid))
     # Resync recorded snapshots so a post-race typo fix reaches results/exports:
     # track results link by entries.runner_id; XC finishers match bib + school.
     conn.execute("UPDATE results SET snap_name=? WHERE entry_id IN "
@@ -1020,6 +1029,8 @@ def import_commit(sid):
             continue
         grade = r.get("grade")
         grade = int(grade) if isinstance(grade, int) or (isinstance(grade, str) and grade.isdigit()) else None
+        age = r.get("age")
+        age = int(age) if isinstance(age, int) or (isinstance(age, str) and age.isdigit()) else None
         gender = r.get("gender")
         gender = gender if gender in ("M", "F") else None
         bib = _next_bib(conn, s)
@@ -1033,10 +1044,10 @@ def import_commit(sid):
         else:
             dx, dt = (1 if dx else 0), (1 if dt else 0)
         conn.execute(
-            "INSERT INTO athletes (school_id, bib, name, grade, gender, does_xc, does_track, "
+            "INSERT INTO athletes (school_id, bib, name, grade, age, gender, does_xc, does_track, "
             "dob, email, phone, parent_name, parent_email, parent_phone, emergency_name, emergency_phone) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            (sid, bib, name, grade, gender, dx, dt, cf["dob"], cf["email"], cf["phone"],
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (sid, bib, name, grade, age, gender, dx, dt, cf["dob"], cf["email"], cf["phone"],
              cf["parent_name"], cf["parent_email"], cf["parent_phone"], cf["emergency_name"],
              cf["emergency_phone"]),
         )
