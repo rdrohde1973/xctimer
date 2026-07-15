@@ -339,7 +339,7 @@ def _xc_tabs(mid, active):
 def xc_meet_day(mid):
     """Day-of view: run each heat's timing console + print stickers / bib lists."""
     m = load_meet(mid)
-    if not can_view_meet(m) or m["sport"] != "xc":
+    if not can_view_meet(m) or m["sport"] not in ("xc", "road"):
         abort(403)
     conn = db.connect()
     races = conn.execute("SELECT * FROM races WHERE meet_id=? ORDER BY id", (mid,)).fetchall()
@@ -354,9 +354,10 @@ def xc_meet_day(mid):
             f'<tr><td><b>{escape(r["name"])}</b></td><td>{r["capture_mode"]}</td>'
             f'<td>{status}</td><td>{counts.get(r["id"], 0)}</td>'
             f'<td style="text-align:right"><a class="btn" href="/races/{r["id"]}/console">⏱ Time</a></td></tr>')
-    tbl = (f'<div class="card"><h2>Heats — tap to time</h2><table><tr><th>Heat</th><th>Mode</th>'
+    noun = "Events" if m["sport"] == "road" else "Heats"
+    tbl = (f'<div class="card"><h2>{noun} — tap to time</h2><table><tr><th>{noun[:-1]}</th><th>Mode</th>'
            f'<th>Status</th><th>Finishers</th><th></th></tr>{"".join(rows)}</table></div>'
-           if races else '<div class="card muted">No heats yet — add them on the Setup tab.</div>')
+           if races else f'<div class="card muted">No {noun.lower()} yet — add them on the Setup tab.</div>')
     print_bar = (
         f'<div class="card"><b>Print:</b> '
         f'<a class="btn ghost" href="/meets/{mid}/stickers.pdf?template=5160">Stickers 5160</a> '
