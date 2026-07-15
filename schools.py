@@ -11,6 +11,7 @@ Access: super_admin (any), district_admin (own district), coach (own schools).
 Timers get no roster access.
 """
 import io
+import json
 import os
 
 from markupsafe import escape
@@ -42,6 +43,19 @@ def _can_access_school(school):
     if p.role == "coach":
         return school["id"] in p.school_ids()
     return False
+
+
+def _road_enabled(did):
+    """True if the district has Road races turned on (super-admin toggle)."""
+    if not did:
+        return False
+    conn = db.connect()
+    d = conn.execute("SELECT settings_json FROM districts WHERE id=?", (did,)).fetchone()
+    conn.close()
+    try:
+        return bool(json.loads((d["settings_json"] if d else None) or "{}").get("road_enabled"))
+    except (ValueError, TypeError):
+        return False
 
 
 def _load_school_or_403(sid):
@@ -263,6 +277,7 @@ def delete_school(sid):
 @login_required
 def roster(sid):
     s = _load_school_or_403(sid)
+    road_on = _road_enabled(s["district_id"])
     sport = request.args.get("sport", "all")
     grad_view = request.args.get("show") == "grad"
 
@@ -272,6 +287,8 @@ def roster(sid):
         where.append("does_xc=1")
     elif sport == "track":
         where.append("does_track=1")
+    elif sport == "road" and road_on:
+        where.append("does_road=1")
     conn = db.connect()
     ath = conn.execute(
         f"SELECT * FROM athletes WHERE {' AND '.join(where)} "
@@ -299,6 +316,7 @@ def roster(sid):
         dis = "disabled" if ro else ""
         xc = "checked" if a["does_xc"] else ""
         tr = "checked" if a["does_track"] else ""
+        rd = "checked" if ("does_road" in a.keys() and a["does_road"]) else ""
         aid = a["id"]
         acts = [f'<a class="ic" href="/athletes/{aid}/progress" title="Stats &amp; progress">📈</a>',
                 f'<button class="ic" onclick="openCard({aid})" title="Info">ⓘ</button>']
@@ -317,15 +335,19 @@ def roster(sid):
             f'onchange="tog({aid},\'xc\',this)"></td>'
             f'<td style="text-align:center"><input type="checkbox" style="width:auto" {tr} {dis} '
             f'onchange="tog({aid},\'track\',this)"></td>'
-            f'<td><div class="rowacts">{"".join(acts)}</div></td></tr>')
+            + (f'<td style="text-align:center"><input type="checkbox" style="width:auto" {rd} {dis} '
+               f'onchange="tog({aid},\'road\',this)"></td>' if road_on else "")
+            + f'<td><div class="rowacts">{"".join(acts)}</div></td></tr>')
 
     if grad_view:
         head = ('<tr><th>Bib</th><th>Name</th><th>Gr</th><th>Sex</th><th></th></tr>'
                 if ath else "")
         empty = "No graduated athletes."
     else:
+        road_head = '<th style="text-align:center">Road</th>' if road_on else ""
         head = ('<tr><th>Bib</th><th>Name</th><th>Gr</th><th>Sex</th>'
-                '<th style="text-align:center">XC</th><th style="text-align:center">Track</th><th></th></tr>'
+                '<th style="text-align:center">XC</th><th style="text-align:center">Track</th>'
+                f'{road_head}<th></th></tr>'
                 if ath else "")
         empty = "No athletes here yet — add or import below."
     table = (f'<div class="card"><table>{head}{"".join(trs)}</table></div>'
@@ -339,8 +361,9 @@ def roster(sid):
     grad_link = (f'<a class="btn ghost" href="/schools/{sid}?show=grad" '
                  f'style="{"background:var(--panel2);color:var(--fg)" if grad_view else ""}">'
                  f'🎓 Graduated ({grad_count})</a>' if grad_count or grad_view else "")
+    road_chip = _f("🛣 Road", "road") if road_on else ""
     filt = (f'<div class="row" style="margin:.2rem 0 1rem;gap:.4rem">'
-            f'{_f("All", "all")}{_f("🏃 XC", "xc")}{_f("🎽 Track", "track")}'
+            f'{_f("All", "all")}{_f("🏃 XC", "xc")}{_f("🎽 Track", "track")}{road_chip}'
             f'<span style="flex:1"></span>{grad_link}</div>')
 
     bib_hint = (f'{s["bib_start"]}–{s["bib_end"]}' if s["bib_start"]
@@ -433,6 +456,10 @@ async function tog(aid, sport, el){
   catch(e){ alert(e.message); el.checked = !el.checked; }
 }'''}
 </script>"""
+    road_add_cb = ('<label style="display:flex;gap:.4rem;align-items:center">'
+                   '<input type="checkbox" name="does_road" value="1" checked style="width:auto"> '
+                   '🛣 Road</label>') if road_on else ""
+    age_hint = "age (road)" if road_on else ""
     if not ro:
         body += f"""
 
@@ -442,7 +469,7 @@ async function tog(aid, sport, el){
     <div><label>Name</label><input name="name" required></div>
     <div style="max-width:110px"><label>Bib</label><input name="bib" type="number" placeholder="auto"></div>
     <div style="max-width:90px"><label>Grade</label><input name="grade" type="number"></div>
-    <div style="max-width:80px"><label>Age</label><input name="age" type="number" placeholder="road"></div>
+    <div style="max-width:100px"><label>Age</label><input name="age" type="number" min="0" placeholder="{age_hint}"></div>
     <div style="max-width:110px"><label>Sex</label>
       <select name="gender"><option value="">—</option><option>M</option><option>F</option></select></div>
   </div>
@@ -451,6 +478,7 @@ async function tog(aid, sport, el){
       value="1" checked style="width:auto"> 🏃 XC</label>
     <label style="display:flex;gap:.4rem;align-items:center"><input type="checkbox" name="does_track"
       value="1" checked style="width:auto"> 🎽 Track</label>
+    {road_add_cb}
   </div>
   <button type="submit" style="margin-top:1rem">Add</button>
   <span class="muted">Leave bib blank to auto-assign the next free bib in the block.</span>
@@ -660,6 +688,7 @@ def add_athlete(sid):
     bib_raw = (request.form.get("bib") or "").strip()
     dx = 1 if request.form.get("does_xc") else 0
     dt = 1 if request.form.get("does_track") else 0
+    dr = 1 if request.form.get("does_road") else 0
     conn = db.connect()
     bib = int(bib_raw) if bib_raw.isdigit() else _next_bib(conn, s)
     # Manual bib must be unique across the district (stickers/scans key on it).
@@ -671,9 +700,9 @@ def add_athlete(sid):
         return redirect(f"/schools/{sid}?err=Bib+{bib}+is+already+assigned+to+"
                         f"{dup['name'].replace(' ', '+')}+({dup['sname'].replace(' ', '+')})")
     conn.execute(
-        "INSERT INTO athletes (school_id, bib, name, grade, age, gender, does_xc, does_track) "
-        "VALUES (?,?,?,?,?,?,?,?)",
-        (sid, bib, name, grade, age, gender, dx, dt),
+        "INSERT INTO athletes (school_id, bib, name, grade, age, gender, does_xc, does_track, does_road) "
+        "VALUES (?,?,?,?,?,?,?,?,?)",
+        (sid, bib, name, grade, age, gender, dx, dt, dr),
     )
     conn.commit()
     conn.close()
@@ -693,7 +722,7 @@ def athlete_sports(aid):
     if not _can_access_school(s) or g.principal.is_demo:
         abort(403)
     data = request.get_json(silent=True) or {}
-    col = {"xc": "does_xc", "track": "does_track"}.get(data.get("sport"))
+    col = {"xc": "does_xc", "track": "does_track", "road": "does_road"}.get(data.get("sport"))
     if not col:
         return jsonify(error="bad sport"), 400
     conn = db.connect()
@@ -1043,11 +1072,12 @@ def import_commit(sid):
             dx = dt = 1
         else:
             dx, dt = (1 if dx else 0), (1 if dt else 0)
+        dr = 1 if r.get("does_road") else 0
         conn.execute(
-            "INSERT INTO athletes (school_id, bib, name, grade, age, gender, does_xc, does_track, "
+            "INSERT INTO athletes (school_id, bib, name, grade, age, gender, does_xc, does_track, does_road, "
             "dob, email, phone, parent_name, parent_email, parent_phone, emergency_name, emergency_phone) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            (sid, bib, name, grade, age, gender, dx, dt, cf["dob"], cf["email"], cf["phone"],
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (sid, bib, name, grade, age, gender, dx, dt, dr, cf["dob"], cf["email"], cf["phone"],
              cf["parent_name"], cf["parent_email"], cf["parent_phone"], cf["emergency_name"],
              cf["emergency_phone"]),
         )

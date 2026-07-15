@@ -322,6 +322,8 @@ def migrate(conn):
         conn.execute("ALTER TABLE athletes ADD COLUMN active INTEGER DEFAULT 1")
     if "age" not in acols:         # road races: division is gender x age (no grade)
         conn.execute("ALTER TABLE athletes ADD COLUMN age INTEGER")
+    if "does_road" not in acols:   # road: opt-in per athlete (only shown in road-enabled districts)
+        conn.execute("ALTER TABLE athletes ADD COLUMN does_road INTEGER DEFAULT 0")
     # Contact / parent / emergency / physical fields (importable from the roster file).
     for col in ("email", "phone", "parent_name", "parent_email", "parent_phone",
                 "emergency_name", "emergency_phone", "physical_date", "dob"):
