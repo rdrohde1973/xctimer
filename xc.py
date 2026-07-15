@@ -89,8 +89,9 @@ def _bracket_chips(brackets, muted_when_empty=""):
     if not brackets:
         return f'<span class="muted" style="font-size:.85rem">{muted_when_empty}</span>' if muted_when_empty else ''
     chips = "".join(
-        f'<span style="display:inline-block;background:#eef3f9;border:1px solid #d5dde6;'
-        f'border-radius:999px;padding:.15rem .6rem;margin:.15rem .25rem 0 0;font-size:.82rem">'
+        f'<span style="display:inline-block;background:#eef3f9;color:#12385f;'
+        f'border:1px solid #d5dde6;border-radius:999px;padding:.15rem .6rem;'
+        f'margin:.15rem .25rem 0 0;font-size:.82rem;font-weight:600">'
         f'{escape(b.get("label", ""))}</span>' for b in brackets)
     return f'<div style="margin:.2rem 0">{chips}</div>'
 
