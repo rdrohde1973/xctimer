@@ -351,6 +351,10 @@ def migrate(conn):
     if "snap_age" not in fcols:          # road races: snapshot age for gender×age grouping
         conn.execute("ALTER TABLE finishers ADD COLUMN snap_age INTEGER")
 
+    rcols = _column_names(conn, "races")
+    if "age_brackets" not in rcols:      # road events: per-event age-group override (JSON list)
+        conn.execute("ALTER TABLE races ADD COLUMN age_brackets TEXT")
+
     mecols = _column_names(conn, "meet_events")
     if "combine_id" not in mecols:
         conn.execute("ALTER TABLE meet_events ADD COLUMN combine_id INTEGER")

@@ -84,8 +84,23 @@ def _athlete_for_bib(conn, meet_id, bib):
 CAPTURE_MODES = [("tap", "Tap then scan"), ("scan", "Scan at finish")]
 
 
+def _bracket_chips(brackets, muted_when_empty=""):
+    """Pill chips for a list of {label,...} brackets; muted note when empty."""
+    if not brackets:
+        return f'<span class="muted" style="font-size:.85rem">{muted_when_empty}</span>' if muted_when_empty else ''
+    chips = "".join(
+        f'<span style="display:inline-block;background:#eef3f9;border:1px solid #d5dde6;'
+        f'border-radius:999px;padding:.15rem .6rem;margin:.15rem .25rem 0 0;font-size:.82rem">'
+        f'{escape(b.get("label", ""))}</span>' for b in brackets)
+    return f'<div style="margin:.2rem 0">{chips}</div>'
+
+
+def _brackets_to_text(brackets):
+    return ", ".join(b.get("label", "") for b in (brackets or []))
+
+
 def setup_section(m, setup):
-    """Heats card for the meet setup page (team-scoring toggle + heat table)."""
+    """Setup card(s): XC/track heats table, or the Road events + age-group layout."""
     import json as _json
     conn = db.connect()
     races = conn.execute("SELECT * FROM races WHERE meet_id=? ORDER BY id", (m["id"],)).fetchall()
@@ -95,15 +110,16 @@ def setup_section(m, setup):
     conn.close()
 
     is_road = m["sport"] == "road"
-    ts_toggle = ""
-    if setup and not is_road:
-        chk = "checked" if m["team_scoring"] else ""
-        ts_toggle = (
-            f'<form method="post" action="/meets/{m["id"]}/scoring" style="margin-bottom:.6rem">'
-            f'<label style="display:flex;gap:.5rem;align-items:center">'
-            f'<input type="checkbox" name="team_scoring" style="width:auto" {chk} onchange="this.form.submit()"> '
-            f'<b>Team scoring</b> <span class="muted">— adds team scores (top 5 per school) to results</span></label></form>')
+    rename_js = (
+        '<script>function renameHeat(id,cur){var n=prompt("Name",cur);if(!n)return;'
+        'var f=document.createElement("form");f.method="post";f.action="/races/"+id+"/rename";'
+        'var i=document.createElement("input");i.name="name";i.value=n;f.appendChild(i);'
+        'document.body.appendChild(f);f.submit();}</script>')
 
+    if is_road:
+        return _road_setup_section(m, setup, races, counts, _json, rename_js)
+
+    # ---- XC / track: classic heats table ----
     rows = []
     for r in races:
         status = "ended" if r["stop_time"] else ("running" if r["start_time"] else "not started")
@@ -121,49 +137,102 @@ def setup_section(m, setup):
     tbl = (f'<table><tr><th>Heat</th><th>Mode</th><th>Status</th><th>Finishers</th><th></th></tr>'
            f'{"".join(rows)}</table>' if races else '<p class="muted">No heats yet.</p>')
 
+    ts_toggle = ""
     add = ""
     if setup:
+        chk = "checked" if m["team_scoring"] else ""
+        ts_toggle = (
+            f'<form method="post" action="/meets/{m["id"]}/scoring" style="margin-bottom:.6rem">'
+            f'<label style="display:flex;gap:.5rem;align-items:center">'
+            f'<input type="checkbox" name="team_scoring" style="width:auto" {chk} onchange="this.form.submit()"> '
+            f'<b>Team scoring</b> <span class="muted">— adds team scores (top 5 per school) to results</span></label></form>')
         opts = "".join(f'<option value="{v}">{escape(lbl)}</option>' for v, lbl in CAPTURE_MODES)
         add = (
             f'<form method="post" action="/meets/{m["id"]}/races" class="row" style="margin-top:.8rem">'
             f'<div><input name="name" placeholder="Heat name (e.g. Girls)"></div>'
             f'<div style="max-width:200px"><select name="capture_mode">{opts}</select></div>'
             f'<div style="display:flex;align-items:flex-end"><button type="submit">+ Add heat</button></div>'
-            f'</form>'
-            f'<script>function renameHeat(id,cur){{var n=prompt("Heat name",cur);if(!n)return;'
-            f'var f=document.createElement("form");f.method="post";f.action="/races/"+id+"/rename";'
-            f'var i=document.createElement("input");i.name="name";i.value=n;f.appendChild(i);'
-            f'document.body.appendChild(f);f.submit();}}</script>')
-    age_card = ""
-    if is_road:
-        try:
-            s = _json.loads(m["settings_json"] or "{}")
-        except (ValueError, TypeError):
-            s = {}
-        cur_text = s.get("age_brackets_text") or ", ".join(
-            b.get("label", "") for b in (s.get("age_brackets") or []))
-        chips = "".join(
-            f'<span style="display:inline-block;background:#eef3f9;border:1px solid #d5dde6;'
-            f'border-radius:999px;padding:.15rem .6rem;margin:.15rem .25rem 0 0;font-size:.85rem">'
-            f'{escape(b.get("label",""))}</span>'
-            for b in (s.get("age_brackets") or []))
-        chips = f'<div style="margin:.2rem 0 .6rem">{chips}</div>' if chips else ''
-        editor = ""
-        if setup:
-            editor = (
-                f'<form method="post" action="/meets/{m["id"]}/age-groups" style="margin-top:.4rem">'
-                f'<label class="muted">One group per line or comma-separated. '
-                f'Examples: <code>10 &amp; Under, 11-14, 15-19, 20-29, 30-39, 40+</code></label>'
-                f'<textarea name="brackets" rows="3" style="width:100%;margin:.3rem 0" '
-                f'placeholder="10 &amp; Under, 11-14, 15-19, 20-29, 30+">{escape(cur_text)}</textarea>'
-                f'<button type="submit">Save age groups</button></form>')
-        age_card = (
-            f'<div class="card"><h2>Age groups</h2>'
-            f'<p class="muted" style="margin-top:0">Road results are placed individually by '
-            f'gender × age group. Athletes need an <b>Age</b> on their roster entry.</p>'
-            f'{chips}{editor}</div>')
+            f'</form>{rename_js}')
+    return f'<div class="card"><h2>Heats</h2>{ts_toggle}{tbl}{add}</div>'
 
-    return f'<div class="card"><h2>{"Race" if is_road else "Heats"}</h2>{ts_toggle}{tbl}{add}</div>{age_card}'
+
+def _road_setup_section(m, setup, races, counts, _json, rename_js):
+    """Road setup: meet-wide default age groups + per-event list with per-event override."""
+    try:
+        s = _json.loads(m["settings_json"] or "{}")
+    except (ValueError, TypeError):
+        s = {}
+    default_brackets = s.get("age_brackets") or []
+    default_text = s.get("age_brackets_text") or _brackets_to_text(default_brackets)
+
+    # --- meet-wide default age groups ---
+    dflt_editor = ""
+    if setup:
+        dflt_editor = (
+            f'<form method="post" action="/meets/{m["id"]}/age-groups" style="margin-top:.4rem">'
+            f'<label class="muted">One group per line or comma-separated. '
+            f'Examples: <code>10 &amp; Under, 11-14, 15-19, 20-29, 30-39, 40+</code></label>'
+            f'<textarea name="brackets" rows="2" style="width:100%;margin:.3rem 0" '
+            f'placeholder="10 &amp; Under, 11-14, 15-19, 20-29, 30+">{escape(default_text)}</textarea>'
+            f'<button type="submit">Save default age groups</button></form>')
+    default_card = (
+        f'<div class="card"><h2>Default age groups</h2>'
+        f'<p class="muted" style="margin-top:0">Applied to every event unless the event sets its own. '
+        f'Road results place athletes individually by gender × age group — each athlete needs an '
+        f'<b>Age</b> on their roster entry.</p>'
+        f'{_bracket_chips(default_brackets, "No default set yet.")}{dflt_editor}</div>')
+
+    # --- events ---
+    ev_blocks = []
+    for r in races:
+        status = "ended" if r["stop_time"] else ("running" if r["start_time"] else "not started")
+        try:
+            own = _json.loads(r["age_brackets"]) if ("age_brackets" in r.keys() and r["age_brackets"]) else None
+        except (ValueError, TypeError):
+            own = None
+        if own:
+            groups_line = ('<b>Own age groups:</b> ' + str(_bracket_chips(own)))
+        else:
+            groups_line = ('<span class="muted">Uses default: </span>'
+                           + (str(_bracket_chips(default_brackets)) if default_brackets
+                              else '<span class="muted">none set</span>'))
+        act = f'<a class="btn" href="/races/{r["id"]}/console">⏱ Time</a>'
+        override = ""
+        if setup:
+            nm = _json.dumps(r["name"])
+            act += (
+                f" <button class='ghost' onclick='renameHeat({r['id']}, {escape(nm)})'>✎ Rename</button>"
+                f" <form class='inline' method='post' action='/races/{r['id']}/delete' "
+                f"onsubmit=\"return confirm('Delete this event and its results?')\">"
+                f"<button class='danger'>✕</button></form>")
+            override = (
+                f'<details style="margin-top:.5rem"><summary class="muted" style="cursor:pointer">'
+                f'Override age groups for this event</summary>'
+                f'<form method="post" action="/races/{r["id"]}/age-groups" style="margin-top:.4rem">'
+                f'<textarea name="brackets" rows="2" style="width:100%;margin:.3rem 0" '
+                f'placeholder="Leave blank to use the meet default">{escape(_brackets_to_text(own))}</textarea>'
+                f'<button type="submit">Save</button> '
+                f'<span class="muted">Blank = use the default above.</span></form></details>')
+        ev_blocks.append(
+            f'<div class="card" style="padding:.8rem 1rem">'
+            f'<div style="display:flex;justify-content:space-between;align-items:center;gap:.6rem;flex-wrap:wrap">'
+            f'<div><b>{escape(r["name"])}</b> <span class="muted">· {r["capture_mode"]} · {status} · '
+            f'{counts.get(r["id"], 0)} finishers</span></div>'
+            f'<div style="text-align:right">{act}</div></div>'
+            f'<div style="margin-top:.3rem">{groups_line}</div>{override}</div>')
+    events_html = "".join(ev_blocks) or '<p class="muted">No events yet — add one below.</p>'
+
+    add = ""
+    if setup:
+        opts = "".join(f'<option value="{v}">{escape(lbl)}</option>' for v, lbl in CAPTURE_MODES)
+        add = (
+            f'<form method="post" action="/meets/{m["id"]}/races" class="row" style="margin-top:.8rem">'
+            f'<div><input name="name" placeholder="Event name (e.g. 5K, 10K, Fun Run)" required></div>'
+            f'<div style="max-width:200px"><select name="capture_mode">{opts}</select></div>'
+            f'<div style="display:flex;align-items:flex-end"><button type="submit">+ Add event</button></div>'
+            f'</form>')
+    events_card = f'<div class="card"><h2>Events</h2>{events_html}{add}{rename_js}</div>'
+    return default_card + events_card
 
 
 @bp.post("/meets/<int:mid>/age-groups")
@@ -186,6 +255,20 @@ def save_age_brackets(mid):
     conn.commit()
     conn.close()
     return redirect(f"/meets/{mid}")
+
+
+@bp.post("/races/<int:rid>/age-groups")
+@login_required
+def save_event_brackets(rid):
+    r, m = _race_or_403(rid, can_setup_meet)
+    parsed = _parse_brackets(request.form.get("brackets") or "")
+    conn = db.connect()
+    # Empty = clear the override so the event falls back to the meet default.
+    conn.execute("UPDATE races SET age_brackets=? WHERE id=?",
+                 (json.dumps(parsed) if parsed else None, rid))
+    conn.commit()
+    conn.close()
+    return redirect(f"/meets/{m['id']}")
 
 
 # ------------------------------- races -------------------------------
@@ -803,12 +886,27 @@ def _bracket_index_label(age, brackets):
     return len(brackets), "No age listed"
 
 
-def build_road_results(m):
-    """Ordered list of (group_label, individuals[]) grouped by gender × age bracket.
-    Individual placing only — no team scoring for road races."""
-    mid = m["id"]
-    fins = [f for f in _meet_finishers(mid) if f["elapsed_seconds"] is not None]
-    brackets = _road_brackets(m)
+def _race_finishers(rid):
+    """Finishers for ONE road event (not deduped across events), best time per bib."""
+    conn = db.connect()
+    rows = conn.execute("SELECT * FROM finishers WHERE race_id=? AND elapsed_seconds IS NOT NULL",
+                        (rid,)).fetchall()
+    conn.close()
+    out, best = [], {}
+    for r in rows:
+        d = dict(r)
+        if d["bib"] is None:
+            out.append(d)
+            continue
+        cur = best.get(d["bib"])
+        if cur is None or d["elapsed_seconds"] < cur["elapsed_seconds"]:
+            best[d["bib"]] = d
+    out.extend(best.values())
+    return out
+
+
+def _road_event_groups(fins, brackets):
+    """Group one event's finishers by gender × age bracket, ranked within each group."""
     buckets = {}
     for f in fins:
         grank, gword = {"F": (0, "Women"), "M": (1, "Men")}.get(f["snap_gender"], (2, "Open"))
@@ -817,7 +915,6 @@ def build_road_results(m):
         else:
             bi, blabel = 0, ""
         buckets.setdefault((grank, gword, bi, blabel), []).append(f)
-
     groups = []
     for key in sorted(buckets):
         _, gword, _, blabel = key
@@ -838,6 +935,27 @@ def build_road_results(m):
         label = (gword + (" · " + blabel if blabel else "")).strip()
         groups.append((label, indiv))
     return groups
+
+
+def build_road_results(m):
+    """Event-aware: ordered list of (event_name, [(group_label, individuals[])]).
+    Age groups per event = the event's own brackets, else the meet default.
+    Individual placing only — no team scoring for road races."""
+    mid = m["id"]
+    default_brackets = _road_brackets(m)
+    conn = db.connect()
+    races = conn.execute("SELECT * FROM races WHERE meet_id=? ORDER BY id", (mid,)).fetchall()
+    conn.close()
+    events = []
+    for r in races:
+        try:
+            own = json.loads(r["age_brackets"]) if ("age_brackets" in r.keys() and r["age_brackets"]) else None
+        except (ValueError, TypeError):
+            own = None
+        brackets = own if own else default_brackets
+        groups = _road_event_groups(_race_finishers(r["id"]), brackets)
+        events.append((r["name"], groups))
+    return events
 
 
 def build_results(mid):
@@ -1291,26 +1409,31 @@ setInterval(function(){{ if(!document.hidden) location.reload(); }}, 20000);
 
 
 # ------------------------------- road: results (HTML) -------------------------------
-def _road_results_inner(m, groups, name_mode=None):
-    if not any(indiv for _, indiv in groups):
+def _road_results_inner(m, events, name_mode=None):
+    if not any(indiv for _, groups in events for _, indiv in groups):
         return '<div class="card muted">No results yet.</div>'
     html = []
-    for label, indiv in groups:
-        if not indiv:
+    for event_name, groups in events:
+        if not any(indiv for _, indiv in groups):
             continue
-        rows = "".join(
-            f'<tr><td>{"" if i["place"] is None else i["place"]}</td>'
-            f'<td>{fmt_hms(i["time"])}</td>'
-            f'<td>{"" if i["bib"] is None or name_mode else i["bib"]}</td>'
-            f'<td>{"<s>" if i["dq"] else ""}{escape(demo.display(i["name"], name_mode))}'
-            f'{" (DQ)" if i["dq"] else ""}{"</s>" if i["dq"] else ""}</td>'
-            f'<td>{escape(i["school"] or "")}</td>'
-            f'<td>{i["age"] if i["age"] is not None else ""}</td></tr>'
-            for i in indiv)
-        html.append(
-            f'<div class="card"><h2>{escape(label)}</h2>'
-            f'<table><thead><tr><th>Pl</th><th>Time</th><th>Bib</th><th>Name</th>'
-            f'<th>Team/Club</th><th>Age</th></tr></thead><tbody>{rows}</tbody></table></div>')
+        parts = []
+        for label, indiv in groups:
+            if not indiv:
+                continue
+            rows = "".join(
+                f'<tr><td>{"" if i["place"] is None else i["place"]}</td>'
+                f'<td>{fmt_hms(i["time"])}</td>'
+                f'<td>{"" if i["bib"] is None or name_mode else i["bib"]}</td>'
+                f'<td>{"<s>" if i["dq"] else ""}{escape(demo.display(i["name"], name_mode))}'
+                f'{" (DQ)" if i["dq"] else ""}{"</s>" if i["dq"] else ""}</td>'
+                f'<td>{escape(i["school"] or "")}</td>'
+                f'<td>{i["age"] if i["age"] is not None else ""}</td></tr>'
+                for i in indiv)
+            parts.append(
+                f'<h3 style="margin:.9rem 0 .3rem">{escape(label)}</h3>'
+                f'<table><thead><tr><th>Pl</th><th>Time</th><th>Bib</th><th>Name</th>'
+                f'<th>Team/Club</th><th>Age</th></tr></thead><tbody>{rows}</tbody></table>')
+        html.append(f'<div class="card"><h2>🛣 {escape(event_name)}</h2>{"".join(parts)}</div>')
     return "".join(html)
 
 
@@ -1336,7 +1459,7 @@ def _pub_road_table(label, individuals, mode):
 
 def _public_road(m, mode):
     mid = m["id"]
-    groups = build_road_results(m)
+    events = build_road_results(m)
     conn = db.connect()
     races = conn.execute("SELECT start_time, stop_time FROM races WHERE meet_id=?", (mid,)).fetchall()
     conn.close()
@@ -1346,8 +1469,12 @@ def _public_road(m, mode):
         status = "Live"
     else:
         status = ""
-    body = "".join(_pub_road_table(lbl, indiv, mode) for lbl, indiv in groups if indiv) \
-        or '<div class="sec"><h2>No results yet</h2></div>'
+    body_parts = []
+    for event_name, groups in events:
+        for lbl, indiv in groups:
+            if indiv:
+                body_parts.append(_pub_road_table(f"{event_name} — {lbl}", indiv, mode))
+    body = "".join(body_parts) or '<div class="sec"><h2>No results yet</h2></div>'
     sub = escape(m["date"] or "") + (f" · {status}" if status else "")
     return f"""<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width, initial-scale=1">
@@ -1537,7 +1664,7 @@ def public_results_xlsx(token):
         return Response(track.track_workbook(m["id"], name_mode=_public_mask(m)),
                         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                         headers={"Content-Disposition": f'attachment; filename="{fname}.xlsx"'})
-    return _xlsx_response(m["id"], m["name"], _public_mask(m))
+    return _xlsx_response(m, _public_mask(m))
 
 
 # ------------------------------- xlsx export -------------------------------
@@ -1570,9 +1697,47 @@ def _results_workbook(mid, name_mode):
     return buf.getvalue()
 
 
-def _xlsx_response(mid, name, name_mode):
+def _road_workbook(m, name_mode):
+    """Road results workbook: one sheet per event, sections by gender × age group."""
+    import re
+    import openpyxl
+    events = build_road_results(m)
+    wb = openpyxl.Workbook()
+    wb.remove(wb.active)
+    used = set()
+    any_tab = False
+    for event_name, groups in events:
+        if not any(indiv for _, indiv in groups):
+            continue
+        any_tab = True
+        base = (re.sub(r"[\[\]:*?/\\]", " ", event_name or "Event")[:31]).strip() or "Event"
+        title, n = base, 2
+        while title in used:
+            title = (base[:27] + f" {n}")[:31]
+            n += 1
+        used.add(title)
+        ws = wb.create_sheet(title)
+        for label, indiv in groups:
+            if not indiv:
+                continue
+            ws.append([label])
+            ws.append(["Place", "Time", "Bib", "Name", "Team/Club", "Age"])
+            for i in indiv:
+                ws.append([i["place"], fmt_hms(i["time"]), None if name_mode else i["bib"],
+                           demo.public_ident(i["name"], i["bib"], name_mode), i["school"], i["age"]])
+            ws.append([])
+    if not any_tab:
+        wb.create_sheet("Results").append(["No results yet"])
+    buf = io.BytesIO()
+    wb.save(buf)
+    return buf.getvalue()
+
+
+def _xlsx_response(m, name_mode):
+    name = m["name"]
     fname = (name or "results").replace(" ", "_")
-    return Response(_results_workbook(mid, name_mode),
+    data = _road_workbook(m, name_mode) if m["sport"] == "road" else _results_workbook(m["id"], name_mode)
+    return Response(data,
                     mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     headers={"Content-Disposition": f'attachment; filename="{fname}.xlsx"'})
 
@@ -1583,4 +1748,4 @@ def results_xlsx(mid):
     m = load_meet(mid)
     if not can_view_meet(m):
         abort(403)
-    return _xlsx_response(mid, m["name"], demo.mode_for(g.principal))
+    return _xlsx_response(m, demo.mode_for(g.principal))
