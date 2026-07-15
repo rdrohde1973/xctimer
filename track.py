@@ -983,7 +983,7 @@ division automatically (Long Jump / Shot Put, feet-inches, F = foul).
   <div id="pmsg" style="margin-top:.5rem"></div>
 </div>
 <div class="card"><h2>Recorded this session</h2><table id="plog">
-  <tr><th>Bib</th><th>Athlete</th><th>Division</th><th>Attempts</th><th>Best</th></tr></table></div>
+  <tr><th>Bib</th><th>Athlete</th><th>Event</th><th>Division</th><th>Attempts</th><th>Best</th></tr></table></div>
 <script>
 async function pitPost(){{
   const ev=document.getElementById('pev').value, bib=document.getElementById('pbib').value.trim();
@@ -994,9 +994,9 @@ async function pitPost(){{
   if(!atts.some(a=>a)){{box.innerHTML='<p class="msg err">Enter at least one attempt.</p>';return;}}
   try{{
     const j=await jpost('/meets/{mid}/pit/post',{{event_id:ev,bib:bib,attempts:atts}});
-    box.innerHTML='<p class="msg ok">✔ '+esc(j.name)+' — '+esc(j.division)+' — best '+esc(j.best||'—')+'</p>';
+    box.innerHTML='<p class="msg ok">✔ '+esc(j.name)+' — <b>'+esc(j.event)+'</b> — '+esc(j.division)+' — best '+esc(j.best||'—')+'</p>';
     const t=document.getElementById('plog');
-    t.insertAdjacentHTML('afterbegin','<tr><td>'+esc(bib)+'</td><td>'+esc(j.name)+'</td><td>'+esc(j.division)
+    t.insertAdjacentHTML('afterbegin','<tr><td>'+esc(bib)+'</td><td>'+esc(j.name)+'</td><td><b>'+esc(j.event)+'</b></td><td>'+esc(j.division)
       +'</td><td>'+esc(atts.filter(a=>a).join(', '))+'</td><td><b>'+esc(j.best||'')+'</b></td></tr>');
     ['pbib','pa0','pa1','pa2'].forEach(k=>document.getElementById(k).value='');
     document.getElementById('pbib').focus();
@@ -1079,7 +1079,15 @@ def pit_post(mid):
     conn.close()
     gword = {"M": "Boys", "F": "Girls"}.get(a["gender"], "Open")
     division = f"{gword}" + (f" {a['grade']}th" if a["grade"] else "")
-    return jsonify(ok=True, name=a["name"], division=division,
+    evname = ""
+    try:
+        c2 = db.connect()
+        er = c2.execute("SELECT name FROM events WHERE id=?", (event_id,)).fetchone()
+        c2.close()
+        evname = er["name"] if er else ""
+    except Exception:  # noqa: BLE001
+        evname = ""
+    return jsonify(ok=True, name=a["name"], division=division, event=evname,
                    best=_fmt_ht(best) if best is not None else None)
 
 

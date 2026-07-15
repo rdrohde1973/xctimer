@@ -431,10 +431,10 @@ async function pitPost(){{
   if(!atts.some(function(a){{return a;}})){{box.innerHTML='<p class="msg err">Enter at least one attempt.</p>';return;}}
   try{{
     const j=await jpost('/meets/{m['id']}/pit/post',{{event_id:ev,bib:bib,attempts:atts}});
-    box.innerHTML='<p class="msg ok">✔ '+esc(j.name)+' · '+esc(j.division)+' · best '+esc(j.best||'—')+'</p>';
+    box.innerHTML='<p class="msg ok">✔ '+esc(j.name)+' · <b>'+esc(j.event)+'</b> · '+esc(j.division)+' · best '+esc(j.best||'—')+'</p>';
     document.getElementById('plog').insertAdjacentHTML('afterbegin',
       '<tr><td><b>#'+esc(bib)+'</b></td><td>'+esc(j.name)+'</td>'
-      +'<td class="muted">'+esc(atts.filter(function(a){{return a;}}).join(', '))+'</td>'
+      +'<td class="muted">'+esc(j.event)+'</td>'
       +'<td><b>'+esc(j.best||'')+'</b></td></tr>');
     ['pbib','pa0','pa1','pa2'].forEach(function(k){{document.getElementById(k).value='';}});
     document.getElementById('pbibinfo').textContent='';
