@@ -579,6 +579,7 @@ def _track_tabs(mid, active):
             + tab(f"/meets/{mid}", "⚙️ Setup", "setup")
             + tab(f"/meets/{mid}/assign", "👤 Assign athletes", "assign")
             + tab(f"/meets/{mid}/meet-day", "🏁 Meet day", "meetday")
+            + tab(f"/meets/{mid}/pit", "🏖 Open pit", "pit")
             + tab(f"/meets/{mid}/track-results", "📊 Results", "results")
             + '</div>')
 
@@ -961,10 +962,12 @@ def pit_console(mid):
     if not opts:
         opts = '<option value="">— no field events at this meet —</option>'
     body = f"""
-<p class="muted"><a href="/meets/{mid}/meet-day">← Meet day</a></p>
-<h1>🏖 Open pit — {escape(m['name'])}</h1>
+<p class="muted"><a href="/meets">← Meets</a></p>
+<h1>{escape(m['name'])}</h1>{_track_tabs(mid, 'pit')}
+<h2>🏖 Open pit</h2>
 <p class="sub">Record whoever steps up, by bib. The mark files into the athlete's own
-division automatically (Long Jump / Shot Put, feet-inches, F = foul).</p>
+division automatically (Long Jump / Shot Put, feet-inches, F = foul).
+<b>On a phone?</b> Use the 🏖 Pit tab in the Track Timer app for a touch-friendly version.</p>
 <div class="card">
   <div class="row" style="flex-wrap:wrap;gap:.6rem">
     <div style="max-width:200px"><label>Event</label><select id="pev">{opts}</select></div>
