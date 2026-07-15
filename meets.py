@@ -276,8 +276,9 @@ def delete_meet(mid):
     conn.execute("DELETE FROM entries WHERE meet_event_id IN "
                  "(SELECT id FROM meet_events WHERE meet_id=?)", (mid,))
     conn.execute("DELETE FROM meet_events WHERE meet_id=?", (mid,))
-    # XC data: finishers -> races
+    # XC / road data: finishers + road assignments -> races
     conn.execute("DELETE FROM finishers WHERE race_id IN (SELECT id FROM races WHERE meet_id=?)", (mid,))
+    conn.execute("DELETE FROM race_entries WHERE meet_id=?", (mid,))
     conn.execute("DELETE FROM races WHERE meet_id=?", (mid,))
     conn.execute("DELETE FROM meet_schools WHERE meet_id=?", (mid,))
     conn.execute("DELETE FROM meets WHERE id=?", (mid,))

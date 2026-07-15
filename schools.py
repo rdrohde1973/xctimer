@@ -260,6 +260,8 @@ def delete_school(sid):
                      "(SELECT id FROM athletes WHERE school_id=?)", (sid,))
         conn.execute("UPDATE entries SET runner_id=NULL WHERE runner_id IN "
                      "(SELECT id FROM athletes WHERE school_id=?)", (sid,))
+        conn.execute("DELETE FROM race_entries WHERE athlete_id IN "
+                     "(SELECT id FROM athletes WHERE school_id=?)", (sid,))
         conn.execute("UPDATE entries SET school_id=NULL WHERE school_id=?", (sid,))
         conn.execute("UPDATE meets SET host_school_id=NULL WHERE host_school_id=?", (sid,))
         conn.execute("DELETE FROM meet_schools WHERE school_id=?", (sid,))
@@ -772,6 +774,8 @@ def end_season(sid):
         conn.execute(f"DELETE FROM athlete_waivers WHERE athlete_id IN ({qm})", ids)
         # detach meet entries from the athlete so results (with snapshot names) survive
         conn.execute(f"UPDATE entries SET runner_id=NULL WHERE runner_id IN ({qm})", ids)
+        # road event assignments reference athletes (FK) -> drop them
+        conn.execute(f"DELETE FROM race_entries WHERE athlete_id IN ({qm})", ids)
         conn.execute(f"DELETE FROM athletes WHERE id IN ({qm})", ids)
     conn.commit()
     conn.close()
@@ -796,6 +800,7 @@ def delete_athlete(aid):
         # guarantees the connection is released even if anything above raises.
         conn.execute("DELETE FROM athlete_waivers WHERE athlete_id=?", (aid,))
         conn.execute("UPDATE entries SET runner_id=NULL WHERE runner_id=?", (aid,))
+        conn.execute("DELETE FROM race_entries WHERE athlete_id=?", (aid,))
         conn.execute("DELETE FROM athletes WHERE id=?", (aid,))
         conn.commit()
     finally:

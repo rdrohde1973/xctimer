@@ -184,6 +184,16 @@ CREATE TABLE IF NOT EXISTS entries (
     lane INTEGER
 );
 
+-- Road events: which athletes are assigned to which event (race). Exactly one
+-- event per athlete per meet (UNIQUE on meet_id+athlete_id enforces it).
+CREATE TABLE IF NOT EXISTS race_entries (
+    id INTEGER PRIMARY KEY,
+    meet_id INTEGER NOT NULL REFERENCES meets(id),
+    race_id INTEGER NOT NULL REFERENCES races(id),
+    athlete_id INTEGER NOT NULL REFERENCES athletes(id),
+    UNIQUE(meet_id, athlete_id)
+);
+
 -- District record board (imported; shown in AI Insights)
 CREATE TABLE IF NOT EXISTS district_records (
     id INTEGER PRIMARY KEY,
@@ -253,6 +263,8 @@ INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_races_meet ON races(meet_id)",
     "CREATE INDEX IF NOT EXISTS idx_finishers_race ON finishers(race_id)",
     "CREATE INDEX IF NOT EXISTS idx_finishers_bib ON finishers(bib)",
+    "CREATE INDEX IF NOT EXISTS idx_race_entries_race ON race_entries(race_id)",
+    "CREATE INDEX IF NOT EXISTS idx_race_entries_meet ON race_entries(meet_id)",
     "CREATE INDEX IF NOT EXISTS idx_meet_events_meet ON meet_events(meet_id)",
     "CREATE INDEX IF NOT EXISTS idx_entries_meet_event ON entries(meet_event_id)",
     "CREATE INDEX IF NOT EXISTS idx_results_entry ON results(entry_id)",

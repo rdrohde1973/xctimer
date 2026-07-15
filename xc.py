@@ -158,13 +158,29 @@ def setup_section(m, setup):
 
 
 def _road_setup_section(m, setup, races, counts, _json, rename_js):
-    """Road setup: meet-wide default age groups + per-event list with per-event override."""
+    """Road setup: meet-wide default age groups + per-event list with per-event
+    age-group override and an inline athlete-assignment checklist."""
     try:
         s = _json.loads(m["settings_json"] or "{}")
     except (ValueError, TypeError):
         s = {}
     default_brackets = s.get("age_brackets") or []
     default_text = s.get("age_brackets_text") or _brackets_to_text(default_brackets)
+
+    # Roster eligible for assignment: 🛣 Road athletes in the meet's schools.
+    conn = db.connect()
+    roster = conn.execute(
+        "SELECT a.id, a.name, a.bib, a.age FROM athletes a "
+        "JOIN schools sc ON sc.id=a.school_id "
+        "JOIN meet_schools ms ON ms.school_id=a.school_id "
+        "WHERE ms.meet_id=? AND a.active=1 AND a.does_road=1 "
+        "ORDER BY a.name", (m["id"],)).fetchall()
+    ent = conn.execute("SELECT race_id, athlete_id FROM race_entries WHERE meet_id=?",
+                       (m["id"],)).fetchall()
+    conn.close()
+    assigned_by_race = {}
+    for e in ent:
+        assigned_by_race.setdefault(e["race_id"], set()).add(e["athlete_id"])
 
     # --- meet-wide default age groups ---
     dflt_editor = ""
@@ -197,8 +213,10 @@ def _road_setup_section(m, setup, races, counts, _json, rename_js):
             groups_line = ('<span class="muted">Uses default: </span>'
                            + (str(_bracket_chips(default_brackets)) if default_brackets
                               else '<span class="muted">none set</span>'))
+        aset = assigned_by_race.get(r["id"], set())
         act = f'<a class="btn" href="/races/{r["id"]}/console">⏱ Time</a>'
         override = ""
+        assign = ""
         if setup:
             nm = _json.dumps(r["name"])
             act += (
@@ -214,13 +232,36 @@ def _road_setup_section(m, setup, races, counts, _json, rename_js):
                 f'placeholder="Leave blank to use the meet default">{escape(_brackets_to_text(own))}</textarea>'
                 f'<button type="submit">Save</button> '
                 f'<span class="muted">Blank = use the default above.</span></form></details>')
+            if roster:
+                items = []
+                for a in roster:
+                    chk = "checked" if a["id"] in aset else ""
+                    bib = f'#{a["bib"]}' if a["bib"] is not None else ""
+                    agei = f' · age {a["age"]}' if a["age"] is not None else ""
+                    items.append(
+                        f'<label style="display:flex;gap:.5rem;align-items:center;padding:.18rem 0">'
+                        f'<input type="checkbox" class="raC" data-aid="{a["id"]}" {chk} style="width:auto" '
+                        f'onchange="assignAth({r["id"]},{a["id"]},this)"> '
+                        f'<span>{escape(a["name"])} '
+                        f'<span class="muted">{bib}{agei}</span></span></label>')
+                roster_list = "".join(items)
+            else:
+                roster_list = ('<p class="muted" style="margin:.3rem 0">No road athletes yet — mark '
+                               'athletes as 🛣 Road on their school roster first.</p>')
+            assign = (
+                f'<details style="margin-top:.4rem"><summary class="muted" style="cursor:pointer">'
+                f'Assign athletes (<span class="acnt" data-rid="{r["id"]}">{len(aset)}</span>)</summary>'
+                f'<p class="muted" style="margin:.3rem 0">Each runner does one event — checking here '
+                f'moves them off any other event.</p>'
+                f'<div style="max-height:260px;overflow:auto;border:1px solid var(--line);'
+                f'border-radius:10px;padding:.4rem .7rem">{roster_list}</div></details>')
         ev_blocks.append(
             f'<div class="card" style="padding:.8rem 1rem">'
             f'<div style="display:flex;justify-content:space-between;align-items:center;gap:.6rem;flex-wrap:wrap">'
             f'<div><b>{escape(r["name"])}</b> <span class="muted">· {r["capture_mode"]} · {status} · '
-            f'{counts.get(r["id"], 0)} finishers</span></div>'
+            f'{len(aset)} assigned · {counts.get(r["id"], 0)} finishers</span></div>'
             f'<div style="text-align:right">{act}</div></div>'
-            f'<div style="margin-top:.3rem">{groups_line}</div>{override}</div>')
+            f'<div style="margin-top:.3rem">{groups_line}</div>{override}{assign}</div>')
     events_html = "".join(ev_blocks) or '<p class="muted">No events yet — add one below.</p>'
 
     add = ""
@@ -232,7 +273,21 @@ def _road_setup_section(m, setup, races, counts, _json, rename_js):
             f'<div style="max-width:200px"><select name="capture_mode">{opts}</select></div>'
             f'<div style="display:flex;align-items:flex-end"><button type="submit">+ Add event</button></div>'
             f'</form>')
-    events_card = f'<div class="card"><h2>Events</h2>{events_html}{add}{rename_js}</div>'
+    assign_js = (
+        '<script>'
+        'async function assignAth(rid, aid, el){'
+        '  const on=el.checked;'
+        '  try{ await jpost("/races/"+rid+"/assign", {athlete_id:aid, on:on}); }'
+        '  catch(e){ alert(e.message); el.checked=!on; return; }'
+        '  if(on){ document.querySelectorAll(".raC[data-aid=\\""+aid+"\\"]").forEach(function(c){'
+        '    if(c!==el && c.checked){ c.checked=false; bumpCnt(c); } }); }'
+        '  bumpCnt(el);'
+        '}'
+        'function bumpCnt(cb){ var det=cb.closest("details"); if(!det) return;'
+        '  var span=det.querySelector(".acnt");'
+        '  if(span) span.textContent=det.querySelectorAll(".raC:checked").length; }'
+        '</script>')
+    events_card = f'<div class="card"><h2>Events</h2>{events_html}{add}{rename_js}{assign_js}</div>'
     return default_card + events_card
 
 
@@ -256,6 +311,48 @@ def save_age_brackets(mid):
     conn.commit()
     conn.close()
     return redirect(f"/meets/{mid}")
+
+
+@bp.post("/races/<int:rid>/assign")
+@login_required
+def assign_athlete(rid):
+    """Assign/unassign a road athlete to this event. Exactly one event per meet:
+    turning an athlete ON clears any prior assignment first."""
+    r, m = _race_or_403(rid, can_setup_meet)
+    data = request.get_json(silent=True) or {}
+    try:
+        aid = int(data.get("athlete_id"))
+    except (TypeError, ValueError):
+        return jsonify(error="bad athlete"), 400
+    on = bool(data.get("on"))
+    conn = db.connect()
+    if on:
+        conn.execute("DELETE FROM race_entries WHERE meet_id=? AND athlete_id=?", (m["id"], aid))
+        conn.execute("INSERT INTO race_entries (meet_id, race_id, athlete_id) VALUES (?,?,?)",
+                     (m["id"], rid, aid))
+    else:
+        conn.execute("DELETE FROM race_entries WHERE race_id=? AND athlete_id=?", (rid, aid))
+    conn.commit()
+    conn.close()
+    return jsonify(ok=True)
+
+
+def _road_unassigned_warn(conn, m, rid, bib):
+    """For a road event that uses assignment: warn text if this bib isn't assigned here."""
+    if m["sport"] != "road" or bib is None:
+        return None
+    if not conn.execute("SELECT 1 FROM race_entries WHERE meet_id=? LIMIT 1", (m["id"],)).fetchone():
+        return None  # no assignments made for this meet → nothing to enforce
+    row = conn.execute(
+        "SELECT re.race_id, rc.name FROM race_entries re "
+        "JOIN athletes a ON a.id=re.athlete_id "
+        "LEFT JOIN races rc ON rc.id=re.race_id "
+        "WHERE re.meet_id=? AND a.bib=?", (m["id"], bib)).fetchone()
+    if row is None:
+        return f"Bib {bib} isn't assigned to any event"
+    if row["race_id"] != rid:
+        return f"Bib {bib} is assigned to {row['name']}, not this event"
+    return None
 
 
 @bp.post("/races/<int:rid>/age-groups")
@@ -312,6 +409,7 @@ def delete_race(rid):
     r, m = _race_or_403(rid, can_setup_meet)
     conn = db.connect()
     conn.execute("DELETE FROM finishers WHERE race_id=?", (rid,))
+    conn.execute("DELETE FROM race_entries WHERE race_id=?", (rid,))
     conn.execute("DELETE FROM races WHERE id=?", (rid,))
     conn.commit()
     conn.close()
@@ -492,9 +590,9 @@ async function stopRace(){{ if(!confirm('Stop the race clock?'))return; await jp
 async function resetRace(){{ if(!confirm('Reset clears the clock and all finishers. Continue?'))return;
   await jpost('/races/'+RID+'/reset',{{}}); load(); }}
 async function recordBib(){{ const el=document.getElementById('bib'); const v=el.value.trim(); if(!v)return;
-  try{{ await jpost('/races/'+RID+'/finish',{{bib:v}}); el.value=''; el.focus(); load(); }}
+  try{{ const j=await jpost('/races/'+RID+'/finish',{{bib:v}}); if(j&&j.warn) alert('⚠ '+j.warn); el.value=''; el.focus(); load(); }}
   catch(e){{ alert(e.message); el.select(); }} }}
-async function setBib(id,v){{ try{{ await jpost('/finishers/'+id+'/bib',{{bib:v}}); }}catch(e){{ alert(e.message); }} load(); }}
+async function setBib(id,v){{ try{{ const j=await jpost('/finishers/'+id+'/bib',{{bib:v}}); if(j&&j.warn) alert('⚠ '+j.warn); }}catch(e){{ alert(e.message); }} load(); }}
 async function dq(id){{ await jpost('/finishers/'+id+'/dq',{{}}); load(); }}
 async function del(id){{ if(!confirm('Delete finisher?'))return; await jpost('/finishers/'+id+'/delete',{{}}); load(); }}
 function dstart(e,id){{ dragging=true; dragId=id; e.dataTransfer.effectAllowed='move'; }}
@@ -657,9 +755,10 @@ def race_finish(rid):
                      "snap_school=?, snap_age=? WHERE id=?", (bib, *snap, slot["id"]))
         remaining = conn.execute("SELECT COUNT(*) FROM finishers WHERE race_id=? AND bib IS NULL",
                                  (rid,)).fetchone()[0]
+    warn = _road_unassigned_warn(conn, m, rid, bib)
     conn.commit()
     conn.close()
-    return jsonify(ok=True, bib=bib, name=snap[0], school=snap[3], remaining=remaining)
+    return jsonify(ok=True, bib=bib, name=snap[0], school=snap[3], remaining=remaining, warn=warn)
 
 
 @bp.post("/races/<int:rid>/tap")
@@ -696,6 +795,7 @@ def finisher_bib(fid):
     _, m = _race_or_403(f["race_id"], can_record_meet)
     raw = (request.get_json(silent=True) or {}).get("bib")
     conn = db.connect()
+    warn = None
     if raw in (None, "", "0"):
         conn.execute("UPDATE finishers SET bib=NULL, snap_name=NULL, snap_grade=NULL, "
                      "snap_gender=NULL, snap_school=NULL, snap_age=NULL WHERE id=?", (fid,))
@@ -718,9 +818,10 @@ def finisher_bib(fid):
             (bib, a["name"] if a else None, a["grade"] if a else None,
              a["gender"] if a else None, a["sname"] if a else None,
              a["age"] if a else None, fid))
+        warn = _road_unassigned_warn(conn, m, f["race_id"], bib)
     conn.commit()
     conn.close()
-    return jsonify(ok=True)
+    return jsonify(ok=True, warn=warn)
 
 
 @bp.post("/finishers/<int:fid>/dq")
