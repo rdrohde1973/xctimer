@@ -458,10 +458,12 @@ def meet_detail(mid):
             f'<select name="public_names">{name_opts}</select></div>'
             f'<div style="display:flex;align-items:flex-end"><button type="submit">Save</button></div>'
             f'</form></details>')
+    sport_label = {"xc": "🏃 Cross-country", "road": "🛣 Road race",
+                   "track": "🎽 Track & Field"}.get(m["sport"], "")
     body = f"""
 <p class="muted"><a href="/meets">← Meets</a></p>
 <h1>{escape(m['name'])}</h1>
-<p class="sub">{{"xc":"🏃 Cross-country","road":"🛣 Road race","track":"🎽 Track & Field"}}.get(m['sport'],'') · {escape(m['date'] or '')}
+<p class="sub">{sport_label} · {escape(m['date'] or '')}
  · host: {escape(host['name']) if host else '—'}</p>
 {edit_card}
 {tabs}
