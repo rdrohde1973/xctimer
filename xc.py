@@ -1428,13 +1428,12 @@ def _road_results_inner(m, events, name_mode=None):
                 f'<td>{"" if i["bib"] is None or name_mode else i["bib"]}</td>'
                 f'<td>{"<s>" if i["dq"] else ""}{escape(demo.display(i["name"], name_mode))}'
                 f'{" (DQ)" if i["dq"] else ""}{"</s>" if i["dq"] else ""}</td>'
-                f'<td>{escape(i["school"] or "")}</td>'
                 f'<td>{i["age"] if i["age"] is not None else ""}</td></tr>'
                 for i in indiv)
             parts.append(
                 f'<h3 style="margin:.9rem 0 .3rem">{escape(label)}</h3>'
                 f'<table><thead><tr><th>Pl</th><th>Time</th><th>Bib</th><th>Name</th>'
-                f'<th>Team/Club</th><th>Age</th></tr></thead><tbody>{rows}</tbody></table>')
+                f'<th>Age</th></tr></thead><tbody>{rows}</tbody></table>')
         html.append(f'<div class="card"><h2>🛣 {escape(event_name)}</h2>{"".join(parts)}</div>')
     return "".join(html)
 
@@ -1451,10 +1450,9 @@ def _pub_road_table(label, individuals, mode):
         dq = " (DQ)" if i["dq"] else ""
         rows.append(
             f'<tr><td class="pl">{pl}</td><td>{escape(disp)}{dq}</td>'
-            f'<td>{escape(i["school"] or "")}</td>'
             f'<td>{i["age"] if i["age"] is not None else ""}</td>'
             f'<td class="tm">{fmt_hms(i["time"])}</td></tr>')
-    head = '<tr><th>Pl</th><th>Name</th><th>Team/Club</th><th>Age</th><th>Time</th></tr>'
+    head = '<tr><th>Pl</th><th>Name</th><th>Age</th><th>Time</th></tr>'
     return (f'<div class="sec"><h2>{escape(label)}</h2><table><thead>{head}</thead>'
             f'<tbody>{"".join(rows)}</tbody></table></div>')
 
@@ -1723,10 +1721,10 @@ def _road_workbook(m, name_mode):
             if not indiv:
                 continue
             ws.append([label])
-            ws.append(["Place", "Time", "Bib", "Name", "Team/Club", "Age"])
+            ws.append(["Place", "Time", "Bib", "Name", "Age"])
             for i in indiv:
                 ws.append([i["place"], fmt_hms(i["time"]), None if name_mode else i["bib"],
-                           demo.public_ident(i["name"], i["bib"], name_mode), i["school"], i["age"]])
+                           demo.public_ident(i["name"], i["bib"], name_mode), i["age"]])
             ws.append([])
     if not any_tab:
         wb.create_sheet("Results").append(["No results yet"])
