@@ -238,11 +238,23 @@ def edit_school(sid):
 def delete_school(sid):
     s = _load_school_or_403(sid)
     conn = db.connect()
-    conn.execute("DELETE FROM athletes WHERE school_id=?", (sid,))
-    conn.execute("DELETE FROM user_schools WHERE school_id=?", (sid,))
-    conn.execute("DELETE FROM schools WHERE id=?", (sid,))
-    conn.commit()
-    conn.close()
+    try:
+        # Full FK-safe cascade (outage postmortem: a bare parent DELETE raises a
+        # constraint error once the school has competed). Results keep their name
+        # snapshots, so past meets stay readable after the school is gone.
+        conn.execute("DELETE FROM athlete_waivers WHERE athlete_id IN "
+                     "(SELECT id FROM athletes WHERE school_id=?)", (sid,))
+        conn.execute("UPDATE entries SET runner_id=NULL WHERE runner_id IN "
+                     "(SELECT id FROM athletes WHERE school_id=?)", (sid,))
+        conn.execute("UPDATE entries SET school_id=NULL WHERE school_id=?", (sid,))
+        conn.execute("UPDATE meets SET host_school_id=NULL WHERE host_school_id=?", (sid,))
+        conn.execute("DELETE FROM meet_schools WHERE school_id=?", (sid,))
+        conn.execute("DELETE FROM athletes WHERE school_id=?", (sid,))
+        conn.execute("DELETE FROM user_schools WHERE school_id=?", (sid,))
+        conn.execute("DELETE FROM schools WHERE id=?", (sid,))
+        conn.commit()
+    finally:
+        conn.close()
     return redirect("/schools")
 
 

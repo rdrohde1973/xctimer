@@ -242,18 +242,48 @@ def district_logo(did):
 @role_required("super_admin")
 def delete_district(did):
     conn = db.connect()
-    if not conn.execute("SELECT 1 FROM districts WHERE id=?", (did,)).fetchone():
+    try:
+        if not conn.execute("SELECT 1 FROM districts WHERE id=?", (did,)).fetchone():
+            abort(404)
+        # Full FK-safe cascade, leaves-first (outage postmortem: the old version
+        # deleted parents with live children — users with sessions, schools with
+        # athletes, meets with races/entries — and crashed on real data).
+        in_meets = "(SELECT id FROM meets WHERE district_id=?)"
+        in_mes = ("(SELECT me.id FROM meet_events me JOIN meets m ON m.id=me.meet_id "
+                  "WHERE m.district_id=?)")
+        in_schools = "(SELECT id FROM schools WHERE district_id=?)"
+        in_users = "(SELECT id FROM users WHERE district_id=?)"
+        # meet subtree: results -> entries -> meet_events; finishers -> races
+        conn.execute(f"DELETE FROM results WHERE entry_id IN "
+                     f"(SELECT id FROM entries WHERE meet_event_id IN {in_mes})", (did,))
+        conn.execute(f"DELETE FROM track_taps WHERE meet_event_id IN {in_mes}", (did,))
+        conn.execute(f"DELETE FROM track_clocks WHERE meet_event_id IN {in_mes}", (did,))
+        conn.execute(f"DELETE FROM entries WHERE meet_event_id IN {in_mes}", (did,))
+        conn.execute(f"DELETE FROM meet_events WHERE meet_id IN {in_meets}", (did,))
+        conn.execute(f"DELETE FROM finishers WHERE race_id IN "
+                     f"(SELECT id FROM races WHERE meet_id IN {in_meets})", (did,))
+        conn.execute(f"DELETE FROM races WHERE meet_id IN {in_meets}", (did,))
+        conn.execute(f"DELETE FROM meet_schools WHERE meet_id IN {in_meets}", (did,))
+        conn.execute("DELETE FROM meets WHERE district_id=?", (did,))
+        # athlete subtree
+        conn.execute(f"DELETE FROM athlete_waivers WHERE athlete_id IN "
+                     f"(SELECT id FROM athletes WHERE school_id IN {in_schools})", (did,))
+        conn.execute(f"DELETE FROM athletes WHERE school_id IN {in_schools}", (did,))
+        # user subtree (sessions/MFA reference users)
+        conn.execute(f"DELETE FROM sessions WHERE user_id IN {in_users}", (did,))
+        conn.execute(f"DELETE FROM mfa_challenges WHERE user_id IN {in_users}", (did,))
+        conn.execute(f"DELETE FROM mfa_devices WHERE user_id IN {in_users}", (did,))
+        conn.execute(f"DELETE FROM user_schools WHERE school_id IN {in_schools}", (did,))
+        conn.execute(f"DELETE FROM user_schools WHERE user_id IN {in_users}", (did,))
+        conn.execute("DELETE FROM users WHERE district_id=?", (did,))
+        # district-level leaves, then the district itself
+        conn.execute("DELETE FROM waiver_templates WHERE district_id=?", (did,))
+        conn.execute("DELETE FROM district_records WHERE district_id=?", (did,))
+        conn.execute("DELETE FROM schools WHERE district_id=?", (did,))
+        conn.execute("DELETE FROM districts WHERE id=?", (did,))
+        conn.commit()
+    finally:
         conn.close()
-        abort(404)
-    # Cascade the (still-small in Phase 1) child rows.
-    conn.execute("DELETE FROM user_schools WHERE school_id IN "
-                 "(SELECT id FROM schools WHERE district_id=?)", (did,))
-    conn.execute("DELETE FROM schools WHERE district_id=?", (did,))
-    conn.execute("DELETE FROM users WHERE district_id=?", (did,))
-    conn.execute("DELETE FROM meets WHERE district_id=?", (did,))
-    conn.execute("DELETE FROM districts WHERE id=?", (did,))
-    conn.commit()
-    conn.close()
     return redirect("/districts")
 
 
@@ -592,6 +622,8 @@ def delete_user(uid):
         abort(403)
     conn.execute("DELETE FROM user_schools WHERE user_id=?", (uid,))
     conn.execute("DELETE FROM sessions WHERE user_id=?", (uid,))
+    conn.execute("DELETE FROM mfa_challenges WHERE user_id=?", (uid,))
+    conn.execute("DELETE FROM mfa_devices WHERE user_id=?", (uid,))
     conn.execute("DELETE FROM users WHERE id=?", (uid,))
     conn.commit()
     conn.close()

@@ -24,7 +24,7 @@ from .insights import bp as insights_bp
 from .phone import bp as phone_bp
 from .waivers import bp as waivers_bp
 
-APP_VERSION = "0.62.5-fix-delete-athlete"
+APP_VERSION = "0.63.0-lock-hardening"
 
 LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width, initial-scale=1">
@@ -348,6 +348,16 @@ def create_app():
     )
 
     db.init_db()
+
+    # Backstop for db.connect()'s per-request connection registry: whatever a route
+    # leaked (crash between write and close) gets closed here, releasing its lock.
+    @app.teardown_appcontext
+    def _close_leaked_db_conns(exc):
+        for c in getattr(g, "_db_conns", None) or []:
+            try:
+                c.close()
+            except Exception:  # noqa: BLE001
+                pass
 
     app.before_request(auth.load_principal)
     app.before_request(auth.demo_readonly_guard)

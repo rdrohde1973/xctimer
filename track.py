@@ -474,6 +474,8 @@ def delete_meet_event(meid):
         abort(403)
     conn = db.connect()
     conn.execute("DELETE FROM results WHERE entry_id IN (SELECT id FROM entries WHERE meet_event_id=?)", (meid,))
+    conn.execute("DELETE FROM track_taps WHERE meet_event_id=?", (meid,))
+    conn.execute("DELETE FROM track_clocks WHERE meet_event_id=?", (meid,))
     conn.execute("DELETE FROM entries WHERE meet_event_id=?", (meid,))
     conn.execute("DELETE FROM meet_events WHERE id=?", (meid,))
     conn.commit()

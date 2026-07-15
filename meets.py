@@ -246,9 +246,14 @@ def delete_meet(mid):
     if not can_delete_meet(m):
         abort(403)
     conn = db.connect()
-    # Track data: results -> entries -> meet_events
+    # Track data: results -> entries -> meet_events (+ live tap-timer state, which has
+    # no FK — left behind it could attach to a future event that reuses the rowid)
     conn.execute("DELETE FROM results WHERE entry_id IN (SELECT en.id FROM entries en "
                  "JOIN meet_events me ON me.id=en.meet_event_id WHERE me.meet_id=?)", (mid,))
+    conn.execute("DELETE FROM track_taps WHERE meet_event_id IN "
+                 "(SELECT id FROM meet_events WHERE meet_id=?)", (mid,))
+    conn.execute("DELETE FROM track_clocks WHERE meet_event_id IN "
+                 "(SELECT id FROM meet_events WHERE meet_id=?)", (mid,))
     conn.execute("DELETE FROM entries WHERE meet_event_id IN "
                  "(SELECT id FROM meet_events WHERE meet_id=?)", (mid,))
     conn.execute("DELETE FROM meet_events WHERE meet_id=?", (mid,))

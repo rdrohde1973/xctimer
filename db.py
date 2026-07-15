@@ -21,6 +21,19 @@ def connect():
     cur.execute("PRAGMA busy_timeout=10000")    # wait up to 10s for the lock
     cur.execute("PRAGMA synchronous=NORMAL")    # safe under WAL, much faster than FULL
     cur.execute("PRAGMA foreign_keys=ON")
+    # SAFETY NET (2026-07-14 outage): register every connection opened during a request
+    # so the app's teardown hook closes any that a route leaked (e.g. by raising between
+    # a write and conn.close()). A single leaked write-locked connection once cascaded
+    # into site-wide "database is locked" 500s. Closing twice is a harmless no-op;
+    # closing an unleaked-but-uncommitted conn rolls back and RELEASES THE LOCK.
+    try:
+        from flask import g, has_app_context
+        if has_app_context():
+            if not hasattr(g, "_db_conns"):
+                g._db_conns = []
+            g._db_conns.append(conn)
+    except Exception:  # noqa: BLE001 — scripts/CLI run without flask context
+        pass
     return conn
 
 
