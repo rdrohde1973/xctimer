@@ -420,15 +420,12 @@ function pitLookup(){{
       }}
       let s='<b style="color:var(--ok)">✔ '+esc(j.name)+'</b>'
         +'<span class="muted"> · '+esc(j.school)+' · '+esc(j.division)+'</span>';
-      // already-recorded attempts for this event: legal marks green, fouls red
-      const att=(j.attempts||[]).filter(function(x){{return x;}});
-      if(att.length){{
-        const chips=att.map(function(x){{
-          const red=/^\\s*f/i.test(x);
-          return '<b style="color:'+(red?'var(--err)':'var(--ok)')+'">'+esc(x)+'</b>';
-        }}).join(' , ');
-        s+='<br><span style="color:var(--warn)">⚠ already recorded:</span> '+chips
-          +(j.best?' <span class="muted">(best '+esc(j.best)+')</span>':'');
+      // Load any already-recorded attempts straight into the boxes so they can be
+      // reviewed/edited (re-recording replaces them). Blank boxes = nothing on file.
+      const att=j.attempts||[];
+      for(let k=0;k<3;k++){{ document.getElementById('pa'+k).value = att[k] || ''; }}
+      if(att.some(function(x){{return x;}})){{
+        s+='<span class="muted"> · marks on file loaded below — edit &amp; record to update</span>';
       }}
       info.innerHTML=s;
     }}catch(e){{ info.textContent=''; }}
