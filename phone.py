@@ -376,10 +376,9 @@ def _track_timer(conn, m):
   <div id="pbibinfo" style="min-height:1.3rem;margin-top:.3rem;font-size:1rem"></div>
   <label>Attempts</label>
   <div class="pitatts">
-    <input id="pa0" inputmode="text" placeholder="12-06">
-    <input id="pa1" inputmode="text" placeholder="12-09">
-    <input id="pa2" inputmode="text" placeholder="F"
-      onkeydown="if(event.key==='Enter')pitPost()">
+    <input id="pa0" inputmode="text">
+    <input id="pa1" inputmode="text">
+    <input id="pa2" inputmode="text" onkeydown="if(event.key==='Enter')pitPost()">
   </div>
   <button onclick="pitPost()" style="width:100%;margin-top:1rem;padding:1rem;font-size:1.15rem">✔ Record mark</button>
   <div id="pmsg" style="margin-top:.6rem"></div>

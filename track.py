@@ -974,8 +974,8 @@ division automatically (Long Jump / Shot Put, feet-inches, F = foul).
     <div style="max-width:120px"><label>Bib</label>
       <input id="pbib" inputmode="numeric" autocomplete="off"
         onkeydown="if(event.key==='Enter')document.getElementById('pa0').focus()"></div>
-    <div style="max-width:110px"><label>Att 1</label><input id="pa0" placeholder="12-06"></div>
-    <div style="max-width:110px"><label>Att 2</label><input id="pa1" placeholder="F"></div>
+    <div style="max-width:110px"><label>Att 1</label><input id="pa0"></div>
+    <div style="max-width:110px"><label>Att 2</label><input id="pa1"></div>
     <div style="max-width:110px"><label>Att 3</label><input id="pa2"
       onkeydown="if(event.key==='Enter')pitPost()"></div>
     <div style="display:flex;align-items:flex-end"><button onclick="pitPost()">✔ Record</button></div>
