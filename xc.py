@@ -725,9 +725,9 @@ def race_finish(rid):
     dup = conn.execute("SELECT snap_name FROM finishers WHERE race_id=? AND bib=?",
                        (rid, bib)).fetchone()
     if dup:
+        # Accidental double-scan at the line: silently discard, don't block the timer.
         conn.close()
-        nm = f" ({dup['snap_name']})" if dup["snap_name"] else ""
-        return jsonify(error=f"Bib {bib}{nm} already recorded"), 400
+        return jsonify(ok=True, duplicate=True)
     a = _athlete_for_bib(conn, m["id"], bib)
     snap = (a["name"] if a else None, a["grade"] if a else None,
             a["gender"] if a else None, a["sname"] if a else None,
@@ -1570,12 +1570,24 @@ def _public_road(m, mode):
         status = "Live"
     else:
         status = ""
-    body_parts = []
-    for event_name, groups in events:
-        for lbl, indiv in groups:
-            if indiv:
-                body_parts.append(_pub_road_table(f"{event_name} — {lbl}", indiv, mode))
-    body = "".join(body_parts) or '<div class="sec"><h2>No results yet</h2></div>'
+    ev_sections, ev_names = [], []
+    for idx, (event_name, groups) in enumerate(events):
+        tables = "".join(_pub_road_table(lbl, indiv, mode) for lbl, indiv in groups if indiv)
+        if not tables:
+            continue
+        ev_names.append((idx, event_name))
+        ev_sections.append(
+            f'<div class="evsec" data-ev="{idx}">'
+            f'<h2 class="evh">🛣 {escape(event_name)}</h2>{tables}</div>')
+    body = "".join(ev_sections) or '<div class="sec"><h2>No results yet</h2></div>'
+    # Sort/filter-by-event dropdown (only worth showing with more than one event).
+    evfilter = ""
+    if len(ev_names) > 1:
+        opts = '<option value="">All events</option>' + "".join(
+            f'<option value="{i}">{escape(nm)}</option>' for i, nm in ev_names)
+        evfilter = (
+            f'<div class="evbar"><label for="evsel">Event</label>'
+            f'<select id="evsel" onchange="filterEv()">{opts}</select></div>')
     sub = escape(m["date"] or "") + (f" · {status}" if status else "")
     return f"""<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width, initial-scale=1">
@@ -1588,6 +1600,11 @@ def _public_road(m, mode):
 .livedot{{width:.7rem;height:.7rem;border-radius:50%;background:#2e9e5b;animation:lblink 1s infinite}}
 @keyframes lblink{{50%{{opacity:.2}}}}
 .liveclock{{font-size:2.6rem;font-weight:800;font-variant-numeric:tabular-nums;text-align:center;margin:.1rem 0;color:#12385f;letter-spacing:.5px}}
+.evbar{{display:flex;align-items:center;gap:.5rem;margin:0 0 1rem}}
+.evbar label{{font-size:.72rem;text-transform:uppercase;letter-spacing:.04em;color:#5b6b7c;font-weight:700}}
+.evbar select{{flex:1;max-width:340px;padding:.55rem .7rem;border:1px solid #d5dde6;border-radius:9px;
+  background:#fff;color:#1b2b3a;font-size:1rem;font-weight:600}}
+.evh{{margin:.2rem 0 .7rem;color:#12385f;font-size:1.15rem;font-weight:800}}
 </style></head><body>
 <div class="top">
   <div style="display:flex;align-items:center;gap:.8rem">{_host_logo_tag(m)}
@@ -1596,6 +1613,7 @@ def _public_road(m, mode):
 </div>
 <main>
   <div id="livebox"></div>
+  {evfilter}
   {body}
 </main>
 <footer class="pubfoot">Powered by {BRAND_HTML}</footer>
@@ -1641,6 +1659,20 @@ async function pollLive(){{
 }}
 document.addEventListener('visibilitychange',function(){{ if(!document.hidden) pollLive(); }});
 setInterval(tickLive,100); pollLive();
+// Sort/filter by event — remembered across the auto-refresh.
+function filterEv(){{
+  var sel=document.getElementById('evsel'); if(!sel) return;
+  var v=sel.value;
+  try{{ sessionStorage.setItem('roadEv', v); }}catch(e){{}}
+  document.querySelectorAll('.evsec').forEach(function(s){{
+    s.style.display=(!v || s.getAttribute('data-ev')===v)?'':'none'; }});
+}}
+(function(){{
+  var sel=document.getElementById('evsel'); if(!sel) return;
+  try{{ var v=sessionStorage.getItem('roadEv');
+    if(v && sel.querySelector('option[value="'+v+'"]')) sel.value=v; }}catch(e){{}}
+  filterEv();
+}})();
 setInterval(function(){{ if(!document.hidden && !window.__LIVE_ACTIVE) location.reload(); }}, 20000);
 </script>
 </body></html>"""

@@ -262,8 +262,8 @@ function buzz(ms){{ try{{ navigator.vibrate && navigator.vibrate(ms); }}catch(e)
 async function tap(){{ buzz(35); try{{ await jpost('/races/'+RID+'/tap',{{}}); }}catch(e){{}} load(); }}
 async function undo(){{ buzz([20,40,20]); try{{ await jpost('/races/'+RID+'/untap',{{}}); }}catch(e){{ alert(e.message); }} load(); }}
 async function rec(v){{ const el=document.getElementById('sbib'); v=(v||el.value).toString().trim(); if(!v)return;
-  try{{ const j=await jpost('/races/'+RID+'/finish',{{bib:v}}); buzz(35); el.value='';
-    if(j&&j.warn){{ buzz([60,60,60]); alert('⚠ '+j.warn); }} }}
+  try{{ const j=await jpost('/races/'+RID+'/finish',{{bib:v}}); el.value='';
+    if(!(j&&j.duplicate)){{ buzz(35); if(j&&j.warn){{ buzz([60,60,60]); alert('⚠ '+j.warn); }} }} }}
   catch(e){{ buzz([60,60,60]); alert(e.message); }} load(); }}
 // Screen wake lock: a timing phone that sleeps mid-race silently loses finishers.
 let WL=null;
