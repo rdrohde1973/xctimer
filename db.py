@@ -11,13 +11,15 @@ DB_PATH = os.environ.get("XCTIMER_DB", os.path.join(os.path.dirname(__file__), "
 
 
 def connect():
-    """Open a connection with the required pragmas (handoff §6.5)."""
-    conn = sqlite3.connect(DB_PATH, timeout=5.0)
+    """Open a connection. Only cheap, lock-free per-connection pragmas here — WAL mode
+    is a PERSISTENT db-level property set once in init_db(); running `PRAGMA journal_mode=WAL`
+    on every connect needs a write lock and, under load, throws 'database is locked' even
+    on read connections (that regressed the whole app). See init_db()."""
+    conn = sqlite3.connect(DB_PATH, timeout=10.0)
     conn.row_factory = sqlite3.Row
     cur = conn.cursor()
-    cur.execute("PRAGMA journal_mode=WAL")      # concurrent readers + one writer
+    cur.execute("PRAGMA busy_timeout=10000")    # wait up to 10s for the lock
     cur.execute("PRAGMA synchronous=NORMAL")    # safe under WAL, much faster than FULL
-    cur.execute("PRAGMA busy_timeout=5000")     # wait up to 5s for the lock
     cur.execute("PRAGMA foreign_keys=ON")
     return conn
 
@@ -416,6 +418,7 @@ def init_db():
     """Create schema + indexes and seed the global catalog if empty. Idempotent."""
     conn = connect()
     try:
+        conn.execute("PRAGMA journal_mode=WAL")   # persistent db-level mode — set ONCE here
         conn.executescript(SCHEMA)
         migrate(conn)
         for stmt in INDEXES:

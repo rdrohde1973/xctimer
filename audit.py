@@ -61,6 +61,10 @@ def record_request(status):
         is_login = (path == "/login" and method == "POST")
         if (not p and not is_login) or _skip(path):
             return
+        # Meet-day QR timers fire high-frequency operational taps and never touch student
+        # rosters/exports — auditing each one just amplifies writes during a live meet.
+        if p is not None and getattr(p, "meet_scope", None):
+            return
         if p:
             actor_id = getattr(p, "id", None)
             actor_email = getattr(p, "email", None) or (
