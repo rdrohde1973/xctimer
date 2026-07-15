@@ -368,10 +368,12 @@ def _track_timer(conn, m):
   division automatically. Long Jump &amp; Shot Put, feet-inches, <b>F</b> = foul.</p>
   <label>Event</label>
   <select id="pev">{field_opts}</select>
-  <label>Bib #</label>
-  <input id="pbib" inputmode="numeric" autocomplete="off" placeholder="scan or type bib"
+  <label>Enter bib #</label>
+  <input id="pbib" inputmode="numeric" autocomplete="off" placeholder="enter bib #"
+    oninput="pitLookup()"
     onkeydown="if(event.key==='Enter')document.getElementById('pa0').focus()"
     style="font-size:1.3rem;padding:.7rem">
+  <div id="pbibinfo" style="min-height:1.3rem;margin-top:.3rem;font-size:1rem"></div>
   <label>Attempts</label>
   <div class="pitatts">
     <input id="pa0" inputmode="text" placeholder="12-06">
@@ -400,6 +402,26 @@ function segTab(t){{
     document.getElementById('seg-'+k).className = (k===t)?'':'ghost';
   }});
 }}
+let _pitLT=null;
+function pitLookup(){{
+  clearTimeout(_pitLT);
+  const bib=document.getElementById('pbib').value.trim();
+  const info=document.getElementById('pbibinfo');
+  if(!bib){{ info.textContent=''; return; }}
+  info.innerHTML='<span class="muted">…</span>';
+  _pitLT=setTimeout(async function(){{
+    try{{
+      const j=await jget('/meets/{m['id']}/pit/lookup?bib='+encodeURIComponent(bib));
+      if(document.getElementById('pbib').value.trim()!==bib) return;   // stale
+      if(j.found){{
+        info.innerHTML='<b style="color:var(--ok)">✔ '+esc(j.name)+'</b>'
+          +'<span class="muted"> · '+esc(j.school)+' · '+esc(j.division)+'</span>';
+      }}else{{
+        info.innerHTML='<span style="color:var(--warn)">no athlete with bib '+esc(bib)+' at this meet</span>';
+      }}
+    }}catch(e){{ info.textContent=''; }}
+  }}, 250);
+}}
 async function pitPost(){{
   const ev=document.getElementById('pev').value, bib=document.getElementById('pbib').value.trim();
   const atts=[0,1,2].map(function(k){{return document.getElementById('pa'+k).value.trim();}});
@@ -415,6 +437,7 @@ async function pitPost(){{
       +'<td class="muted">'+esc(atts.filter(function(a){{return a;}}).join(', '))+'</td>'
       +'<td><b>'+esc(j.best||'')+'</b></td></tr>');
     ['pbib','pa0','pa1','pa2'].forEach(function(k){{document.getElementById(k).value='';}});
+    document.getElementById('pbibinfo').textContent='';
     document.getElementById('pbib').focus();
   }}catch(e){{ box.innerHTML='<p class="msg err">'+esc(e.message)+'</p>'; }}
 }}

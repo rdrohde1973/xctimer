@@ -1006,6 +1006,30 @@ async function pitPost(){{
     return shell(g.principal, body, active="meets")
 
 
+@bp.get("/meets/<int:mid>/pit/lookup")
+@login_required
+def pit_lookup(mid):
+    """Live bib -> athlete lookup for the open-pit console (confirm-as-you-type)."""
+    m = load_meet(mid)
+    if not can_record_meet(m) or m["sport"] != "track":
+        abort(403)
+    try:
+        bib = int((request.args.get("bib") or "").strip())
+    except (TypeError, ValueError):
+        return jsonify(found=False)
+    conn = db.connect()
+    a = conn.execute(
+        "SELECT a.name, a.grade, a.gender, s.name AS sname FROM athletes a "
+        "JOIN schools s ON s.id=a.school_id JOIN meet_schools ms ON ms.school_id=s.id "
+        "WHERE ms.meet_id=? AND a.bib=? AND a.active=1", (mid, bib)).fetchone()
+    conn.close()
+    if not a:
+        return jsonify(found=False)
+    gword = {"M": "Boys", "F": "Girls"}.get(a["gender"], "Open")
+    division = gword + (f" {a['grade']}th" if a["grade"] else "")
+    return jsonify(found=True, name=a["name"], school=a["sname"], division=division)
+
+
 @bp.post("/meets/<int:mid>/pit/post")
 @login_required
 def pit_post(mid):
