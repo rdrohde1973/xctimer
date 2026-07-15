@@ -127,14 +127,18 @@ CSRF_JS = """
     }
     return _fetch(input, init);
   };
-  document.addEventListener('submit', function(e){
-    var f = e.target;
+  function inject(f){
     if(!f || f.tagName!=='FORM') return;
     if(((f.getAttribute('method')||'get').toLowerCase())!=='post') return;
     var i = f.querySelector('input[name=_csrf]');
     if(!i){ i=document.createElement('input'); i.type='hidden'; i.name='_csrf'; f.appendChild(i); }
     i.value = csrf();
-  }, true);
+  }
+  document.addEventListener('submit', function(e){ inject(e.target); }, true);
+  // form.submit() called from JS (e.g. onchange="this.form.submit()") does NOT fire the
+  // submit event, so patch it directly — otherwise those POSTs miss the token and 403.
+  var _submit = HTMLFormElement.prototype.submit;
+  HTMLFormElement.prototype.submit = function(){ inject(this); return _submit.apply(this, arguments); };
 })();
 """
 
