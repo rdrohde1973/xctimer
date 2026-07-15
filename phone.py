@@ -100,9 +100,10 @@ def phone_home():
         return redirect(f"/phone/meet/{meets[0]['id']}")
     groups = []
     for m in meets:
-        if m["sport"] == "xc":
+        if m["sport"] in ("xc", "road"):
             races = conn.execute("SELECT * FROM races WHERE meet_id=? ORDER BY id",
                                  (m["id"],)).fetchall()
+            noun = "events" if m["sport"] == "road" else "heats"
             heats = []
             for r in races:
                 if r["stop_time"]:
@@ -115,7 +116,7 @@ def phone_home():
                     f'<a class="heat" href="/phone/race/{r["id"]}">'
                     f'<span class="hn">{escape(r["name"])} <small>· {escape(r["capture_mode"])}</small></span>'
                     f'<span class="st {cls}">{lbl}</span></a>')
-            inner = "".join(heats) or '<div class="heat empty">No heats yet — add them in meet setup.</div>'
+            inner = "".join(heats) or f'<div class="heat empty">No {noun} yet — add them in meet setup.</div>'
         else:
             inner = (f'<a class="heat" href="/phone/meet/{m["id"]}">'
                      f'<span class="hn">🎽 Track Timer</span><span class="st go">open</span></a>')
@@ -285,7 +286,7 @@ def phone_meet(mid):
     m = load_meet(mid)
     if not can_record_meet(m):
         abort(403)
-    if m["sport"] == "xc":            # XC heats live on the pick page now
+    if m["sport"] in ("xc", "road"):  # XC heats / road events live on the pick page now
         return redirect("/phone")
     conn = db.connect()
     html = _track_timer(conn, m)
