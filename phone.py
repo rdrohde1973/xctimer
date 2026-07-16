@@ -145,7 +145,8 @@ body.phone{margin:0;display:flex;flex-direction:column;overflow:hidden;backgroun
 .tclock{font-size:1.7rem;font-weight:800;font-variant-numeric:tabular-nums;letter-spacing:-.01em}
 .subbar{display:flex;align-items:center;background:var(--panel);padding:.5rem 1rem;border-bottom:1px solid var(--line)}
 .subbar .back{color:var(--link);font-weight:600;min-width:74px}
-.subbar .rn{flex:1;text-align:center;font-weight:700;padding-right:74px}
+.subbar .rn{flex:1;text-align:center;font-weight:700}
+.subbar .camlink{min-width:74px;text-align:right;color:var(--link);font-weight:700;text-decoration:none;font-size:1.1rem}
 .tmain{flex:1;display:flex;flex-direction:column;padding:.8rem;min-height:0}
 .bigbtn{border:0;border-radius:18px;color:#fff;font-weight:800;letter-spacing:.05em;cursor:pointer;width:100%}
 .bigbtn:active{filter:brightness(1.15)}
@@ -200,7 +201,8 @@ def phone_race(rid):
   <div id="clock" class="tclock">0:00:00</div>
 </div>
 <div class="subbar"><a href="/phone" class="back">‹ Heats</a>
-  <span class="rn">{escape(r['name'])}</span></div>
+  <span class="rn">{escape(r['name'])}</span>
+  <a href="/races/{rid}/camera" class="camlink" title="Time with the camera">📷</a></div>
 <div class="tmain">
   <button id="startb" class="bigbtn start" onclick="startRace()">START</button>
   <button id="tapb" class="bigbtn tap" onclick="tap()" style="display:none">FINISHER</button>
