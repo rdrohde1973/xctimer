@@ -1608,7 +1608,7 @@ def public_live_xc(mid):
 def _live_races(mid):
     conn = db.connect()
     rows = conn.execute(
-        "SELECT name, start_time, stop_time FROM races "
+        "SELECT id, name, start_time, stop_time FROM races "
         "WHERE meet_id=? AND start_time IS NOT NULL ORDER BY start_time", (mid,)).fetchall()
     now = _now()
     heats = []
@@ -1616,8 +1616,16 @@ def _live_races(mid):
         stop = _parse(r["stop_time"])
         if stop and (now - stop).total_seconds() > XLIVE_HOLD:
             continue
+        # Last 5 to cross (highest seq), returned oldest→newest so the ticker scrolls up.
+        recent = conn.execute(
+            "SELECT seq, elapsed_seconds, snap_name, snap_school FROM finishers "
+            "WHERE race_id=? ORDER BY seq DESC LIMIT 5", (r["id"],)).fetchall()
+        fin = [{"n": f["seq"], "elapsed": f["elapsed_seconds"],
+                "who": f["snap_name"], "school": f["snap_school"]}
+               for f in reversed(recent)]
         heats.append({"name": r["name"] or "Race", "start_ms": _ms(_parse(r["start_time"])),
-                      "stop_ms": _ms(stop) if stop else None, "ended": bool(stop)})
+                      "stop_ms": _ms(stop) if stop else None, "ended": bool(stop),
+                      "finishers": fin})
     conn.close()
     return heats
 
@@ -1671,6 +1679,12 @@ def _public_xc(m, mode):
 .livedot{{width:.7rem;height:.7rem;border-radius:50%;background:#2e9e5b;animation:lblink 1s infinite}}
 @keyframes lblink{{50%{{opacity:.2}}}}
 .liveclock{{font-size:2.6rem;font-weight:800;font-variant-numeric:tabular-nums;text-align:center;margin:.1rem 0;color:#12385f;letter-spacing:.5px}}
+.livescroll{{max-height:8.5rem;overflow-y:auto;border-top:1px solid #e6ebf1;margin-top:.5rem}}
+.livescroll table{{width:100%;border-collapse:collapse}}
+.livescroll td{{padding:.3rem .4rem;border-top:1px solid #eef2f6;font-size:.92rem}}
+.livescroll .lp{{color:#2f6db5;font-weight:800;width:2rem;text-align:center}}
+.livescroll .lt{{font-variant-numeric:tabular-nums;color:#5b6b7c;width:5.4rem;white-space:nowrap}}
+.livescroll .lm{{color:#8a97a5}}
 </style></head><body>
 <div class="top">
   <div style="display:flex;align-items:center;gap:.8rem">{_host_logo_tag(m)}
@@ -1715,9 +1729,16 @@ function renderLive(heats){{
       : '<div class="livehd"><span class="livedot"></span> LIVE · '+lesc(ht.name)+'</div>';
     const clk='<div class="liveclock" data-start="'+ht.start_ms+'"'
       +(ht.ended?(' data-stop="'+ht.stop_ms+'"'):'')+'>0:00:00.0</div>';
-    h+='<div class="livecard'+(ht.ended?' final':'')+'">'+hd+clk+'</div>';
+    let rows='';
+    (ht.finishers||[]).forEach(function(f){{
+      rows+='<tr><td class="lp">'+f.n+'</td><td class="lt">'+lfmt(f.elapsed)+'</td>'
+        +'<td>'+(f.who?lesc(f.who):'<span class="lm">… crossing</span>')+'</td></tr>';
+    }});
+    const scroll = rows ? '<div class="livescroll"><table>'+rows+'</table></div>' : '';
+    h+='<div class="livecard'+(ht.ended?' final':'')+'">'+hd+clk+scroll+'</div>';
   }});
   box.innerHTML=h;
+  document.querySelectorAll('.livescroll').forEach(function(s){{ s.scrollTop=s.scrollHeight; }});
 }}
 function tickLive(){{
   const now=Date.now()+LOFFSET;
@@ -1835,6 +1856,12 @@ def _public_road(m, mode):
 .livedot{{width:.7rem;height:.7rem;border-radius:50%;background:#2e9e5b;animation:lblink 1s infinite}}
 @keyframes lblink{{50%{{opacity:.2}}}}
 .liveclock{{font-size:2.6rem;font-weight:800;font-variant-numeric:tabular-nums;text-align:center;margin:.1rem 0;color:#12385f;letter-spacing:.5px}}
+.livescroll{{max-height:8.5rem;overflow-y:auto;border-top:1px solid #e6ebf1;margin-top:.5rem}}
+.livescroll table{{width:100%;border-collapse:collapse}}
+.livescroll td{{padding:.3rem .4rem;border-top:1px solid #eef2f6;font-size:.92rem}}
+.livescroll .lp{{color:#2f6db5;font-weight:800;width:2rem;text-align:center}}
+.livescroll .lt{{font-variant-numeric:tabular-nums;color:#5b6b7c;width:5.4rem;white-space:nowrap}}
+.livescroll .lm{{color:#8a97a5}}
 .evbar{{display:flex;align-items:center;gap:.5rem;margin:0 0 1rem}}
 .evbar label{{font-size:.72rem;text-transform:uppercase;letter-spacing:.04em;color:#5b6b7c;font-weight:700}}
 .evbar select{{flex:1;max-width:340px;padding:.55rem .7rem;border:1px solid #d5dde6;border-radius:9px;
@@ -1869,9 +1896,16 @@ function renderLive(heats){{
       : '<div class="livehd"><span class="livedot"></span> LIVE · '+lesc(ht.name)+'</div>';
     const clk='<div class="liveclock" data-start="'+ht.start_ms+'"'
       +(ht.ended?(' data-stop="'+ht.stop_ms+'"'):'')+'>0:00:00.0</div>';
-    h+='<div class="livecard'+(ht.ended?' final':'')+'">'+hd+clk+'</div>';
+    let rows='';
+    (ht.finishers||[]).forEach(function(f){{
+      rows+='<tr><td class="lp">'+f.n+'</td><td class="lt">'+lfmt(f.elapsed)+'</td>'
+        +'<td>'+(f.who?lesc(f.who):'<span class="lm">… crossing</span>')+'</td></tr>';
+    }});
+    const scroll = rows ? '<div class="livescroll"><table>'+rows+'</table></div>' : '';
+    h+='<div class="livecard'+(ht.ended?' final':'')+'">'+hd+clk+scroll+'</div>';
   }});
   box.innerHTML=h;
+  document.querySelectorAll('.livescroll').forEach(function(s){{ s.scrollTop=s.scrollHeight; }});
 }}
 function tickLive(){{
   const now=Date.now()+LOFFSET;
