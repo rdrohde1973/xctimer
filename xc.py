@@ -230,8 +230,10 @@ def _road_setup_section(m, setup, races, counts, _json, rename_js):
             f'<div style="text-align:right">{act}</div></div>'
             f'<div style="margin-top:.3rem">{groups_line}</div>{override}</div>')
     events_html = "".join(ev_blocks) or '<p class="muted">No events yet — add one below.</p>'
+    # Community (organizer) events use participants, not the school-roster assign flow.
+    is_org = ("organizer_id" in m.keys() and m["organizer_id"] is not None)
     assign_link = (f'<p style="margin:.2rem 0 0"><a class="btn ghost" href="/meets/{m["id"]}/road-assign">'
-                   f'🧭 Assign athletes to events →</a></p>' if (setup and races) else '')
+                   f'🧭 Assign athletes to events →</a></p>' if (setup and races and not is_org) else '')
 
     add = ""
     if setup:

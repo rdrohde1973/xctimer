@@ -169,7 +169,10 @@ def home_url(principal):
     dashboard, so they go to Meets; admins get the dashboard."""
     if getattr(principal, "meet_scope", None):
         return "/phone"
-    return "/meets" if getattr(principal, "role", None) in ("coach", "timer") else "/dashboard"
+    role = getattr(principal, "role", None)
+    if role == "race_director":
+        return "/events"
+    return "/meets" if role in ("coach", "timer") else "/dashboard"
 
 
 def _brand(principal, href=None, app=False):
@@ -229,6 +232,9 @@ def shell(principal, body, *, active="", active_district=None, districts=None,
 
     if getattr(principal, "meet_scope", None):
         nav = []  # meet-day QR principal: minimal chrome, no navigation
+    elif role == "race_director":
+        # Community race directors live entirely in the Events world — no schools/districts.
+        nav.append(link("/events", "Events", "events"))
     else:
         if role in ("super_admin", "district_admin"):
             nav.append(link("/dashboard", "Dashboard", "dashboard"))
@@ -243,6 +249,8 @@ def shell(principal, body, *, active="", active_district=None, districts=None,
         if role in ("super_admin", "district_admin", "coach"):
             nav.append(link("/insights", "Insights", "insights"))
         if role == "super_admin":
+            nav.append(link("/organizers", "Organizers", "organizers"))
+            nav.append(link("/events", "Events", "events"))
             nav.append(link("/admin/console", "Console", "console"))
 
     # District switcher (super admin) or fixed label

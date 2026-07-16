@@ -62,6 +62,10 @@ def meet_school_ids(mid):
     return {r[0] for r in rows}
 
 
+def _meet_organizer_id(m):
+    return m["organizer_id"] if "organizer_id" in m.keys() else None
+
+
 def can_view_meet(m):
     p = g.principal
     if not p:
@@ -70,6 +74,9 @@ def can_view_meet(m):
         return p.meet_scope == m["id"]
     if p.is_super:
         return True
+    org = _meet_organizer_id(m)
+    if org is not None:                       # community road event: organizer-scoped
+        return getattr(p, "organizer_id", None) == org
     if p.district_id != m["district_id"]:
         return False
     if p.role == "district_admin":
@@ -85,6 +92,9 @@ def can_setup_meet(m):
         return False
     if p.is_super:
         return True
+    org = _meet_organizer_id(m)
+    if org is not None:
+        return getattr(p, "organizer_id", None) == org
     if p.district_id != m["district_id"]:
         return False
     if p.role == "district_admin":
@@ -102,6 +112,9 @@ def can_record_meet(m):
         return p.meet_scope == m["id"]
     if p.is_super:
         return True
+    org = _meet_organizer_id(m)
+    if org is not None:
+        return getattr(p, "organizer_id", None) == org
     if p.district_id != m["district_id"]:
         return False
     if p.role in ("district_admin",):
@@ -130,11 +143,11 @@ def list_meets():
     if p.is_super and did is None:
         rows = conn.execute(
             "SELECT m.*, d.name AS dname FROM meets m JOIN districts d ON d.id=m.district_id "
-            "ORDER BY m.date DESC, m.name").fetchall()
+            "WHERE m.organizer_id IS NULL ORDER BY m.date DESC, m.name").fetchall()
     else:
         rows = conn.execute(
-            "SELECT m.*, NULL AS dname FROM meets m WHERE m.district_id=? ORDER BY m.date DESC, m.name",
-            (did,)).fetchall()
+            "SELECT m.*, NULL AS dname FROM meets m WHERE m.district_id=? AND m.organizer_id IS NULL "
+            "ORDER BY m.date DESC, m.name", (did,)).fetchall()
     conn.close()
     rows = [m for m in rows if can_view_meet(m)]
 
@@ -433,9 +446,15 @@ def meet_detail(mid):
                      f'{"Rotate" if m["timer_token"] else "Generate"} timer QR</button></form>')
 
     section = _sport.setup_section(m, setup)
-    tabs = _sport._xc_tabs(mid, "setup") if is_xc else _sport._track_tabs(mid, "setup")
-    # XC: heats above the schools card; track keeps its meet-setup form first.
-    mid_block = f"{section}\n{setup_card}" if is_xc else f"{setup_card}\n{section}"
+    tabs = (_sport._xc_tabs(mid, "setup", road=(m["sport"] == "road")) if is_xc
+            else _sport._track_tabs(mid, "setup"))
+    # Community road events have no schools/host — show only the road setup section.
+    is_org = ("organizer_id" in m.keys() and m["organizer_id"] is not None)
+    if is_org:
+        mid_block = section
+    else:
+        # XC: heats above the schools card; track keeps its meet-setup form first.
+        mid_block = f"{section}\n{setup_card}" if is_xc else f"{setup_card}\n{section}"
 
     edit_card = ""
     if setup:
@@ -461,11 +480,15 @@ def meet_detail(mid):
             f'</form></details>')
     sport_label = {"xc": "🏃 Cross-country", "road": "🛣 Road race",
                    "track": "🎽 Track & Field"}.get(m["sport"], "")
+    back_link = "/events" if is_org else "/meets"
+    back_label = "← Events" if is_org else "← Meets"
+    sub = f'{sport_label} · {escape(m["date"] or "")}'
+    if not is_org:
+        sub += f' · host: {escape(host["name"]) if host else "—"}'
     body = f"""
-<p class="muted"><a href="/meets">← Meets</a></p>
+<p class="muted"><a href="{back_link}">{back_label}</a></p>
 <h1>{escape(m['name'])}</h1>
-<p class="sub">{sport_label} · {escape(m['date'] or '')}
- · host: {escape(host['name']) if host else '—'}</p>
+<p class="sub">{sub}</p>
 {edit_card}
 {tabs}
 {print_bar}
@@ -475,7 +498,7 @@ def meet_detail(mid):
 <b>this meet only</b>, no login, anytime. Rotate to revoke.</p>
 {qr_block}</div>
 """
-    return shell(g.principal, body, active="meets",
+    return shell(g.principal, body, active=("events" if is_org else "meets"),
                  active_district=active_district_id(), districts=_districts_for_switcher())
 
 
