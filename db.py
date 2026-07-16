@@ -143,6 +143,7 @@ CREATE TABLE IF NOT EXISTS participants (
     gender TEXT,
     city TEXT,
     club TEXT,
+    paid INTEGER DEFAULT 1,          -- payment groundwork: 1=paid/free, 0=owes fee
     created_at TEXT DEFAULT (datetime('now')),
     UNIQUE(meet_id, bib)
 );
@@ -452,6 +453,11 @@ def migrate(conn):
     rcols = _column_names(conn, "races")
     if "age_brackets" not in rcols:      # road events: per-event age-group override (JSON list)
         conn.execute("ALTER TABLE races ADD COLUMN age_brackets TEXT")
+
+    if "participants" in {r[0] for r in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'").fetchall()}:
+        if "paid" not in _column_names(conn, "participants"):  # payment groundwork
+            conn.execute("ALTER TABLE participants ADD COLUMN paid INTEGER DEFAULT 1")
 
     mecols = _column_names(conn, "meet_events")
     if "combine_id" not in mecols:

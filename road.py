@@ -5,19 +5,42 @@ engine, minus schools, rosters, and PII.
 """
 import csv
 import io
+import json
+import os
 import re
 import secrets
 
 from markupsafe import escape
-from flask import Blueprint, request, redirect, g, abort
+from flask import Blueprint, request, redirect, g, abort, Response
 
 from . import db
 from .auth import login_required, role_required, create_user, send_setup_email
 from .meets import load_meet, can_view_meet, can_setup_meet
 from .xc import _is_org, _match_event
-from .ui import shell
+from .ui import shell, CSRF_JS, BRAND_HTML, HEAD_EXTRA
 
 bp = Blueprint("road", __name__)
+
+
+def _load_settings(mid):
+    conn = db.connect()
+    row = conn.execute("SELECT settings_json FROM meets WHERE id=?", (mid,)).fetchone()
+    conn.close()
+    try:
+        return json.loads((row["settings_json"] if row else None) or "{}")
+    except (ValueError, TypeError):
+        return {}
+
+
+def _save_settings(mid, s):
+    conn = db.connect()
+    conn.execute("UPDATE meets SET settings_json=? WHERE id=?", (json.dumps(s), mid))
+    conn.commit()
+    conn.close()
+
+
+def _reg_base():
+    return os.environ.get("XC_PUBLIC_URL", request.host_url.rstrip("/"))
 
 
 def _next_bib(conn, mid):
@@ -449,3 +472,210 @@ def delete_participant(pid):
     conn.commit()
     conn.close()
     return redirect(f"/meets/{p['meet_id']}/participants")
+
+
+# ------------------------------- event branding + registration settings -------------------------------
+@bp.post("/meets/<int:mid>/logo")
+@login_required
+def event_logo(mid):
+    m = _event_or_403(mid, can_setup_meet)
+    from .schools import _save_logo
+    lp = _save_logo(request.files.get("logo"), f"event-{m['name']}")
+    if lp:
+        s = _load_settings(mid)
+        s["event_logo"] = lp
+        _save_settings(mid, s)
+    return redirect(f"/meets/{mid}")
+
+
+@bp.post("/meets/<int:mid>/event-settings")
+@login_required
+def event_settings(mid):
+    _event_or_403(mid, can_setup_meet)
+    s = _load_settings(mid)
+    s["reg_open"] = bool(request.form.get("reg_open"))
+    s["reg_text"] = (request.form.get("reg_text") or "").strip()
+    fee = (request.form.get("fee") or "").strip()
+    try:
+        s["fee_cents"] = int(round(float(fee) * 100)) if fee else 0
+    except ValueError:
+        s["fee_cents"] = 0
+    _save_settings(mid, s)
+    return redirect(f"/meets/{mid}")
+
+
+@bp.get("/meets/<int:mid>/participants/stickers.pdf")
+@login_required
+def participant_stickers(mid):
+    m = _event_or_403(mid, can_view_meet)
+    template = request.args.get("template", "5160")
+    s = _load_settings(mid)
+    conn = db.connect()
+    ps = conn.execute(
+        "SELECT bib, name FROM participants WHERE meet_id=? AND bib IS NOT NULL ORDER BY bib",
+        (mid,)).fetchall()
+    conn.close()
+    from . import pdfs
+    athletes = [{"bib": p["bib"], "name": p["name"]} for p in ps]  # XC label layout: bib + name + event
+    data = pdfs.bib_stickers_pdf(m["name"], athletes, template=template, logo_path=s.get("event_logo"))
+    fname = (m["name"] or "stickers").replace(" ", "_")
+    return Response(data, mimetype="application/pdf",
+                    headers={"Content-Disposition": f'inline; filename="{fname}-stickers.pdf"'})
+
+
+# ------------------------------- public self-registration -------------------------------
+def _event_by_token(token):
+    conn = db.connect()
+    m = conn.execute("SELECT * FROM meets WHERE public_token=?", (token,)).fetchone()
+    conn.close()
+    if not m or not _is_org(m):
+        abort(404)
+    return m
+
+
+def _fee_str(cents):
+    return f"${cents/100:,.2f}" if cents else ""
+
+
+def _reg_shell(m, inner):
+    logo = _load_settings(m["id"]).get("event_logo")
+    logo_tag = (f'<img src="{escape(logo)}" alt="" style="max-height:90px;max-width:230px;'
+                f'object-fit:contain">' if logo else "")
+    return f"""<!doctype html><html lang=en><head><meta charset=utf-8>
+<meta name=viewport content="width=device-width, initial-scale=1">
+<title>Register · {escape(m['name'])}</title>{HEAD_EXTRA}<script>{CSRF_JS}</script>
+<style>
+*{{box-sizing:border-box}}
+body{{margin:0;font:16px/1.55 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:#eef1f5;color:#1b2b3a}}
+main{{max-width:640px;margin:0 auto;padding:1.2rem 1rem 3rem}}
+.hero{{text-align:center;padding:1.4rem 1rem .6rem}}
+.hero h1{{margin:.6rem 0 .2rem;color:#12385f}}
+.hero .sub{{color:#5b6b7c}}
+.card{{background:#fff;border:1px solid #d9e0e8;border-radius:14px;padding:1.1rem 1.2rem;margin:0 0 1rem}}
+label{{display:block;font-size:.72rem;text-transform:uppercase;letter-spacing:.04em;color:#5b6b7c;font-weight:700;margin:.5rem 0 .2rem}}
+input,select,textarea{{width:100%;padding:.6rem;border:1px solid #cdd8e6;border-radius:9px;font-size:1rem;background:#fff;color:#1b2b3a}}
+.row{{display:flex;gap:.6rem;flex-wrap:wrap}}.row>div{{flex:1;min-width:110px}}
+.runner{{border:1px solid #e3e9f1;border-radius:12px;padding:.8rem;margin:.6rem 0;position:relative}}
+.runner h3{{margin:.1rem 0 .3rem;color:#12385f;font-size:1rem}}
+.rm{{position:absolute;top:.5rem;right:.6rem;background:none;border:0;color:#c0483f;font-weight:800;cursor:pointer;width:auto;font-size:1.1rem}}
+button.primary{{background:#ea6a2d;color:#fff;border:0;font-weight:800;padding:.8rem 1.4rem;border-radius:11px;font-size:1.05rem;cursor:pointer;width:auto}}
+button.add{{background:#eef3f9;border:1px dashed #9db4cf;color:#12385f;font-weight:700;padding:.6rem;border-radius:10px;cursor:pointer;width:100%}}
+.fee{{background:#fff8f0;border:1px solid #f0d3b3;border-radius:10px;padding:.6rem .8rem;color:#8a5a1f;font-weight:600}}
+.pubfoot{{text-align:center;color:#8a97a5;font-size:.85rem;padding:1.4rem}}
+.hp{{position:absolute;left:-9999px}}
+</style></head><body>
+<div class="hero">{logo_tag}<h1>{escape(m['name'])}</h1>
+<div class="sub">🛣 {escape(m['date'] or 'Register')}</div></div>
+<main>{inner}</main>
+<footer class="pubfoot">Powered by {BRAND_HTML}</footer>
+</body></html>"""
+
+
+@bp.get("/register/<token>")
+def register(token):
+    m = _event_by_token(token)
+    s = _load_settings(m["id"])
+    conn = db.connect()
+    races = conn.execute("SELECT id, name FROM races WHERE meet_id=? ORDER BY id", (m["id"],)).fetchall()
+    conn.close()
+    if not s.get("reg_open"):
+        return _reg_shell(m, '<div class="card">Registration for this event is not open yet. '
+                             'Please check back soon.</div>'), 200
+    if not races:
+        return _reg_shell(m, '<div class="card">Registration isn\'t quite ready yet.</div>'), 200
+
+    blurb = escape(s.get("reg_text") or "").replace("\n", "<br>")
+    blurb_card = f'<div class="card">{blurb}</div>' if blurb else ""
+    fee = s.get("fee_cents", 0)
+    fee_card = (f'<div class="card fee">Entry fee: {_fee_str(fee)} per runner — '
+                f'collected at packet pickup.</div>' if fee else "")
+    race_opts = "".join(f'<option value="{r["id"]}">{escape(r["name"])}</option>' for r in races)
+
+    def block(n, removable):
+        rm = '<button type="button" class="rm" onclick="rmRunner(this)">✕</button>' if removable else ""
+        return (
+            f'<div class="runner">{rm}<h3>Runner <span class="rn">{n}</span></h3>'
+            '<label>Full name</label><input name="rname" autocomplete="off">'
+            '<div class="row"><div><label>Age (race day)</label><input name="rage" type="number" min="0" inputmode="numeric"></div>'
+            '<div><label>Sex</label><select name="rgender"><option value="">—</option><option>M</option><option>F</option></select></div></div>'
+            f'<label>Race</label><select name="rrace">{race_opts}</select>'
+            '<div class="row"><div><label>City</label><input name="rcity"></div>'
+            '<div><label>Club / Team</label><input name="rclub"></div></div></div>')
+
+    inner = (
+        blurb_card + fee_card +
+        f'<form method="post" action="/register/{escape(token)}">'
+        '<input type="text" name="website" class="hp" tabindex="-1" autocomplete="off" aria-hidden="true">'
+        f'<div id="runners">{block(1, False)}</div>'
+        '<button type="button" class="add" onclick="addRunner()">+ Add another runner</button>'
+        '<div style="text-align:center;margin-top:1.2rem">'
+        '<button type="submit" class="primary">Register</button></div></form>'
+        f'<template id="rtmpl">{block("N", True)}</template>'
+        '<script>'
+        'function renum(){var i=1;document.querySelectorAll("#runners .runner .rn").forEach(function(s){s.textContent=i++;});}'
+        'function addRunner(){var t=document.getElementById("rtmpl").content.cloneNode(true);'
+        'document.getElementById("runners").appendChild(t);renum();}'
+        'function rmRunner(b){var r=b.closest(".runner");if(document.querySelectorAll("#runners .runner").length>1)r.remove();renum();}'
+        '</script>')
+    return _reg_shell(m, inner)
+
+
+@bp.post("/register/<token>")
+def register_post(token):
+    m = _event_by_token(token)
+    s = _load_settings(m["id"])
+    if not s.get("reg_open"):
+        abort(403)
+    if (request.form.get("website") or "").strip():   # honeypot -> silent no-op
+        return redirect(f"/register/{token}")
+    names = request.form.getlist("rname")
+    ages = request.form.getlist("rage")
+    genders = request.form.getlist("rgender")
+    rids = request.form.getlist("rrace")
+    cities = request.form.getlist("rcity")
+    clubs = request.form.getlist("rclub")
+    fee = s.get("fee_cents", 0)
+    paid = 0 if fee else 1
+
+    conn = db.connect()
+    valid_races = {r[0] for r in conn.execute("SELECT id FROM races WHERE meet_id=?", (m["id"],)).fetchall()}
+    nextbib = _next_bib(conn, m["id"])
+    created = []
+    # PAYMENT HOOK: when online payment is added, this loop runs only after a
+    # successful charge (Stripe checkout session) and sets paid=1 on the created rows.
+    for i, raw in enumerate(names[:25]):   # cap per submission
+        name = (raw or "").strip()
+        if not name:
+            continue
+        age = ages[i].strip() if i < len(ages) else ""
+        age = int(age) if age.isdigit() else None
+        gender = _norm_gender(genders[i] if i < len(genders) else "")
+        rid = rids[i] if i < len(rids) else ""
+        race_id = int(rid) if rid.isdigit() and int(rid) in valid_races else None
+        city = (cities[i].strip() if i < len(cities) else "") or None
+        club = (clubs[i].strip() if i < len(clubs) else "") or None
+        bib = nextbib
+        nextbib += 1
+        try:
+            conn.execute(
+                "INSERT INTO participants (meet_id, race_id, bib, name, age, gender, city, club, paid) "
+                "VALUES (?,?,?,?,?,?,?,?,?)", (m["id"], race_id, bib, name, age, gender, city, club, paid))
+            created.append((bib, name))
+        except Exception:
+            nextbib -= 1
+    conn.commit()
+    conn.close()
+
+    if not created:
+        return _reg_shell(m, '<div class="card">Please enter at least one runner\'s name. '
+                             f'<a href="/register/{escape(token)}">Back</a></div>'), 200
+    rname = {r[0]: r[1] for r in db.connect().execute("SELECT id,name FROM races WHERE meet_id=?", (m["id"],)).fetchall()}
+    rows = "".join(f'<li><b>Bib #{b}</b> — {escape(nm)}</li>' for b, nm in created)
+    fee_line = (f'<div class="card fee">Amount due at packet pickup: '
+                f'{_fee_str(fee * len(created))} ({len(created)} × {_fee_str(fee)}).</div>' if fee else "")
+    inner = (f'<div class="card"><h2 style="margin-top:0;color:#2e8b57">✅ You\'re registered!</h2>'
+             f'<p>See you on race day. Your bib number(s):</p><ul>{rows}</ul></div>'
+             f'{fee_line}'
+             f'<div style="text-align:center"><a href="/register/{escape(token)}">'
+             f'Register more runners</a></div>')
+    return _reg_shell(m, inner)

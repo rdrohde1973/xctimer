@@ -276,7 +276,47 @@ def _road_setup_section(m, setup, races, counts, _json, rename_js):
             f'<div style="display:flex;align-items:flex-end"><button type="submit">+ Add {noun_s}</button></div>'
             f'</form>')
     events_card = f'<div class="card"><h2>{noun}</h2>{events_html}{assign_link}{add}{rename_js}</div>'
-    return default_card + events_card
+    if not org:
+        return default_card + events_card
+
+    # Community event: branding + public registration + bib stickers.
+    import os as _os
+    base = _os.environ.get("XC_PUBLIC_URL", request.host_url.rstrip("/"))
+    logo = s.get("event_logo")
+    reg_url = f'{base}/register/{m["public_token"]}'
+    fee_cents = s.get("fee_cents") or 0
+    fee_val = f"{fee_cents / 100:.2f}" if fee_cents else ""
+    logo_thumb = (f'<img src="{escape(logo)}" style="max-height:64px;background:#fff;'
+                  f'border-radius:8px;padding:4px">' if logo else '<span class="muted">No logo yet</span>')
+    event_card = ""
+    if setup:
+        reg_open = bool(s.get("reg_open"))
+        link_html = (f'<a href="{escape(reg_url)}" target="_blank">{escape(reg_url)}</a>'
+                     if reg_open else '<span class="muted">Turn on “Registration open” to share the link.</span>')
+        event_card = (
+            '<div class="card"><h2>Event page &amp; registration</h2>'
+            f'<div style="display:flex;gap:1rem;align-items:center;flex-wrap:wrap">{logo_thumb}'
+            f'<form method="post" action="/meets/{m["id"]}/logo" enctype="multipart/form-data">'
+            '<input type="file" name="logo" accept="image/*"> <button type="submit">Upload logo</button>'
+            '<div class="muted" style="font-size:.8rem">Shows on the registration page and bib stickers.</div>'
+            '</form></div>'
+            f'<form method="post" action="/meets/{m["id"]}/event-settings" style="margin-top:.8rem">'
+            f'<label style="display:flex;gap:.5rem;align-items:center"><input type="checkbox" name="reg_open" '
+            f'style="width:auto" {"checked" if reg_open else ""}> <b>Registration open</b> '
+            '<span class="muted">— let runners sign up at the public link</span></label>'
+            '<label style="margin-top:.5rem">Registration page text (welcome / instructions)</label>'
+            f'<textarea name="reg_text" rows="3" style="width:100%">{escape(s.get("reg_text") or "")}</textarea>'
+            '<label style="margin-top:.4rem">Entry fee (optional, $)</label>'
+            f'<input name="fee" value="{fee_val}" placeholder="0.00" style="max-width:140px">'
+            '<div class="muted" style="font-size:.8rem;margin:.2rem 0">Shown to runners and tracked as '
+            'owed; online payment is coming later — collect at packet pickup for now.</div>'
+            '<button type="submit" style="margin-top:.4rem">Save</button></form>'
+            f'<div style="margin-top:.8rem"><b>Public registration link</b><br>{link_html}</div>'
+            f'<div style="margin-top:.8rem"><b>Bib stickers</b> '
+            f'<a class="btn ghost" href="/meets/{m["id"]}/participants/stickers.pdf?template=5160">Avery 5160</a> '
+            f'<a class="btn ghost" href="/meets/{m["id"]}/participants/stickers.pdf?template=5163">Avery 5163</a></div>'
+            '</div>')
+    return event_card + default_card + events_card
 
 
 @bp.post("/meets/<int:mid>/age-groups")
