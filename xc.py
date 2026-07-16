@@ -291,8 +291,17 @@ def _road_setup_section(m, setup, races, counts, _json, rename_js):
     event_card = ""
     if setup:
         reg_open = bool(s.get("reg_open"))
-        link_html = (f'<a href="{escape(reg_url)}" target="_blank">{escape(reg_url)}</a>'
-                     if reg_open else '<span class="muted">Turn on “Registration open” to share the link.</span>')
+        if reg_open:
+            import base64 as _b64
+            import qrcode as _qr
+            _buf = io.BytesIO()
+            _qr.make(reg_url).save(_buf, format="PNG")
+            _uri = "data:image/png;base64," + _b64.b64encode(_buf.getvalue()).decode()
+            link_html = (f'<a href="{escape(reg_url)}" target="_blank">{escape(reg_url)}</a>'
+                         f'<br><img src="{_uri}" width="150" height="150" '
+                         f'style="background:#fff;padding:8px;border-radius:10px;display:block;margin-top:.4rem">')
+        else:
+            link_html = '<span class="muted">Turn on “Registration open” to share the link.</span>'
         event_card = (
             '<div class="card"><h2>Event page &amp; registration</h2>'
             f'<div style="display:flex;gap:1rem;align-items:center;flex-wrap:wrap">{logo_thumb}'
