@@ -2176,6 +2176,7 @@ _CAMERA_PAGE = """
     <div style="display:flex;gap:.4rem;flex-wrap:wrap">
       <button id="mLine" onclick="setMode('line')">🏁 Finish line</button>
       <button id="mFrame" class="ghost" onclick="setMode('frame')">Whole frame</button>
+      <button id="mChute" class="ghost" onclick="setMode('chute')">🚶 Chute scan</button>
       <button id="orbtn" class="ghost" onclick="flipOrient()">⇔ Horizontal</button>
       <button id="dirbtn" class="ghost" onclick="flipDir()">Cross ↓</button>
       <button class="ghost" onclick="selftest()">Self-test</button>
@@ -2209,7 +2210,7 @@ const RECURL = MEET ? '/meets/'+RID+'/camera-record' : '/races/'+RID+'/finish';
 const STATEURL = MEET ? '/meets/'+RID+'/camera-state' : '/races/'+RID+'/state';
 // Bigger detection canvas on desktops (more pixels per tag); phones stay lean.
 const DW=/Mobi|iPhone|Android.*Mobile/.test(navigator.userAgent)?640:960;
-let SEEN=new Set(), DET=null, VID=null, CAN=null, CTX=null, RUNNING=false, LOGN=0;
+let SEEN=new Set(), DET=null, VID=null, CAN=null, CTX=null, RUNNING=false, LOGN=0, CAPMODE='';
 let MODE=localStorage.getItem('camM'+RID)||'line',
     ORIENT=localStorage.getItem('camO'+RID)||'h',   // 'h' horizontal line / 'v' vertical line
     LINEP=parseFloat(localStorage.getItem('camP'+RID)||'0.55'),
@@ -2224,13 +2225,17 @@ function dirArrow(){ return ORIENT==='v' ? (DIR===1?'→':'←') : (DIR===1?'↓
 function updUi(){
   document.getElementById('mLine').className = MODE==='line'?'':'ghost';
   document.getElementById('mFrame').className = MODE==='frame'?'':'ghost';
+  document.getElementById('mChute').className = MODE==='chute'?'':'ghost';
+  document.getElementById('mChute').style.display = MEET?'none':'';   // chute fill is per-race
   document.getElementById('dirbtn').style.display = MODE==='line'?'':'none';
   document.getElementById('orbtn').style.display = MODE==='line'?'':'none';
   document.getElementById('orbtn').textContent = ORIENT==='h'?'⇔ Horizontal':'⇕ Vertical';
   document.getElementById('dirbtn').textContent = 'Cross '+dirArrow();
-  document.getElementById('chint').textContent = MODE==='line'
-    ? 'Camera must be STILL (tripod). Drag the orange line onto the painted finish line — a runner records the moment their tag crosses it in the arrow ('+dirArrow()+') direction. Use ⇔/⇕ to match how runners cross the frame.'
-    : 'Records each tag the moment it is seen anywhere in frame — zoom tight on the last few meters before the line. OK handheld.';
+  var hint;
+  if(MODE==='line') hint='Camera must be STILL (tripod). Drag the orange line onto the painted finish line — a runner records the moment their tag crosses it in the arrow ('+dirArrow()+') direction. Use ⇔/⇕ to match how runners cross the frame.';
+  else if(MODE==='chute') hint='CHUTE SCAN: a helper taps each runner at the LINE (records time + order); this camera reads tags as they walk the single-file chute and fills each open place in order. Race must be in “Tap then scan”.';
+  else hint='Records each tag the moment it is seen anywhere in frame — zoom tight on the last few meters before the line. OK handheld.';
+  document.getElementById('chint').textContent = hint;
 }
 function toCanvas(e){ const r=CAN.getBoundingClientRect();
   return {x:(e.clientX-r.left)*CAN.width/r.width, y:(e.clientY-r.top)*CAN.height/r.height}; }
@@ -2271,9 +2276,19 @@ async function poll(){
       document.getElementById('ccount').textContent=tot;
       renderRaces(s);
     } else {
-      RUNNING=s.started&&!s.stopped;
-      document.getElementById('cstatus').textContent = s.stopped?'🏁 ended':(s.started?'🟢 LIVE':'⏸ not started');
+      CAPMODE=s.capture_mode;
+      const open=(s.finishers||[]).filter(function(f){return f.bib==null;}).length;
+      // Chute scan keeps filling tapped slots for a started race (even if you've stopped the clock).
+      RUNNING = (MODE==='chute') ? s.started : (s.started&&!s.stopped);
       document.getElementById('ccount').textContent=s.finishers.length;
+      if(MODE==='chute'){
+        const bad = (CAPMODE!=='tap'&&CAPMODE!=='tapselect');
+        document.getElementById('cstatus').innerHTML = bad
+          ? '<b style="color:#f0b429">⚠ Set this race to “Tap then scan” — chute scan fills tapped places.</b>'
+          : ('🚶 chute scan · <b>'+open+'</b> place'+(open===1?'':'s')+' awaiting a bib');
+      } else {
+        document.getElementById('cstatus').textContent = s.stopped?'🏁 ended':(s.started?'🟢 LIVE':'⏸ not started');
+      }
       const el=(s.stop_ms||Date.now())-(s.start_ms||Date.now());
       const sec=Math.max(0,el/1000), h=Math.floor(sec/3600), m=Math.floor(sec%3600/60), ss=Math.floor(sec%60);
       document.getElementById('cclock').textContent=s.start_ms?(h+':'+String(m).padStart(2,'0')+':'+String(ss).padStart(2,'0')):'0:00:00';
@@ -2344,7 +2359,7 @@ function loop(){
       const cx=(m.corners[0].x+m.corners[1].x+m.corners[2].x+m.corners[3].x)/4;
       const cy=(m.corners[0].y+m.corners[1].y+m.corners[2].y+m.corners[3].y)/4;
       const c=vert?cx:cy;                  // position on the crossing axis
-      if(MODE==='frame'){ hit(m.id); }
+      if(MODE==='frame'||MODE==='chute'){ hit(m.id); }
       else{
         const tr=TRACKS[m.id];
         if(tr && now-tr.t<1500 &&
@@ -2387,8 +2402,8 @@ async function hit(id){
       return;
     }
     FLASH[id]=performance.now();
-    log('📷 <b>#'+id+'</b>'+(j.name?(' '+esc(j.name)):'')+(j.race?(' → '+esc(j.race)):'')
-        +' ✓'+(j.warn?(' ⚠ '+esc(j.warn)):''));
+    log((MODE==='chute'?'🚶':'📷')+' <b>#'+id+'</b>'+(j.name?(' '+esc(j.name)):'')+(j.race?(' → '+esc(j.race)):'')
+        +' ✓'+(j.remaining!=null&&MODE==='chute'?(' · '+j.remaining+' left'):'')+(j.warn?(' ⚠ '+esc(j.warn)):''));
     try{ navigator.vibrate&&navigator.vibrate(35); }catch(e){}
   }catch(e){ SEEN.delete(id); log('#'+id+' ✕ '+e.message); }
 }
