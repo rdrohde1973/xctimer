@@ -2177,7 +2177,11 @@ _CAMERA_PAGE = """
       <button class="ghost" onclick="selftest()">Self-test</button>
     </div>
   </div>
-  <canvas id="c" style="width:100%;max-width:720px;border-radius:12px;background:#000;margin-top:.6rem;touch-action:none"></canvas>
+  <div id="wrap" style="position:relative;max-width:720px;margin-top:.6rem;line-height:0">
+    <video id="v" playsinline muted autoplay
+      style="width:100%;border-radius:12px;background:#000;display:block"></video>
+    <canvas id="c" style="position:absolute;inset:0;width:100%;height:100%;touch-action:none"></canvas>
+  </div>
   <p id="chint" class="muted" style="margin:.4rem 0 0"></p>
   <p class="muted" style="margin:.2rem 0 0">Each bib records once (repeats ignored). Start/stop the
   race from the timing console or phone as usual.</p>
@@ -2188,7 +2192,6 @@ _CAMERA_PAGE = """
   <div style="display:flex;align-items:flex-end"><button onclick="manual()">Record</button></div></div>
 </div>
 <div class="card"><h2>Recent</h2><div id="clog" class="muted">Nothing yet.</div></div>
-<video id="v" playsinline muted style="display:none"></video>
 <script src="/static/vendor/cv.js"></script>
 <script src="/static/vendor/aruco.js"></script>
 <script>
@@ -2228,8 +2231,10 @@ async function poll(){
   }catch(e){}
   setTimeout(poll,2000);
 }
+let DCAN=null, DCTX=null;
 async function boot(){
-  CAN=document.getElementById('c'); CTX=CAN.getContext('2d',{willReadFrequently:true});
+  CAN=document.getElementById('c'); CTX=CAN.getContext('2d');
+  DCAN=document.createElement('canvas'); DCTX=DCAN.getContext('2d',{willReadFrequently:true});
   DET=new AR.Detector();
   updUi();
   CAN.addEventListener('pointerdown',function(e){ if(MODE!=='line')return;
@@ -2244,25 +2249,24 @@ async function boot(){
     const s=await navigator.mediaDevices.getUserMedia({audio:false,
       video:{facingMode:'environment',width:{ideal:1920}}});
     VID.srcObject=s; await VID.play();
+    document.getElementById('cstatus').textContent='📷 ready';
     loop();
   }catch(e){
     document.getElementById('cstatus').textContent='camera unavailable ('+(e&&e.name||'error')+') — manual entry still works';
-    CAN.width=640; CAN.height=200;
-    CTX.fillStyle='#0b1826'; CTX.fillRect(0,0,640,200);
-    CTX.fillStyle='#f0b429'; CTX.font='bold 20px sans-serif';
-    CTX.fillText('Camera blocked or unavailable ('+(e&&e.name||'error')+').', 20, 90);
-    CTX.font='15px sans-serif'; CTX.fillStyle='#cdd8e6';
-    CTX.fillText('Check the camera icon in the address bar to allow access, then reload.', 20, 120);
+    document.getElementById('chint').innerHTML='<b style="color:#f0b429">Camera blocked or unavailable ('
+      +(e&&e.name||'error')+').</b> Tap the camera icon in the address bar to allow access, then reload. '
+      +'Manual entry below still works.';
   }
   poll();
 }
 function loop(){
-  if(VID && VID.readyState===VID.HAVE_ENOUGH_DATA){
+  if(VID && VID.videoWidth>0){
     const w=DW, h=Math.round(VID.videoHeight*w/VID.videoWidth)||Math.round(w*0.75);
-    if(CAN.width!==w||CAN.height!==h){ CAN.width=w; CAN.height=h; }
-    CTX.drawImage(VID,0,0,w,h);
+    if(CAN.width!==w||CAN.height!==h){ CAN.width=w; CAN.height=h; DCAN.width=w; DCAN.height=h; }
+    DCTX.drawImage(VID,0,0,w,h);          // offscreen: feed for the detector only
     let ms=[];
-    try{ ms=DET.detect(CTX.getImageData(0,0,w,h)); }catch(e){}
+    try{ ms=DET.detect(DCTX.getImageData(0,0,w,h)); }catch(e){}
+    CTX.clearRect(0,0,w,h);               // visible canvas: transparent overlay atop the <video>
     const now=performance.now(), lx=LINEX*CAN.width;
     ms.forEach(function(m){
       const cx=(m.corners[0].x+m.corners[1].x+m.corners[2].x+m.corners[3].x)/4;
@@ -2319,10 +2323,11 @@ function drawMarker(ctx,x,y,size,id){
   for(let r=0;r<5;r++){ const bits=ARUCO_CODES[(id>>(8-2*r))&3];
     for(let col=0;col<5;col++) if(bits[col]) ctx.fillRect(x+(col+1)*cell,y+(r+1)*cell,cell,cell); } }
 function selftest(){
-  const w=640,h=480; CAN.width=w; CAN.height=h;
-  CTX.fillStyle='#fff'; CTX.fillRect(0,0,w,h);
-  drawMarker(CTX,220,140,200,101);
-  const ms=new AR.Detector().detect(CTX.getImageData(0,0,w,h));
+  const t=document.createElement('canvas'); t.width=640; t.height=480;
+  const x=t.getContext('2d',{willReadFrequently:true});
+  x.fillStyle='#fff'; x.fillRect(0,0,640,480);
+  drawMarker(x,220,140,200,101);
+  const ms=new AR.Detector().detect(x.getImageData(0,0,640,480));
   alert(ms.length===1&&ms[0].id===101
     ? '✅ Self-test PASS — drew tag 101, detector decoded '+ms[0].id
     : '❌ Self-test FAIL — detected: '+JSON.stringify(ms.map(function(m){return m.id;})));
