@@ -2173,7 +2173,8 @@ _CAMERA_PAGE = """
     <div style="display:flex;gap:.4rem;flex-wrap:wrap">
       <button id="mLine" onclick="setMode('line')">🏁 Finish line</button>
       <button id="mFrame" class="ghost" onclick="setMode('frame')">Whole frame</button>
-      <button id="dirbtn" class="ghost" onclick="flipDir()">⇄ Direction</button>
+      <button id="orbtn" class="ghost" onclick="flipOrient()">⇔ Horizontal</button>
+      <button id="dirbtn" class="ghost" onclick="flipDir()">Cross ↓</button>
       <button class="ghost" onclick="selftest()">Self-test</button>
     </div>
   </div>
@@ -2203,19 +2204,25 @@ const RID=__RID__;
 const DW=/Mobi|iPhone|Android.*Mobile/.test(navigator.userAgent)?640:960;
 let SEEN=new Set(), DET=null, VID=null, CAN=null, CTX=null, RUNNING=false, LOGN=0;
 let MODE=localStorage.getItem('camM'+RID)||'line',
-    LINEX=parseFloat(localStorage.getItem('camX'+RID)||'0.55'),
+    ORIENT=localStorage.getItem('camO'+RID)||'h',   // 'h' horizontal line / 'v' vertical line
+    LINEP=parseFloat(localStorage.getItem('camP'+RID)||'0.55'),
     DIR=parseInt(localStorage.getItem('camD'+RID)||'1',10),
     TRACKS={}, DRAG=false, FLASH={};
-function saveCfg(){ localStorage.setItem('camM'+RID,MODE);
-  localStorage.setItem('camX'+RID,String(LINEX)); localStorage.setItem('camD'+RID,String(DIR)); }
+function saveCfg(){ localStorage.setItem('camM'+RID,MODE); localStorage.setItem('camO'+RID,ORIENT);
+  localStorage.setItem('camP'+RID,String(LINEP)); localStorage.setItem('camD'+RID,String(DIR)); }
 function setMode(m){ MODE=m; saveCfg(); updUi(); }
-function flipDir(){ DIR=-DIR; saveCfg(); }
+function flipDir(){ DIR=-DIR; saveCfg(); updUi(); }
+function flipOrient(){ ORIENT=ORIENT==='h'?'v':'h'; DIR=1; saveCfg(); updUi(); }
+function dirArrow(){ return ORIENT==='v' ? (DIR===1?'→':'←') : (DIR===1?'↓':'↑'); }
 function updUi(){
   document.getElementById('mLine').className = MODE==='line'?'':'ghost';
   document.getElementById('mFrame').className = MODE==='frame'?'':'ghost';
   document.getElementById('dirbtn').style.display = MODE==='line'?'':'none';
+  document.getElementById('orbtn').style.display = MODE==='line'?'':'none';
+  document.getElementById('orbtn').textContent = ORIENT==='h'?'⇔ Horizontal':'⇕ Vertical';
+  document.getElementById('dirbtn').textContent = 'Cross '+dirArrow();
   document.getElementById('chint').textContent = MODE==='line'
-    ? 'Camera must be STILL (tripod). Drag the orange line onto the painted finish line — a runner records the moment their tag crosses it in the arrow direction.'
+    ? 'Camera must be STILL (tripod). Drag the orange line onto the painted finish line — a runner records the moment their tag crosses it in the arrow ('+dirArrow()+') direction. Use ⇔/⇕ to match how runners cross the frame.'
     : 'Records each tag the moment it is seen anywhere in frame — zoom tight on the last few meters before the line. OK handheld.';
 }
 function toCanvas(e){ const r=CAN.getBoundingClientRect();
@@ -2242,10 +2249,14 @@ async function boot(){
   updUi();
   CAN.addEventListener('pointerdown',function(e){ if(MODE!=='line')return;
     const p=toCanvas(e);
-    if(Math.abs(p.x-LINEX*CAN.width)<48){ DRAG=true; try{CAN.setPointerCapture(e.pointerId);}catch(_e){} }
+    const near = ORIENT==='v' ? Math.abs(p.x-LINEP*CAN.width) : Math.abs(p.y-LINEP*CAN.height);
+    if(near<48){ DRAG=true; try{CAN.setPointerCapture(e.pointerId);}catch(_e){} }
     e.preventDefault(); });
   CAN.addEventListener('pointermove',function(e){ if(!DRAG)return;
-    const p=toCanvas(e); LINEX=Math.min(.95,Math.max(.05,p.x/CAN.width)); e.preventDefault(); });
+    const p=toCanvas(e);
+    LINEP = ORIENT==='v' ? Math.min(.95,Math.max(.05,p.x/CAN.width))
+                         : Math.min(.95,Math.max(.05,p.y/CAN.height));
+    e.preventDefault(); });
   CAN.addEventListener('pointerup',function(){ if(DRAG){ DRAG=false; saveCfg(); } });
   VID=document.getElementById('v');
   poll();
@@ -2288,15 +2299,17 @@ function loop(){
     let ms=[];
     try{ ms=DET.detect(DCTX.getImageData(0,0,w,h)); }catch(e){}
     CTX.clearRect(0,0,w,h);               // visible canvas: transparent overlay atop the <video>
-    const now=performance.now(), lx=LINEX*CAN.width;
+    const now=performance.now(), vert=(ORIENT==='v'), lp=LINEP*(vert?CAN.width:CAN.height);
     ms.forEach(function(m){
       const cx=(m.corners[0].x+m.corners[1].x+m.corners[2].x+m.corners[3].x)/4;
+      const cy=(m.corners[0].y+m.corners[1].y+m.corners[2].y+m.corners[3].y)/4;
+      const c=vert?cx:cy;                  // position on the crossing axis
       if(MODE==='frame'){ hit(m.id); }
       else{
         const tr=TRACKS[m.id];
         if(tr && now-tr.t<1500 &&
-           ((DIR===1 && tr.x<lx && cx>=lx) || (DIR===-1 && tr.x>lx && cx<=lx))) hit(m.id);
-        TRACKS[m.id]={x:cx,t:now};
+           ((DIR===1 && tr.c<lp && c>=lp) || (DIR===-1 && tr.c>lp && c<=lp))) hit(m.id);
+        TRACKS[m.id]={c:c,t:now};
       }
       const col = SEEN.has(m.id) ? '#28c76f' : (MODE==='line' ? '#f0b429' : '#28c76f');
       CTX.strokeStyle=col; CTX.lineWidth=4; CTX.beginPath();
@@ -2306,11 +2319,14 @@ function loop(){
       CTX.fillText('#'+m.id, m.corners[0].x, m.corners[0].y-8);
     });
     if(MODE==='line'){
-      CTX.strokeStyle='#ea6a2d'; CTX.lineWidth=3;
-      CTX.beginPath(); CTX.moveTo(lx,0); CTX.lineTo(lx,h); CTX.stroke();
-      CTX.fillStyle='#ea6a2d'; CTX.font='bold 22px sans-serif';
-      CTX.fillText(DIR===1?'→':'←', DIR===1?lx+8:lx-30, 28);
-      CTX.beginPath(); CTX.arc(lx,h/2,10,0,7); CTX.fill();
+      CTX.strokeStyle='#ea6a2d'; CTX.lineWidth=3; CTX.beginPath();
+      if(vert){ CTX.moveTo(lp,0); CTX.lineTo(lp,h); } else { CTX.moveTo(0,lp); CTX.lineTo(w,lp); }
+      CTX.stroke();
+      CTX.fillStyle='#ea6a2d'; CTX.font='bold 26px sans-serif';
+      const ar=dirArrow();
+      if(vert) CTX.fillText(ar, DIR===1?lp+8:lp-32, 30);
+      else CTX.fillText(ar, w/2-8, DIR===1?lp+30:lp-12);
+      CTX.beginPath(); CTX.arc(vert?lp:w/2, vert?h/2:lp, 10, 0, 7); CTX.fill();
     }
     for(const id in FLASH){
       if(now-FLASH[id]<600){ CTX.fillStyle='rgba(40,199,111,.16)'; CTX.fillRect(0,0,w,h); }
