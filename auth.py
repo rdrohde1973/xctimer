@@ -52,7 +52,7 @@ MFA_DEVICE_COOKIE = "xctimer_mfa_device"
 MFA_CODE_TTL_MIN = 10          # a sign-in code is valid this many minutes
 MFA_MAX_ATTEMPTS = 6           # wrong-code tries before the challenge is voided
 MFA_DEVICE_DAYS = 30           # "remember this device" duration
-ROLES = ("super_admin", "district_admin", "coach", "timer")
+ROLES = ("super_admin", "district_admin", "coach", "timer", "race_director")
 
 
 # --- time helpers (ISO-8601, UTC) ---
@@ -92,6 +92,7 @@ class Principal:
             self.name = user["name"]
             self.role = user["role"]
             self.district_id = user["district_id"]
+            self.organizer_id = user["organizer_id"] if "organizer_id" in user.keys() else None
             self.is_demo = bool("is_demo" in user.keys() and user["is_demo"])
         else:
             self.id = None
@@ -99,6 +100,7 @@ class Principal:
             self.name = "Meet Timer"
             self.role = role or "timer"
             self.district_id = district_id
+            self.organizer_id = None
             self.is_demo = False
 
     @property
@@ -108,6 +110,10 @@ class Principal:
     @property
     def is_admin(self):
         return self.role in ("super_admin", "district_admin")
+
+    @property
+    def is_race_director(self):
+        return self.role == "race_director"
 
     def school_ids(self):
         """Schools this principal is scoped to (coach/timer)."""
@@ -139,7 +145,7 @@ def find_user_by_email(email):
     return u
 
 
-def create_user(email, role, *, district_id=None, name=None, school_ids=None,
+def create_user(email, role, *, district_id=None, organizer_id=None, name=None, school_ids=None,
                 is_demo=False, ttl_days=SETUP_TTL_DAYS):
     """Create a user with a one-time setup token. Returns (user_id, setup_token)."""
     if role not in ROLES:
@@ -149,9 +155,10 @@ def create_user(email, role, *, district_id=None, name=None, school_ids=None,
     conn = db.connect()
     try:
         cur = conn.execute(
-            "INSERT INTO users (district_id, email, name, role, setup_token, token_expires, is_demo) "
-            "VALUES (?,?,?,?,?,?,?)",
-            (district_id, email.strip().lower(), name, role, token, expires, 1 if is_demo else 0),
+            "INSERT INTO users (district_id, organizer_id, email, name, role, setup_token, token_expires, is_demo) "
+            "VALUES (?,?,?,?,?,?,?,?)",
+            (district_id, organizer_id, email.strip().lower(), name, role, token, expires,
+             1 if is_demo else 0),
         )
         uid = cur.lastrowid
         for sid in (school_ids or []):

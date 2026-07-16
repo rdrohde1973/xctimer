@@ -101,8 +101,9 @@ CREATE TABLE IF NOT EXISTS athletes (
 
 CREATE TABLE IF NOT EXISTS meets (
     id INTEGER PRIMARY KEY,
-    district_id INTEGER NOT NULL REFERENCES districts(id),
-    sport TEXT NOT NULL,                             -- 'xc' | 'track'
+    district_id INTEGER REFERENCES districts(id),    -- NULL for community road events
+    organizer_id INTEGER REFERENCES organizers(id),  -- set for community road events
+    sport TEXT NOT NULL,                             -- 'xc' | 'track' | 'road'
     name TEXT NOT NULL,
     date TEXT,
     host_school_id INTEGER REFERENCES schools(id),
@@ -117,6 +118,33 @@ CREATE TABLE IF NOT EXISTS meet_schools (
     meet_id INTEGER NOT NULL REFERENCES meets(id),
     school_id INTEGER NOT NULL REFERENCES schools(id),
     PRIMARY KEY (meet_id, school_id)
+);
+
+-- Community road-race organizers (a tenant distinct from school districts).
+-- A road EVENT is a meets row with organizer_id set (district_id NULL).
+CREATE TABLE IF NOT EXISTS organizers (
+    id INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
+    slug TEXT UNIQUE,
+    logo_path TEXT,
+    settings_json TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+);
+
+-- Individual registrants for a community road event. No school, no PII —
+-- just what a race result needs. Born into one distance (race_id).
+CREATE TABLE IF NOT EXISTS participants (
+    id INTEGER PRIMARY KEY,
+    meet_id INTEGER NOT NULL REFERENCES meets(id),
+    race_id INTEGER REFERENCES races(id),
+    bib INTEGER,
+    name TEXT NOT NULL,
+    age INTEGER,
+    gender TEXT,
+    city TEXT,
+    club TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(meet_id, bib)
 );
 
 -- XC engine
@@ -265,6 +293,9 @@ INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_finishers_bib ON finishers(bib)",
     "CREATE INDEX IF NOT EXISTS idx_race_entries_race ON race_entries(race_id)",
     "CREATE INDEX IF NOT EXISTS idx_race_entries_meet ON race_entries(meet_id)",
+    "CREATE INDEX IF NOT EXISTS idx_participants_meet ON participants(meet_id)",
+    "CREATE INDEX IF NOT EXISTS idx_participants_race ON participants(race_id)",
+    "CREATE INDEX IF NOT EXISTS idx_meets_organizer ON meets(organizer_id)",
     "CREATE INDEX IF NOT EXISTS idx_meet_events_meet ON meet_events(meet_id)",
     "CREATE INDEX IF NOT EXISTS idx_entries_meet_event ON entries(meet_event_id)",
     "CREATE INDEX IF NOT EXISTS idx_results_entry ON results(entry_id)",
@@ -302,6 +333,50 @@ def _column_names(conn, table):
     return {r[1] for r in conn.execute(f"PRAGMA table_info({table})").fetchall()}
 
 
+def _migrate_meets_organizer(conn):
+    """Add meets.organizer_id and make meets.district_id nullable (SQLite needs a
+    table rebuild to drop a NOT NULL). Idempotent: only rebuilds when needed."""
+    info = conn.execute("PRAGMA table_info(meets)").fetchall()
+    cols = {r[1]: r for r in info}          # name -> (cid,name,type,notnull,dflt,pk)
+    has_org = "organizer_id" in cols
+    district_notnull = bool(cols["district_id"][3]) if "district_id" in cols else False
+    if has_org and not district_notnull:
+        return  # already migrated
+
+    # Rebuild meets with district_id nullable + organizer_id, preserving every row/id.
+    old_cols = [r[1] for r in info]
+    copy_cols = ", ".join(old_cols)
+    conn.execute("PRAGMA foreign_keys=OFF")
+    try:
+        conn.execute("DROP TABLE IF EXISTS meets_rebuild")
+        conn.execute("""
+            CREATE TABLE meets_rebuild (
+                id INTEGER PRIMARY KEY,
+                district_id INTEGER REFERENCES districts(id),
+                organizer_id INTEGER REFERENCES organizers(id),
+                sport TEXT NOT NULL,
+                name TEXT NOT NULL,
+                date TEXT,
+                host_school_id INTEGER REFERENCES schools(id),
+                public_token TEXT,
+                timer_token TEXT,
+                timer_token_expires TEXT,
+                settings_json TEXT,
+                created_at TEXT DEFAULT (datetime('now')),
+                event_limit INTEGER DEFAULT 4,
+                lanes INTEGER DEFAULT 8,
+                points_table_id INTEGER,
+                team_scoring INTEGER DEFAULT 1,
+                public_names TEXT
+            )""")
+        # Insert old rows into the matching columns (organizer_id defaults to NULL).
+        conn.execute(f"INSERT INTO meets_rebuild ({copy_cols}) SELECT {copy_cols} FROM meets")
+        conn.execute("DROP TABLE meets")
+        conn.execute("ALTER TABLE meets_rebuild RENAME TO meets")
+    finally:
+        conn.execute("PRAGMA foreign_keys=ON")
+
+
 def migrate(conn):
     """Additive, idempotent column migrations (SQLite can only ADD COLUMN)."""
     # Sessions carry a kind + meet_id so the same table holds both normal user
@@ -322,6 +397,13 @@ def migrate(conn):
         conn.execute("ALTER TABLE users ADD COLUMN is_demo INTEGER DEFAULT 0")
     if "mfa_enabled" not in ucols:    # per-user MFA opt-in flag (enforcement TBD)
         conn.execute("ALTER TABLE users ADD COLUMN mfa_enabled INTEGER DEFAULT 0")
+    if "organizer_id" not in ucols:   # race_director users are scoped to one organizer
+        conn.execute("ALTER TABLE users ADD COLUMN organizer_id INTEGER")
+
+    # Community road events live in `meets` owned by an organizer (no district).
+    # That requires meets.district_id to be nullable + an organizer_id column —
+    # relax the original NOT NULL via a one-time, idempotent table rebuild.
+    _migrate_meets_organizer(conn)
 
     # Roster: per-athlete sport membership (XC / Track) + active flag. One shared
     # athlete list; grade bumps preserve historical results (stored per-result).
