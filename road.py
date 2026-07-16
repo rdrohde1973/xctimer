@@ -3,6 +3,8 @@ their race-director logins, and Events. An event is a `meets` row owned by an
 organizer (district_id NULL, sport='road') — so it reuses the whole timing/results
 engine, minus schools, rosters, and PII.
 """
+import csv
+import io
 import re
 import secrets
 
@@ -11,9 +13,21 @@ from flask import Blueprint, request, redirect, g, abort
 
 from . import db
 from .auth import login_required, role_required, create_user, send_setup_email
+from .meets import load_meet, can_view_meet, can_setup_meet
+from .xc import _is_org, _match_event
 from .ui import shell
 
 bp = Blueprint("road", __name__)
+
+
+def _next_bib(conn, mid):
+    row = conn.execute("SELECT COALESCE(MAX(bib),0) FROM participants WHERE meet_id=?", (mid,)).fetchone()
+    return (row[0] or 0) + 1
+
+
+def _norm_gender(v):
+    v = (str(v or "").strip().upper())
+    return v[0] if v[:1] in ("M", "F") else None
 
 
 def _slugify(name):
@@ -186,3 +200,230 @@ def create_event():
     conn.commit()
     conn.close()
     return redirect(f"/meets/{mid}")
+
+
+# ------------------------------- Participants -------------------------------
+def _event_or_403(mid, guard=can_view_meet):
+    m = load_meet(mid)
+    if not guard(m) or not _is_org(m):
+        abort(403)
+    return m
+
+
+@bp.get("/meets/<int:mid>/participants")
+@login_required
+def participants(mid):
+    m = _event_or_403(mid)
+    editable = can_setup_meet(m)
+    conn = db.connect()
+    races = conn.execute("SELECT * FROM races WHERE meet_id=? ORDER BY id", (mid,)).fetchall()
+    ps = conn.execute("SELECT * FROM participants WHERE meet_id=? ORDER BY name", (mid,)).fetchall()
+    conn.close()
+    rname = {r["id"]: r["name"] for r in races}
+    by_race = {}
+    for p in ps:
+        by_race.setdefault(p["race_id"], []).append(p)
+
+    def prow(p):
+        bits = []
+        if p["age"] is not None:
+            bits.append(f'age {p["age"]}')
+        if p["gender"]:
+            bits.append(p["gender"])
+        if p["club"]:
+            bits.append(escape(p["club"]))
+        if p["city"]:
+            bits.append(escape(p["city"]))
+        meta = " · ".join(str(b) for b in bits)
+        rm = (f'<form class="inline" method="post" action="/participants/{p["id"]}/delete" '
+              f'onsubmit="return confirm(\'Remove {escape(p["name"])}?\')">'
+              f'<button class="ic del">✕</button></form>') if editable else ""
+        bib = f'<b>#{p["bib"]}</b>' if p["bib"] is not None else '<span class="muted">no bib</span>'
+        return (f'<div class="arow" data-name="{escape((p["name"] or "").lower())}">'
+                f'<span>{bib} &nbsp; {escape(p["name"])} <span class="muted">{meta}</span></span>'
+                f'<span>{rm}</span></div>')
+
+    sections = []
+    order = [r["id"] for r in races] + [None]
+    for rid in order:
+        plist = by_race.get(rid, [])
+        if rid is None and not plist:
+            continue
+        label = rname.get(rid, "Unassigned distance")
+        rows = "".join(prow(p) for p in plist) or '<p class="muted">None yet.</p>'
+        sections.append(
+            f'<div class="card"><h3 style="margin:.1rem 0 .5rem">{escape(label)} '
+            f'<span class="muted">— {len(plist)}</span></h3>{rows}</div>')
+
+    dist_opts = "".join(f'<option value="{r["id"]}">{escape(r["name"])}</option>' for r in races)
+    tools = ""
+    if editable:
+        if races:
+            tools = (
+                '<div class="card"><h2>Import registrations (CSV)</h2>'
+                '<p class="muted" style="margin-top:0">Columns (any order): '
+                '<code>bib, name, age, gender, distance, city, club</code>. '
+                'A blank bib auto-numbers. Distance is matched to your events by name '
+                '(e.g. “5K” → “5K Run”).</p>'
+                f'<form method="post" action="/meets/{mid}/participants/import" '
+                'enctype="multipart/form-data">'
+                '<input type="file" name="file" accept=".csv,text/csv"><br>'
+                '<p class="muted" style="margin:.5rem 0 .2rem">…or paste CSV:</p>'
+                '<textarea name="csv" rows="4" style="width:100%" '
+                'placeholder="bib,name,age,gender,distance,city,club&#10;101,Jane Doe,34,F,10K,Provo,Runners"></textarea>'
+                '<button type="submit" style="margin-top:.5rem">Import</button></form></div>'
+                '<div class="card"><h2>Add one</h2>'
+                f'<form method="post" action="/meets/{mid}/participants" class="row" style="gap:.5rem;flex-wrap:wrap">'
+                '<div style="max-width:90px"><label>Bib</label><input name="bib" type="number" placeholder="auto"></div>'
+                '<div><label>Name</label><input name="name" required></div>'
+                '<div style="max-width:80px"><label>Age</label><input name="age" type="number"></div>'
+                '<div style="max-width:90px"><label>Sex</label>'
+                '<select name="gender"><option value="">—</option><option>M</option><option>F</option></select></div>'
+                f'<div style="max-width:160px"><label>Distance</label><select name="race_id">{dist_opts}</select></div>'
+                '<div style="max-width:130px"><label>City</label><input name="city"></div>'
+                '<div style="max-width:150px"><label>Club/Team</label><input name="club"></div>'
+                '<div style="display:flex;align-items:flex-end"><button type="submit">Add</button></div>'
+                '</form></div>')
+        else:
+            tools = ('<div class="card muted">Add at least one distance on the '
+                     f'<a href="/meets/{mid}">Setup</a> tab before adding participants.</div>')
+
+    msg = request.args.get("msg", "")
+    msg_html = f'<div class="card" style="border-color:var(--ok)">{escape(msg)}</div>' if msg else ""
+    body = (
+        f'<p class="muted"><a href="/meets/{mid}">← {escape(m["name"])}</a></p>'
+        f'<h1>{escape(m["name"])} — Participants</h1>'
+        f'{_road_tabs(mid, "participants")}'
+        '<style>.arow{display:flex;justify-content:space-between;align-items:center;gap:.6rem;'
+        'padding:.3rem .1rem;border-bottom:1px solid var(--line)}.arow:last-child{border-bottom:0}</style>'
+        f'{msg_html}'
+        f'<input id="psearch" placeholder="Search name…" oninput="pfilt()" style="width:100%;margin:.2rem 0 1rem">'
+        f'{"".join(sections) or "<div class=card muted>No participants yet.</div>"}'
+        f'{tools}'
+        '<script>function pfilt(){var q=document.getElementById("psearch").value.toLowerCase();'
+        'document.querySelectorAll(".arow").forEach(function(r){'
+        'r.style.display=(!q||(r.getAttribute("data-name")||"").indexOf(q)>=0)?"":"none";});}</script>')
+    return shell(g.principal, body, active="events")
+
+
+def _road_tabs(mid, active):
+    from .xc import _xc_tabs
+    return _xc_tabs(mid, active, road=True, organizer=True)
+
+
+@bp.post("/meets/<int:mid>/participants")
+@login_required
+def add_participant(mid):
+    m = _event_or_403(mid, can_setup_meet)
+    name = (request.form.get("name") or "").strip()
+    if not name:
+        abort(400)
+    age = (request.form.get("age") or "").strip()
+    age = int(age) if age.isdigit() else None
+    gender = _norm_gender(request.form.get("gender"))
+    city = (request.form.get("city") or "").strip() or None
+    club = (request.form.get("club") or "").strip() or None
+    rid_raw = (request.form.get("race_id") or "").strip()
+    race_id = int(rid_raw) if rid_raw.isdigit() else None
+    conn = db.connect()
+    if race_id is not None and not conn.execute(
+            "SELECT 1 FROM races WHERE id=? AND meet_id=?", (race_id, mid)).fetchone():
+        conn.close(); abort(400)
+    bib_raw = (request.form.get("bib") or "").strip()
+    bib = int(bib_raw) if bib_raw.isdigit() else _next_bib(conn, mid)
+    try:
+        conn.execute(
+            "INSERT INTO participants (meet_id, race_id, bib, name, age, gender, city, club) "
+            "VALUES (?,?,?,?,?,?,?,?)", (mid, race_id, bib, name, age, gender, city, club))
+        conn.commit()
+    except Exception:  # duplicate bib in this meet
+        conn.close()
+        return redirect(f"/meets/{mid}/participants?msg=Bib+{bib}+is+already+used")
+    conn.close()
+    return redirect(f"/meets/{mid}/participants")
+
+
+def _pick(rowmap, *names):
+    for n in names:
+        if n in rowmap and str(rowmap[n]).strip():
+            return str(rowmap[n]).strip()
+    return ""
+
+
+@bp.post("/meets/<int:mid>/participants/import")
+@login_required
+def import_participants(mid):
+    m = _event_or_403(mid, can_setup_meet)
+    text = ""
+    f = request.files.get("file")
+    if f and f.filename:
+        text = f.read().decode("utf-8-sig", "replace")
+    if not text.strip():
+        text = request.form.get("csv") or ""
+    text = text.strip()
+    if not text:
+        return redirect(f"/meets/{mid}/participants?msg=Nothing+to+import")
+
+    conn = db.connect()
+    races = conn.execute("SELECT * FROM races WHERE meet_id=? ORDER BY id", (mid,)).fetchall()
+    reader = csv.reader(io.StringIO(text))
+    rows = [r for r in reader if any((c or "").strip() for c in r)]
+    if not rows:
+        conn.close()
+        return redirect(f"/meets/{mid}/participants?msg=Nothing+to+import")
+    header = [h.strip().lower() for h in rows[0]]
+    added = skipped = unmatched = 0
+    nextbib = _next_bib(conn, mid)
+    for r in rows[1:]:
+        rowmap = {header[i]: (r[i] if i < len(r) else "") for i in range(len(header))}
+        name = _pick(rowmap, "name", "athlete", "runner")
+        if not name:
+            fn, ln = _pick(rowmap, "first", "first name", "firstname"), _pick(rowmap, "last", "last name", "lastname")
+            name = (fn + " " + ln).strip()
+        if not name:
+            skipped += 1
+            continue
+        bib_s = _pick(rowmap, "bib", "bib number", "number", "bib #")
+        bib = int(bib_s) if bib_s.isdigit() else nextbib
+        if not bib_s.isdigit():
+            nextbib += 1
+        age_s = _pick(rowmap, "age")
+        age = int(age_s) if age_s.isdigit() else None
+        gender = _norm_gender(_pick(rowmap, "gender", "sex", "m/f"))
+        dist = _pick(rowmap, "distance", "event", "race")
+        race_id = _match_event(dist, races) if dist else None
+        if dist and race_id is None:
+            unmatched += 1
+        city = _pick(rowmap, "city", "town") or None
+        club = _pick(rowmap, "club", "team") or None
+        try:
+            conn.execute(
+                "INSERT INTO participants (meet_id, race_id, bib, name, age, gender, city, club) "
+                "VALUES (?,?,?,?,?,?,?,?)", (mid, race_id, bib, name, age, gender, city, club))
+            added += 1
+        except Exception:  # duplicate bib
+            skipped += 1
+    conn.commit()
+    conn.close()
+    msg = f"Imported {added}."
+    if skipped:
+        msg += f" Skipped {skipped} (missing name or duplicate bib)."
+    if unmatched:
+        msg += f" {unmatched} had a distance that didn't match an event (left unassigned)."
+    return redirect(f"/meets/{mid}/participants?msg={msg.replace(' ', '+')}")
+
+
+@bp.post("/participants/<int:pid>/delete")
+@login_required
+def delete_participant(pid):
+    conn = db.connect()
+    p = conn.execute("SELECT * FROM participants WHERE id=?", (pid,)).fetchone()
+    conn.close()
+    if not p:
+        abort(404)
+    _event_or_403(p["meet_id"], can_setup_meet)
+    conn = db.connect()
+    conn.execute("DELETE FROM participants WHERE id=?", (pid,))
+    conn.commit()
+    conn.close()
+    return redirect(f"/meets/{p['meet_id']}/participants")

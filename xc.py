@@ -81,7 +81,32 @@ def _athlete_for_bib(conn, meet_id, bib):
         "WHERE ms.meet_id=? AND a.bib=? LIMIT 1", (meet_id, bib)).fetchone()
 
 
+def _participant_for_bib(conn, meet_id, bib):
+    return conn.execute(
+        "SELECT name, age, gender, club, city FROM participants WHERE meet_id=? AND bib=? LIMIT 1",
+        (meet_id, bib)).fetchone()
+
+
+def _snap_for_bib(conn, m, bib):
+    """Snapshot tuple (name, grade, gender, school, age) for a scanned bib.
+    Community road events resolve against participants; everything else the roster."""
+    if _is_org(m):
+        p = _participant_for_bib(conn, m["id"], bib)
+        if not p:
+            return (None, None, None, None, None)
+        return (p["name"], None, p["gender"], p["club"] or p["city"], p["age"])
+    a = _athlete_for_bib(conn, m["id"], bib)
+    if not a:
+        return (None, None, None, None, None)
+    return (a["name"], a["grade"], a["gender"], a["sname"], a["age"])
+
+
 CAPTURE_MODES = [("tap", "Tap then scan"), ("scan", "Scan at finish")]
+
+
+def _is_org(m):
+    """True if this meet is a community road event owned by an organizer (no district)."""
+    return "organizer_id" in m.keys() and m["organizer_id"] is not None
 
 
 def _bracket_chips(brackets, muted_when_empty=""):
@@ -295,8 +320,17 @@ def assign_athlete(rid):
 
 
 def _road_unassigned_warn(conn, m, rid, bib):
-    """For a road event that uses assignment: warn text if this bib isn't assigned here."""
+    """Warn text if a scanned bib isn't registered/assigned to this distance."""
     if m["sport"] != "road" or bib is None:
+        return None
+    if _is_org(m):   # community event: participants are born into one distance
+        p = conn.execute(
+            "SELECT p.race_id, rc.name FROM participants p LEFT JOIN races rc ON rc.id=p.race_id "
+            "WHERE p.meet_id=? AND p.bib=?", (m["id"], bib)).fetchone()
+        if p is None:
+            return f"Bib {bib} isn't registered for this event"
+        if p["race_id"] is not None and p["race_id"] != rid:
+            return f"Bib {bib} is registered for {p['name']}, not this distance"
         return None
     if not conn.execute("SELECT 1 FROM race_entries WHERE meet_id=? LIMIT 1", (m["id"],)).fetchone():
         return None  # no assignments made for this meet → nothing to enforce
@@ -518,6 +552,7 @@ def delete_race(rid):
     conn = db.connect()
     conn.execute("DELETE FROM finishers WHERE race_id=?", (rid,))
     conn.execute("DELETE FROM race_entries WHERE race_id=?", (rid,))
+    conn.execute("UPDATE participants SET race_id=NULL WHERE race_id=?", (rid,))  # keep the registrant
     conn.execute("DELETE FROM races WHERE id=?", (rid,))
     conn.commit()
     conn.close()
@@ -525,18 +560,23 @@ def delete_race(rid):
 
 
 # ------------------------------- meet-day tabs -------------------------------
-def _xc_tabs(mid, active, road=False):
-    """Tab bar for XC/road meets (parallels track's). XC: Setup · Meet day · Results.
-    Road adds an Assign tab (athletes are assigned to events, like track)."""
+def _xc_tabs(mid, active, road=False, organizer=False):
+    """Tab bar for XC/road meets. XC: Setup · Meet day · Results. District-road adds
+    an Assign tab; community (organizer) events get a Participants tab instead."""
     def tab(href, label, key):
         on = "background:var(--panel2);color:var(--fg)" if active == key else "color:var(--mut)"
         return (f'<a href="{href}" style="padding:.4rem .9rem;border-radius:8px;'
                 f'text-decoration:none;{on}">{label}</a>')
-    assign_tab = tab(f"/meets/{mid}/road-assign", "🧭 Assign", "assign") if road else ""
+    if organizer:
+        mid_tab = tab(f"/meets/{mid}/participants", "👥 Participants", "participants")
+    elif road:
+        mid_tab = tab(f"/meets/{mid}/road-assign", "🧭 Assign", "assign")
+    else:
+        mid_tab = ""
     return ('<div style="display:flex;gap:.3rem;margin:.4rem 0 1rem;border-bottom:1px solid var(--line);'
             'padding-bottom:.5rem;flex-wrap:wrap">'
             + tab(f"/meets/{mid}", "⚙️ Setup", "setup")
-            + assign_tab
+            + mid_tab
             + tab(f"/meets/{mid}/xc-day", "🏁 Meet day", "meetday")
             + tab(f"/meets/{mid}/results", "📊 Results", "results")
             + '</div>')
@@ -572,7 +612,7 @@ def xc_meet_day(mid):
         f'<a class="btn ghost" href="/meets/{mid}/stickers.pdf?template=5163">Stickers 5163</a> '
         f'<a class="btn ghost" href="/meets/{mid}/biblist.pdf">Bib lists</a></div>')
     body = (f'<p class="muted"><a href="/meets">← Meets</a></p><h1>{escape(m["name"])}</h1>'
-            f'{_xc_tabs(mid, "meetday", road=(m["sport"]=="road"))}{tbl}{print_bar}')
+            f'{_xc_tabs(mid, "meetday", road=(m["sport"]=="road"), organizer=_is_org(m))}{tbl}{print_bar}')
     return shell(g.principal, body, active="meets")
 
 
@@ -838,10 +878,7 @@ def race_finish(rid):
         # Accidental double-scan at the line: silently discard, don't block the timer.
         conn.close()
         return jsonify(ok=True, duplicate=True)
-    a = _athlete_for_bib(conn, m["id"], bib)
-    snap = (a["name"] if a else None, a["grade"] if a else None,
-            a["gender"] if a else None, a["sname"] if a else None,
-            a["age"] if a else None)
+    snap = _snap_for_bib(conn, m, bib)
     if r["capture_mode"] == "scan":
         start = _parse(r["start_time"])
         if not start or r["stop_time"]:
@@ -921,13 +958,10 @@ def finisher_bib(fid):
             conn.close()
             nm = f" ({dup['snap_name']})" if dup["snap_name"] else ""
             return jsonify(error=f"Bib {bib}{nm} is already on finisher #{dup['seq']}"), 400
-        a = _athlete_for_bib(conn, f["meet_id"], bib)
+        snap = _snap_for_bib(conn, m, bib)
         conn.execute(
             "UPDATE finishers SET bib=?, snap_name=?, snap_grade=?, snap_gender=?, snap_school=?, "
-            "snap_age=? WHERE id=?",
-            (bib, a["name"] if a else None, a["grade"] if a else None,
-             a["gender"] if a else None, a["sname"] if a else None,
-             a["age"] if a else None, fid))
+            "snap_age=? WHERE id=?", (bib, *snap, fid))
         warn = _road_unassigned_warn(conn, m, f["race_id"], bib)
     conn.commit()
     conn.close()
@@ -1281,7 +1315,7 @@ def results_page(mid):
                f'or a flyer.</span><br><a href="{url}" target="_blank">{escape(url)}</a></div></div>')
     body = (f'<p class="muted"><a href="/meets/{mid}">← {escape(m["name"])}</a></p>'
             f'<h1>{escape(m["name"])} — Results</h1>'
-            f'{_xc_tabs(mid, "results", road=(m["sport"]=="road"))}'
+            f'{_xc_tabs(mid, "results", road=(m["sport"]=="road"), organizer=_is_org(m))}'
             f'<div class="row"><a class="btn ghost" href="/r/{m["public_token"]}" target="_blank">'
             f'Public page ↗</a> <a class="btn ghost" href="/meets/{mid}/results.xlsx">Export xlsx</a></div>'
             f'{qr_card}{inner}')

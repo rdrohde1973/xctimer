@@ -289,9 +289,10 @@ def delete_meet(mid):
     conn.execute("DELETE FROM entries WHERE meet_event_id IN "
                  "(SELECT id FROM meet_events WHERE meet_id=?)", (mid,))
     conn.execute("DELETE FROM meet_events WHERE meet_id=?", (mid,))
-    # XC / road data: finishers + road assignments -> races
+    # XC / road data: finishers + road assignments + community participants -> races
     conn.execute("DELETE FROM finishers WHERE race_id IN (SELECT id FROM races WHERE meet_id=?)", (mid,))
     conn.execute("DELETE FROM race_entries WHERE meet_id=?", (mid,))
+    conn.execute("DELETE FROM participants WHERE meet_id=?", (mid,))
     conn.execute("DELETE FROM races WHERE meet_id=?", (mid,))
     conn.execute("DELETE FROM meet_schools WHERE meet_id=?", (mid,))
     conn.execute("DELETE FROM meets WHERE id=?", (mid,))
@@ -373,6 +374,7 @@ def meet_detail(mid):
     setup = can_setup_meet(m)
     base = os.environ.get("XC_PUBLIC_URL", request.host_url.rstrip("/"))
     is_xc = m["sport"] in ("xc", "road")   # road reuses the XC race engine
+    is_org = ("organizer_id" in m.keys() and m["organizer_id"] is not None)
     # Results / Public / Export live on the Results tab — not duplicated here.
 
     hs = (f' <a class="btn ghost" href="/meets/{mid}/heatsheets.pdf">Heat sheets</a>'
@@ -384,7 +386,7 @@ def meet_detail(mid):
             f'<a class="btn ghost" href="/meets/{mid}/stickers.pdf?template=5163">Stickers 5163</a> ')
     else:
         sticker_btns = f'<a class="btn ghost" href="/meets/{mid}/stickers.pdf?template=5163">Stickers (5163)</a> '
-    print_bar = (
+    print_bar = "" if is_org else (
         f'<div class="card"><b>Print — all attending schools:</b> '
         f'{sticker_btns}'
         f'<a class="btn ghost" href="/meets/{mid}/biblist.pdf">Bib lists</a>{hs}</div>')
@@ -446,10 +448,9 @@ def meet_detail(mid):
                      f'{"Rotate" if m["timer_token"] else "Generate"} timer QR</button></form>')
 
     section = _sport.setup_section(m, setup)
-    tabs = (_sport._xc_tabs(mid, "setup", road=(m["sport"] == "road")) if is_xc
+    tabs = (_sport._xc_tabs(mid, "setup", road=(m["sport"] == "road"), organizer=is_org) if is_xc
             else _sport._track_tabs(mid, "setup"))
     # Community road events have no schools/host — show only the road setup section.
-    is_org = ("organizer_id" in m.keys() and m["organizer_id"] is not None)
     if is_org:
         mid_block = section
     else:
