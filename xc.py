@@ -152,7 +152,8 @@ def setup_section(m, setup):
     rows = []
     for r in races:
         status = "ended" if r["stop_time"] else ("running" if r["start_time"] else "not started")
-        act = f'<a class="btn" href="/races/{r["id"]}/console">⏱ Time</a>'
+        act = (f'<a class="btn" href="/races/{r["id"]}/console">⏱ Time</a> '
+               f'<a class="btn ghost" href="/races/{r["id"]}/camera">📷 Camera</a>')
         if setup:
             nm = _json.dumps(r["name"])
             act += (
@@ -234,9 +235,8 @@ def _road_setup_section(m, setup, races, counts, _json, rename_js):
                            + (str(_bracket_chips(default_brackets)) if default_brackets
                               else '<span class="muted">none set</span>'))
         nassigned = assigned_count.get(r["id"], 0)
-        act = f'<a class="btn" href="/races/{r["id"]}/console">⏱ Time</a>'
-        if org:
-            act += f' <a class="btn ghost" href="/races/{r["id"]}/camera">📷 Camera</a>'
+        act = (f'<a class="btn" href="/races/{r["id"]}/console">⏱ Time</a> '
+               f'<a class="btn ghost" href="/races/{r["id"]}/camera">📷 Camera</a>')
         override = ""
         if setup:
             nm = _json.dumps(r["name"])
@@ -664,7 +664,8 @@ def xc_meet_day(mid):
         rows.append(
             f'<tr><td><b>{escape(r["name"])}</b></td><td>{r["capture_mode"]}</td>'
             f'<td>{status}</td><td>{counts.get(r["id"], 0)}</td>'
-            f'<td style="text-align:right"><a class="btn" href="/races/{r["id"]}/console">⏱ Time</a></td></tr>')
+            f'<td style="text-align:right"><a class="btn" href="/races/{r["id"]}/console">⏱ Time</a> '
+            f'<a class="btn ghost" href="/races/{r["id"]}/camera">📷 Camera</a></td></tr>')
     noun = "Races" if _is_org(m) else ("Events" if m["sport"] == "road" else "Heats")
     tbl = (f'<div class="card"><h2>{noun} — tap to time</h2><table><tr><th>{noun[:-1]}</th><th>Mode</th>'
            f'<th>Status</th><th>Finishers</th><th></th></tr>{"".join(rows)}</table></div>'
