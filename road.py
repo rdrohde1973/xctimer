@@ -262,15 +262,15 @@ def participants(mid):
             tools = (
                 '<div class="card"><h2>Import registrations (CSV)</h2>'
                 '<p class="muted" style="margin-top:0">Columns (any order): '
-                '<code>bib, name, age, gender, distance, city, club</code>. '
-                'A blank bib auto-numbers. Distance is matched to your events by name '
+                '<code>bib, name, age, gender, race, city, club</code>. '
+                'A blank bib auto-numbers. The race column is matched to your races by name '
                 '(e.g. “5K” → “5K Run”).</p>'
                 f'<form method="post" action="/meets/{mid}/participants/import" '
                 'enctype="multipart/form-data">'
                 '<input type="file" name="file" accept=".csv,text/csv"><br>'
                 '<p class="muted" style="margin:.5rem 0 .2rem">…or paste CSV:</p>'
                 '<textarea name="csv" rows="4" style="width:100%" '
-                'placeholder="bib,name,age,gender,distance,city,club&#10;101,Jane Doe,34,F,10K,Provo,Runners"></textarea>'
+                'placeholder="bib,name,age,gender,race,city,club&#10;101,Jane Doe,34,F,10K,Provo,Runners"></textarea>'
                 '<button type="submit" style="margin-top:.5rem">Import</button></form></div>'
                 '<div class="card"><h2>Add one</h2>'
                 f'<form method="post" action="/meets/{mid}/participants" class="row" style="gap:.5rem;flex-wrap:wrap">'
@@ -279,7 +279,7 @@ def participants(mid):
                 '<div style="max-width:80px"><label>Age</label><input name="age" type="number"></div>'
                 '<div style="max-width:90px"><label>Sex</label>'
                 '<select name="gender"><option value="">—</option><option>M</option><option>F</option></select></div>'
-                f'<div style="max-width:160px"><label>Distance</label><select name="race_id">{dist_opts}</select></div>'
+                f'<div style="max-width:160px"><label>Race</label><select name="race_id">{dist_opts}</select></div>'
                 '<div style="max-width:130px"><label>City</label><input name="city"></div>'
                 '<div style="max-width:150px"><label>Club/Team</label><input name="club"></div>'
                 '<div style="display:flex;align-items:flex-end"><button type="submit">Add</button></div>'
@@ -409,7 +409,7 @@ def import_participants(mid):
     if skipped:
         msg += f" Skipped {skipped} (missing name or duplicate bib)."
     if unmatched:
-        msg += f" {unmatched} had a distance that didn't match an event (left unassigned)."
+        msg += f" {unmatched} had a race that didn't match (left unassigned)."
     return redirect(f"/meets/{mid}/participants?msg={msg.replace(' ', '+')}")
 
 

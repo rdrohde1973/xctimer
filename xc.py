@@ -260,8 +260,8 @@ def _road_setup_section(m, setup, races, counts, _json, rename_js):
             f'{assigned_txt} · {counts.get(r["id"], 0)} finishers</span></div>'
             f'<div style="text-align:right">{act}</div></div>'
             f'<div style="margin-top:.3rem">{groups_line}</div>{override}</div>')
-    # Community (organizer) events call their races "Distances"; district-road calls them "Events".
-    noun, noun_s = ("Distances", "distance") if org else ("Events", "event")
+    # Community (organizer) events call their sub-races "Races"; district-road calls them "Events".
+    noun, noun_s = ("Races", "race") if org else ("Events", "event")
     events_html = "".join(ev_blocks) or f'<p class="muted">No {noun.lower()} yet — add one below.</p>'
     assign_link = (f'<p style="margin:.2rem 0 0"><a class="btn ghost" href="/meets/{m["id"]}/road-assign">'
                    f'🧭 Assign athletes to events →</a></p>' if (setup and races and not org) else '')
@@ -608,7 +608,7 @@ def xc_meet_day(mid):
             f'<tr><td><b>{escape(r["name"])}</b></td><td>{r["capture_mode"]}</td>'
             f'<td>{status}</td><td>{counts.get(r["id"], 0)}</td>'
             f'<td style="text-align:right"><a class="btn" href="/races/{r["id"]}/console">⏱ Time</a></td></tr>')
-    noun = "Distances" if _is_org(m) else ("Events" if m["sport"] == "road" else "Heats")
+    noun = "Races" if _is_org(m) else ("Events" if m["sport"] == "road" else "Heats")
     tbl = (f'<div class="card"><h2>{noun} — tap to time</h2><table><tr><th>{noun[:-1]}</th><th>Mode</th>'
            f'<th>Status</th><th>Finishers</th><th></th></tr>{"".join(rows)}</table></div>'
            if races else f'<div class="card muted">No {noun.lower()} yet — add them on the Setup tab.</div>')
