@@ -2179,8 +2179,11 @@ _CAMERA_PAGE = """
   </div>
   <div id="wrap" style="position:relative;max-width:720px;margin-top:.6rem;line-height:0">
     <video id="v" playsinline muted autoplay
-      style="width:100%;border-radius:12px;background:#000;display:block"></video>
+      style="width:100%;border-radius:12px;background:#000;display:block;min-height:200px"></video>
     <canvas id="c" style="position:absolute;inset:0;width:100%;height:100%;touch-action:none"></canvas>
+    <button id="enablecam" onclick="startCamera()" style="position:absolute;left:50%;top:50%;
+      transform:translate(-50%,-50%);font-size:1.15rem;padding:.9rem 1.6rem;border:0;border-radius:12px;
+      background:#ea6a2d;color:#fff;font-weight:800;cursor:pointer;line-height:1.2">📷 Enable camera</button>
   </div>
   <p id="chint" class="muted" style="margin:.4rem 0 0"></p>
   <p class="muted" style="margin:.2rem 0 0">Each bib records once (repeats ignored). Start/stop the
@@ -2244,20 +2247,38 @@ async function boot(){
   CAN.addEventListener('pointermove',function(e){ if(!DRAG)return;
     const p=toCanvas(e); LINEX=Math.min(.95,Math.max(.05,p.x/CAN.width)); e.preventDefault(); });
   CAN.addEventListener('pointerup',function(){ if(DRAG){ DRAG=false; saveCfg(); } });
+  VID=document.getElementById('v');
+  poll();
+  startCamera();          // auto-attempt; if the browser blocks it, the Enable button stays for a retry
+}
+let LOOPING=false;
+async function startCamera(){
+  const btn=document.getElementById('enablecam');
+  if(btn){ btn.textContent='starting…'; btn.disabled=true; }
+  document.getElementById('cstatus').textContent='requesting camera…';
   try{
-    VID=document.getElementById('v');
+    if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia)
+      throw {name:'InsecureContext'};
     const s=await navigator.mediaDevices.getUserMedia({audio:false,
       video:{facingMode:'environment',width:{ideal:1920}}});
     VID.srcObject=s; await VID.play();
     document.getElementById('cstatus').textContent='📷 ready';
-    loop();
+    document.getElementById('chint').textContent='';
+    if(btn) btn.style.display='none';
+    if(!LOOPING){ LOOPING=true; loop(); }
   }catch(e){
-    document.getElementById('cstatus').textContent='camera unavailable ('+(e&&e.name||'error')+') — manual entry still works';
-    document.getElementById('chint').innerHTML='<b style="color:#f0b429">Camera blocked or unavailable ('
-      +(e&&e.name||'error')+').</b> Tap the camera icon in the address bar to allow access, then reload. '
-      +'Manual entry below still works.';
+    const n=(e&&e.name)||'error';
+    document.getElementById('cstatus').textContent='camera unavailable ('+n+')';
+    const tip = n==='NotAllowedError'
+      ? 'Your browser has this site BLOCKED for camera. Click the camera/lock icon at the LEFT of the address bar → set Camera to Allow → then tap “Enable camera”. (On Mac also check System Settings → Privacy & Security → Camera is on for your browser.)'
+      : n==='NotReadableError' ? 'Another app is using the camera — close it, then tap “Enable camera”.'
+      : n==='NotFoundError' ? 'No camera found on this device.'
+      : n==='InsecureContext' ? 'Camera needs a secure (https) connection — open the site via https://xctimer.com.'
+      : 'Tap “Enable camera” to try again.';
+    document.getElementById('chint').innerHTML='<b style="color:#f0b429">Camera ('+n+').</b> '+tip
+      +' Manual entry below still works.';
+    if(btn){ btn.style.display=''; btn.textContent='📷 Enable camera'; btn.disabled=false; }
   }
-  poll();
 }
 function loop(){
   if(VID && VID.videoWidth>0){
