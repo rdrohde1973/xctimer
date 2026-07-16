@@ -425,13 +425,18 @@ def _draw_label_xc(c, x, y_top, lw, lh, a, school_name, qr_prefix, logo):
         except Exception:  # noqa: BLE001
             pass
     qr_sz = min(lh - 2 * pad, 0.30 * lw)
-    qr_text = f"{qr_prefix}{a['bib']}" if qr_prefix else str(a["bib"])
     qr_x = x + lw - pad - qr_sz
-    try:
-        c.drawImage(_qr_image(qr_text), qr_x, bottom + (lh - qr_sz) / 2,
-                    qr_sz, qr_sz, preserveAspectRatio=True, mask="auto")
-    except Exception:  # noqa: BLE001
-        pass
+    code = a.get("code") if isinstance(a, dict) else None
+    if code == "aruco" and isinstance(a["bib"], int) and a["bib"] <= 1023:
+        # Camera-readable ArUco tag instead of the QR (bib IS the tag id).
+        draw_aruco(c, qr_x, bottom + (lh - qr_sz) / 2, qr_sz, a["bib"])
+    else:
+        qr_text = f"{qr_prefix}{a['bib']}" if qr_prefix else str(a["bib"])
+        try:
+            c.drawImage(_qr_image(qr_text), qr_x, bottom + (lh - qr_sz) / 2,
+                        qr_sz, qr_sz, preserveAspectRatio=True, mask="auto")
+        except Exception:  # noqa: BLE001
+            pass
     content_r = qr_x - 0.05 * inch
     cx = (content_l + content_r) / 2
     mw = max(0.4 * inch, content_r - content_l)

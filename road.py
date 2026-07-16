@@ -543,7 +543,8 @@ def participant_stickers(mid):
         (mid,)).fetchall()
     conn.close()
     from . import pdfs
-    athletes = [{"bib": p["bib"], "name": p["name"]} for p in ps]  # XC label layout: bib + name + event
+    # code='aruco' -> the camera-readable tag replaces the QR (bib <= 1023).
+    athletes = [{"bib": p["bib"], "name": p["name"], "code": "aruco"} for p in ps]
     data = pdfs.bib_stickers_pdf(m["name"], athletes, template=template, logo_path=s.get("event_logo"))
     fname = (m["name"] or "stickers").replace(" ", "_")
     return Response(data, mimetype="application/pdf",
