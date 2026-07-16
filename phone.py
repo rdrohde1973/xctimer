@@ -167,6 +167,17 @@ body.phone{margin:0;display:flex;flex-direction:column;overflow:hidden;backgroun
 .ctl.undo{background:#4a4a4a}
 .ctl.stop{background:#c0392b}
 .ctl:disabled{opacity:.4}
+#pickbox{display:none;flex-direction:column;gap:.4rem;margin-bottom:.6rem}
+#pickbox input{font-size:1.1rem;padding:.6rem;text-align:center}
+#pickbox .ph{font-size:.72rem;letter-spacing:.12em;color:#9aa;text-transform:uppercase;text-align:center}
+.plist{max-height:34vh;overflow-y:auto;background:var(--panel2);border-radius:12px}
+.plist .pr{display:flex;justify-content:space-between;align-items:center;gap:.6rem;
+  padding:.7rem .8rem;border-bottom:1px solid var(--line)}
+.plist .pr:last-child{border-bottom:0}
+.plist .pr .pnm{font-weight:700}
+.plist .pr .pmeta{color:var(--mut);font-size:.82rem}
+.plist .pr .pbib{color:var(--acc);font-weight:800;min-width:2.4rem;text-align:right}
+.plist .empty{color:var(--dim);text-align:center;padding:1.6rem 1rem}
 """
 
 
@@ -198,6 +209,11 @@ def phone_race(rid):
       onkeydown="if(event.key==='Enter')rec()">
     <button class="bigbtn tap" onclick="rec()">RECORD</button>
   </div>
+  <div id="pickbox">
+    <div class="ph" id="pickhint">Tap a finisher above, then select who it was</div>
+    <input id="psearch" autocomplete="off" placeholder="search name…" oninput="renderElig()">
+    <div id="plist" class="plist"></div>
+  </div>
   <div id="banner" class="banner" style="display:none"></div>
   <div id="flist" class="flist" style="display:none">
     <div class="empty">Finishers appear here as you record them.</div>
@@ -214,25 +230,56 @@ function nowms(){{ return Date.now()+OFFSET; }}
 function fmt(sec){{ if(sec==null)return''; sec=Math.max(0,sec);
   const h=Math.floor(sec/3600), m=Math.floor((sec%3600)/60), s=sec-3600*h-60*m;
   return h+':'+String(m).padStart(2,'0')+':'+s.toFixed(3).padStart(6,'0'); }}
+let ELIG=[];
 async function load(){{
   const s=await jget('/races/'+RID+'/state');
   OFFSET=s.server_ms-Date.now(); START=s.start_ms; STOPMS=s.stop_ms;
   STOPPED=s.stopped; STARTED=s.started; MODE=s.capture_mode; FIN=s.finishers;
   sync(); render();
+  if(MODE==='tapselect' && STARTED) loadElig();
 }}
 function sync(){{
-  const active=STARTED&&!STOPPED, scan=MODE==='scan';
+  const active=STARTED&&!STOPPED, scan=MODE==='scan', sel=MODE==='tapselect';
   document.getElementById('startb').style.display = STARTED?'none':'';
   document.getElementById('tapb').style.display = (active&&!scan)?'':'none';
   document.getElementById('scanbox').style.display = (active&&scan)?'':'none';
+  document.getElementById('pickbox').style.display = (STARTED&&sel)?'flex':'none';
   document.getElementById('flist').style.display = STARTED?'':'none';
   document.getElementById('ctrls').style.display = STARTED?'':'none';
   const b=document.getElementById('banner');
-  if(STOPPED){{ b.style.display=''; b.textContent = scan
-    ? '🏁 Race ended.' : '🏁 Race ended — scan bibs on the console to fill open slots.'; }}
+  if(STOPPED){{ b.style.display=''; b.textContent = scan ? '🏁 Race ended.'
+    : (sel ? '🏁 Race ended — select who each open slot was.'
+           : '🏁 Race ended — scan bibs on the console to fill open slots.'); }}
   else b.style.display='none';
   document.querySelector('.ctl.undo').disabled=!active;
   document.querySelector('.ctl.stop').disabled=!active;
+}}
+function openSlots(){{ return FIN.filter(f=>f.bib==null).sort((a,b)=>a.seq-b.seq); }}
+async function loadElig(){{
+  try{{ const d=await jget('/races/'+RID+'/eligible'); ELIG=d.runners||[]; }}catch(e){{ ELIG=[]; }}
+  renderElig();
+}}
+function renderElig(){{
+  const q=(document.getElementById('psearch').value||'').toLowerCase();
+  const open=openSlots().length;
+  document.getElementById('pickhint').textContent = open
+    ? (open+' open slot'+(open>1?'s':'')+' — tap the runner who crossed')
+    : 'Tap a finisher above, then select who it was';
+  const rows=ELIG.filter(r=>!q||(r.name||'').toLowerCase().indexOf(q)>=0);
+  const el=document.getElementById('plist');
+  if(!rows.length){{ el.innerHTML='<div class="empty">'+(ELIG.length?'No match.':'Everyone is recorded. 🎉')+'</div>'; return; }}
+  el.innerHTML=rows.map(r=>'<div class="pr" onclick="pick('+r.bib+')">'
+    +'<span><span class="pnm">'+esc(r.name)+'</span>'
+    +(r.meta?' <span class="pmeta">'+esc(r.meta)+'</span>':'')+'</span>'
+    +'<span class="pbib">#'+r.bib+'</span></div>').join('');
+}}
+async function pick(bib){{
+  const open=openSlots();
+  if(!open.length){{ buzz([60,60,60]); alert('Tap the finisher first, then select who it was.'); return; }}
+  try{{ const j=await jpost('/finishers/'+open[0].id+'/bib',{{bib:bib}}); buzz(35);
+    if(j&&j.warn){{ buzz([60,60,60]); alert('⚠ '+j.warn); }} }}
+  catch(e){{ alert(e.message); }}
+  await load();
 }}
 function tick(){{
   const c=document.getElementById('clock');

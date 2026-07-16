@@ -101,7 +101,10 @@ def _snap_for_bib(conn, m, bib):
     return (a["name"], a["grade"], a["gender"], a["sname"], a["age"])
 
 
-CAPTURE_MODES = [("tap", "Tap then scan"), ("scan", "Scan at finish")]
+CAPTURE_MODES = [("scan", "Scan at finish"),
+                 ("tap", "Tap then scan"),
+                 ("tapselect", "Tap then select")]
+CAPTURE_VALUES = {v for v, _ in CAPTURE_MODES}
 
 
 def _is_org(m):
@@ -192,6 +195,7 @@ def _road_setup_section(m, setup, races, counts, _json, rename_js):
     default_brackets = s.get("age_brackets") or []
     default_text = s.get("age_brackets_text") or _brackets_to_text(default_brackets)
 
+    org = _is_org(m)
     conn = db.connect()
     ent = conn.execute("SELECT race_id, COUNT(*) AS n FROM race_entries WHERE meet_id=? "
                        "GROUP BY race_id", (m["id"],)).fetchall()
@@ -247,29 +251,31 @@ def _road_setup_section(m, setup, races, counts, _json, rename_js):
                 f'placeholder="Leave blank to use the meet default">{escape(_brackets_to_text(own))}</textarea>'
                 f'<button type="submit">Save</button> '
                 f'<span class="muted">Blank = use the default above.</span></form></details>')
+        # Community events register participants (no race-entry "assigned" count).
+        assigned_txt = "" if org else f" · {nassigned} assigned"
         ev_blocks.append(
             f'<div class="card" style="padding:.8rem 1rem">'
             f'<div style="display:flex;justify-content:space-between;align-items:center;gap:.6rem;flex-wrap:wrap">'
-            f'<div><b>{escape(r["name"])}</b> <span class="muted">· {r["capture_mode"]} · {status} · '
-            f'{nassigned} assigned · {counts.get(r["id"], 0)} finishers</span></div>'
+            f'<div><b>{escape(r["name"])}</b> <span class="muted">· {r["capture_mode"]} · {status}'
+            f'{assigned_txt} · {counts.get(r["id"], 0)} finishers</span></div>'
             f'<div style="text-align:right">{act}</div></div>'
             f'<div style="margin-top:.3rem">{groups_line}</div>{override}</div>')
-    events_html = "".join(ev_blocks) or '<p class="muted">No events yet — add one below.</p>'
-    # Community (organizer) events use participants, not the school-roster assign flow.
-    is_org = ("organizer_id" in m.keys() and m["organizer_id"] is not None)
+    # Community (organizer) events call their races "Distances"; district-road calls them "Events".
+    noun, noun_s = ("Distances", "distance") if org else ("Events", "event")
+    events_html = "".join(ev_blocks) or f'<p class="muted">No {noun.lower()} yet — add one below.</p>'
     assign_link = (f'<p style="margin:.2rem 0 0"><a class="btn ghost" href="/meets/{m["id"]}/road-assign">'
-                   f'🧭 Assign athletes to events →</a></p>' if (setup and races and not is_org) else '')
+                   f'🧭 Assign athletes to events →</a></p>' if (setup and races and not org) else '')
 
     add = ""
     if setup:
         opts = "".join(f'<option value="{v}">{escape(lbl)}</option>' for v, lbl in CAPTURE_MODES)
         add = (
             f'<form method="post" action="/meets/{m["id"]}/races" class="row" style="margin-top:.8rem">'
-            f'<div><input name="name" placeholder="Event name (e.g. 5K, 10K, Fun Run)" required></div>'
+            f'<div><input name="name" placeholder="{noun_s.capitalize()} name (e.g. 5K, 10K, Fun Run)" required></div>'
             f'<div style="max-width:200px"><select name="capture_mode">{opts}</select></div>'
-            f'<div style="display:flex;align-items:flex-end"><button type="submit">+ Add event</button></div>'
+            f'<div style="display:flex;align-items:flex-end"><button type="submit">+ Add {noun_s}</button></div>'
             f'</form>')
-    events_card = f'<div class="card"><h2>Events</h2>{events_html}{assign_link}{add}{rename_js}</div>'
+    events_card = f'<div class="card"><h2>{noun}</h2>{events_html}{assign_link}{add}{rename_js}</div>'
     return default_card + events_card
 
 
@@ -520,7 +526,7 @@ def create_race(mid):
         abort(403)
     name = (request.form.get("name") or "").strip() or "Heat"
     mode = request.form.get("capture_mode")
-    mode = mode if mode in ("tap", "scan") else "tap"
+    mode = mode if mode in CAPTURE_VALUES else "tap"
     conn = db.connect()
     conn.execute("INSERT INTO races (meet_id, name, capture_mode) VALUES (?,?,?)",
                  (mid, name, mode))
@@ -538,7 +544,7 @@ def rename_race(rid):
     conn = db.connect()
     if name:
         conn.execute("UPDATE races SET name=? WHERE id=?", (name, rid))
-    if mode in ("tap", "scan"):
+    if mode in CAPTURE_VALUES:
         conn.execute("UPDATE races SET capture_mode=? WHERE id=?", (mode, rid))
     conn.commit()
     conn.close()
@@ -602,7 +608,7 @@ def xc_meet_day(mid):
             f'<tr><td><b>{escape(r["name"])}</b></td><td>{r["capture_mode"]}</td>'
             f'<td>{status}</td><td>{counts.get(r["id"], 0)}</td>'
             f'<td style="text-align:right"><a class="btn" href="/races/{r["id"]}/console">⏱ Time</a></td></tr>')
-    noun = "Events" if m["sport"] == "road" else "Heats"
+    noun = "Distances" if _is_org(m) else ("Events" if m["sport"] == "road" else "Heats")
     tbl = (f'<div class="card"><h2>{noun} — tap to time</h2><table><tr><th>{noun[:-1]}</th><th>Mode</th>'
            f'<th>Status</th><th>Finishers</th><th></th></tr>{"".join(rows)}</table></div>'
            if races else f'<div class="card muted">No {noun.lower()} yet — add them on the Setup tab.</div>')
@@ -760,6 +766,42 @@ load();
 </script>
 """
     return shell(g.principal, body, active="meets")
+
+
+@bp.get("/races/<int:rid>/eligible")
+@login_required
+def race_eligible(rid):
+    """Runners who can still be selected for this race (tap-then-select mode):
+    registered/rostered and not yet recorded with a bib in this race."""
+    r, m = _race_or_403(rid, can_record_meet)
+    conn = db.connect()
+    used = {row[0] for row in conn.execute(
+        "SELECT bib FROM finishers WHERE race_id=? AND bib IS NOT NULL", (rid,)).fetchall()}
+    out = []
+    if _is_org(m):
+        rows = conn.execute(
+            "SELECT bib, name, age, gender, club FROM participants "
+            "WHERE meet_id=? AND (race_id=? OR race_id IS NULL) ORDER BY name", (m["id"], rid)).fetchall()
+        for p in rows:
+            if p["bib"] is None or p["bib"] in used:
+                continue
+            meta = " · ".join(x for x in (
+                (f'age {p["age"]}' if p["age"] is not None else ""), (p["gender"] or ""),
+                (p["club"] or "")) if x)
+            out.append({"bib": p["bib"], "name": p["name"], "meta": meta})
+    else:
+        rows = conn.execute(
+            "SELECT a.bib, a.name, a.grade, s.name AS sname FROM athletes a "
+            "JOIN schools s ON s.id=a.school_id JOIN meet_schools ms ON ms.school_id=a.school_id "
+            "WHERE ms.meet_id=? AND a.bib IS NOT NULL AND a.active=1 ORDER BY a.name", (m["id"],)).fetchall()
+        for a in rows:
+            if a["bib"] in used:
+                continue
+            meta = " · ".join(x for x in (
+                (f'gr {a["grade"]}' if a["grade"] is not None else ""), (a["sname"] or "")) if x)
+            out.append({"bib": a["bib"], "name": a["name"], "meta": meta})
+    conn.close()
+    return jsonify(runners=out)
 
 
 @bp.get("/races/<int:rid>/state")
