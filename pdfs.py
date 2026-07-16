@@ -655,3 +655,66 @@ def bib_list_pdf(school_name, athletes):
     c.save()
     buf.seek(0)
     return buf.read()
+
+
+# ------------------------------- ArUco camera tags (road prototype) -------------------------------
+# Classic 5x5 ArUco markers (ids 0-1023), byte-compatible with the js-aruco
+# detector on the /races/<id>/camera page: black border, data bits in columns
+# 1 & 3 of each row (MSB-first, top row first), 1 = white cell.
+_ARUCO_CODES = {0: (1, 0, 0, 0, 0), 1: (1, 0, 1, 1, 1),
+                2: (0, 1, 0, 0, 1), 3: (0, 1, 1, 1, 0)}
+
+
+def draw_aruco(c, x, y, size, marker_id):
+    """Draw one marker with its lower-left corner at (x, y)."""
+    cell = size / 7.0
+    c.setFillColorRGB(0, 0, 0)
+    c.rect(x, y, size, size, stroke=0, fill=1)
+    c.setFillColorRGB(1, 1, 1)
+    for row in range(5):
+        pair = (marker_id >> (8 - 2 * row)) & 0b11
+        bits = _ARUCO_CODES[pair]
+        for col in range(5):
+            if bits[col]:
+                c.rect(x + (col + 1) * cell, y + size - (row + 2) * cell,
+                       cell, cell, stroke=0, fill=1)
+
+
+def road_tag_sheet_pdf(event_name, participants):
+    """Camera-timing tag sheet: one large ArUco tag + bib + name per cell (2x3 per
+    letter page). Prototype for pin-on bibs — tag-forward so the camera reads it."""
+    buf = io.BytesIO()
+    c = pdfcanvas.Canvas(buf, pagesize=letter)
+    pw, ph = letter
+    cols, rows = 2, 3
+    cw, ch = pw / cols, ph / rows
+    tag = 2.3 * inch
+    per_page = cols * rows
+    items = [p for p in participants if p.get("bib") is not None]
+    for i, p in enumerate(items):
+        slot = i % per_page
+        if i and slot == 0:
+            c.showPage()
+        col, row = slot % cols, slot // cols
+        cx = col * cw + cw / 2
+        top = ph - row * ch
+        if p["bib"] <= 1023:
+            draw_aruco(c, cx - tag / 2, top - 0.35 * inch - tag, tag, p["bib"])
+        else:
+            c.setFont("Helvetica", 10)
+            c.setFillColorRGB(0.45, 0.45, 0.45)
+            c.drawCentredString(cx, top - 1.4 * inch,
+                                "(no camera tag — bib over 1023, use manual entry)")
+        c.setFillColorRGB(*NAVY)
+        c.setFont("Helvetica-Bold", 34)
+        c.drawCentredString(cx, top - 0.35 * inch - tag - 0.55 * inch, str(p["bib"]))
+        c.setFillColorRGB(0.2, 0.2, 0.2)
+        c.setFont("Helvetica", 13)
+        c.drawCentredString(cx, top - 0.35 * inch - tag - 0.85 * inch, p.get("name") or "")
+        c.setFillColorRGB(0.55, 0.55, 0.55)
+        c.setFont("Helvetica", 8)
+        c.drawCentredString(cx, top - 0.35 * inch - tag - 1.05 * inch, event_name or "")
+    c.showPage()
+    c.save()
+    buf.seek(0)
+    return buf.read()

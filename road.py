@@ -719,3 +719,20 @@ def register_post(token):
              f'<div style="text-align:center"><a href="/register/{escape(token)}">'
              f'Register more runners</a></div>')
     return _reg_shell(m, inner)
+
+
+@bp.get("/meets/<int:mid>/participants/tags.pdf")
+@login_required
+def participant_tags(mid):
+    """Camera-timing tag sheet: big ArUco tag per participant (prototype)."""
+    m = _event_or_403(mid, can_view_meet)
+    conn = db.connect()
+    ps = conn.execute(
+        "SELECT bib, name FROM participants WHERE meet_id=? AND bib IS NOT NULL ORDER BY bib",
+        (mid,)).fetchall()
+    conn.close()
+    from . import pdfs
+    data = pdfs.road_tag_sheet_pdf(m["name"], [dict(p) for p in ps])
+    fname = (m["name"] or "tags").replace(" ", "_")
+    return Response(data, mimetype="application/pdf",
+                    headers={"Content-Disposition": f'inline; filename="{fname}-camera-tags.pdf"'})

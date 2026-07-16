@@ -235,6 +235,8 @@ def _road_setup_section(m, setup, races, counts, _json, rename_js):
                               else '<span class="muted">none set</span>'))
         nassigned = assigned_count.get(r["id"], 0)
         act = f'<a class="btn" href="/races/{r["id"]}/console">⏱ Time</a>'
+        if org:
+            act += f' <a class="btn ghost" href="/races/{r["id"]}/camera">📷 Camera</a>'
         override = ""
         if setup:
             nm = _json.dumps(r["name"])
@@ -328,7 +330,8 @@ def _road_setup_section(m, setup, races, counts, _json, rename_js):
             f'<div style="margin-top:.8rem"><b>Public registration link</b><br>{link_html}</div>'
             f'<div style="margin-top:.8rem"><b>Bib stickers</b> '
             f'<a class="btn ghost" href="/meets/{m["id"]}/participants/stickers.pdf?template=5160">Avery 5160</a> '
-            f'<a class="btn ghost" href="/meets/{m["id"]}/participants/stickers.pdf?template=5163">Avery 5163</a></div>'
+            f'<a class="btn ghost" href="/meets/{m["id"]}/participants/stickers.pdf?template=5163">Avery 5163</a> '
+            f'<a class="btn ghost" href="/meets/{m["id"]}/participants/tags.pdf">📷 Camera tags</a></div>'
             '</div>')
     return event_card + default_card + events_card
 
@@ -2156,3 +2159,126 @@ def results_xlsx(mid):
     if not can_view_meet(m):
         abort(403)
     return _xlsx_response(m, demo.mode_for(g.principal))
+
+
+# ------------------------------- camera timing (ArUco prototype) -------------------------------
+_CAMERA_PAGE = """
+<p class="muted"><a href="/meets/__MID__">← __MNAME__</a></p>
+<h1>📷 Camera — __RNAME__</h1>
+<div class="card">
+  <div style="display:flex;gap:1rem;flex-wrap:wrap;align-items:center;justify-content:space-between">
+    <div><b id="cstatus" class="muted">connecting…</b> · <span id="cclock" style="font-variant-numeric:tabular-nums">0:00:00</span>
+      · <span id="ccount">0</span> finishers</div>
+    <button class="ghost" onclick="selftest()">Self-test</button>
+  </div>
+  <canvas id="c" style="width:100%;max-width:720px;border-radius:12px;background:#000;margin-top:.6rem"></canvas>
+  <p class="muted" style="margin:.4rem 0 0">Aim at the finish line. Tags are read automatically as
+  runners cross — each bib records once (repeats are ignored). Start/stop the race from the
+  timing console or phone as usual.</p>
+</div>
+<div class="card"><h2>Manual entry</h2>
+  <div class="row"><div style="max-width:220px">
+    <input id="mbib" inputmode="numeric" placeholder="bib #" onkeydown="if(event.key==='Enter')manual()"></div>
+  <div style="display:flex;align-items:flex-end"><button onclick="manual()">Record</button></div></div>
+</div>
+<div class="card"><h2>Recent</h2><div id="clog" class="muted">Nothing yet.</div></div>
+<video id="v" playsinline muted style="display:none"></video>
+<script src="/static/vendor/cv.js"></script>
+<script src="/static/vendor/aruco.js"></script>
+<script>
+const RID=__RID__;
+let SEEN=new Set(), DET=null, VID=null, CAN=null, CTX=null, RUNNING=false, LOGN=0;
+function log(t){ const el=document.getElementById('clog');
+  if(!LOGN) el.innerHTML=''; LOGN++;
+  el.innerHTML='<div>'+t+'</div>'+el.innerHTML; el.classList.remove('muted'); }
+async function poll(){
+  try{ const s=await jget('/races/'+RID+'/state');
+    RUNNING=s.started&&!s.stopped;
+    document.getElementById('cstatus').textContent = s.stopped?'🏁 ended':(s.started?'🟢 LIVE':'⏸ not started');
+    document.getElementById('ccount').textContent=s.finishers.length;
+    const el=(s.stop_ms||Date.now())-(s.start_ms||Date.now());
+    const sec=Math.max(0,el/1000), h=Math.floor(sec/3600), m=Math.floor(sec%3600/60), ss=Math.floor(sec%60);
+    document.getElementById('cclock').textContent=s.start_ms?(h+':'+String(m).padStart(2,'0')+':'+String(ss).padStart(2,'0')):'0:00:00';
+  }catch(e){}
+  setTimeout(poll,2000);
+}
+async function boot(){
+  CAN=document.getElementById('c'); CTX=CAN.getContext('2d',{willReadFrequently:true});
+  DET=new AR.Detector();
+  try{
+    VID=document.getElementById('v');
+    const s=await navigator.mediaDevices.getUserMedia({audio:false,
+      video:{facingMode:'environment',width:{ideal:1280}}});
+    VID.srcObject=s; await VID.play();
+    loop();
+  }catch(e){
+    document.getElementById('cstatus').textContent='camera unavailable — manual entry still works';
+  }
+  poll();
+}
+function loop(){
+  if(VID && VID.readyState===VID.HAVE_ENOUGH_DATA){
+    const w=640, h=Math.round(VID.videoHeight*w/VID.videoWidth)||480;
+    if(CAN.width!==w||CAN.height!==h){ CAN.width=w; CAN.height=h; }
+    CTX.drawImage(VID,0,0,w,h);
+    let ms=[];
+    try{ ms=DET.detect(CTX.getImageData(0,0,w,h)); }catch(e){}
+    ms.forEach(function(m){
+      CTX.strokeStyle='#28c76f'; CTX.lineWidth=4; CTX.beginPath();
+      m.corners.forEach(function(p,i){ i?CTX.lineTo(p.x,p.y):CTX.moveTo(p.x,p.y); });
+      CTX.closePath(); CTX.stroke();
+      CTX.fillStyle='#28c76f'; CTX.font='bold 22px sans-serif';
+      CTX.fillText('#'+m.id, m.corners[0].x, m.corners[0].y-8);
+      hit(m.id);
+    });
+  }
+  setTimeout(loop,66);
+}
+async function hit(id){
+  if(!RUNNING || SEEN.has(id)) return;
+  SEEN.add(id);
+  try{
+    const j=await jpost('/races/'+RID+'/finish',{bib:id});
+    if(j&&j.duplicate){ log('#'+id+' — already recorded'); return; }
+    log('📷 <b>#'+id+'</b>'+(j.name?(' '+j.name):'')+' ✓'+(j.warn?(' ⚠ '+j.warn):''));
+    try{ navigator.vibrate&&navigator.vibrate(35); }catch(e){}
+  }catch(e){ SEEN.delete(id); log('#'+id+' ✕ '+e.message); }
+}
+async function manual(){
+  const el=document.getElementById('mbib'); const v=el.value.trim(); if(!v)return;
+  try{
+    const j=await jpost('/races/'+RID+'/finish',{bib:v}); el.value=''; el.focus();
+    if(j&&j.duplicate){ log('#'+v+' — already recorded'); return; }
+    log('⌨️ <b>#'+v+'</b>'+(j.name?(' '+j.name):'')+' ✓'+(j.warn?(' ⚠ '+j.warn):''));
+  }catch(e){ alert(e.message); }
+}
+const ARUCO_CODES={0:[1,0,0,0,0],1:[1,0,1,1,1],2:[0,1,0,0,1],3:[0,1,1,1,0]};
+function drawMarker(ctx,x,y,size,id){
+  const cell=size/7; ctx.fillStyle='#000'; ctx.fillRect(x,y,size,size); ctx.fillStyle='#fff';
+  for(let r=0;r<5;r++){ const bits=ARUCO_CODES[(id>>(8-2*r))&3];
+    for(let col=0;col<5;col++) if(bits[col]) ctx.fillRect(x+(col+1)*cell,y+(r+1)*cell,cell,cell); } }
+function selftest(){
+  const w=640,h=480; CAN.width=w; CAN.height=h;
+  CTX.fillStyle='#fff'; CTX.fillRect(0,0,w,h);
+  drawMarker(CTX,220,140,200,101);
+  const ms=new AR.Detector().detect(CTX.getImageData(0,0,w,h));
+  alert(ms.length===1&&ms[0].id===101
+    ? '✅ Self-test PASS — drew tag 101, detector decoded '+ms[0].id
+    : '❌ Self-test FAIL — detected: '+JSON.stringify(ms.map(function(m){return m.id;})));
+}
+boot();
+</script>"""
+
+
+@bp.get("/races/<int:rid>/camera")
+@login_required
+def race_camera(rid):
+    """Camera timing (prototype): auto-record ArUco-tagged bibs as they cross.
+    Manual entry stays available right on the page for any missed reads."""
+    r, m = _race_or_403(rid, can_record_meet)
+    body = (_CAMERA_PAGE
+            .replace("__RID__", str(rid))
+            .replace("__MID__", str(m["id"]))
+            .replace("__MNAME__", str(escape(m["name"])))
+            .replace("__RNAME__", str(escape(r["name"]))))
+    return shell(g.principal, body, active="meets")
