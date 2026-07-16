@@ -475,6 +475,32 @@ def delete_participant(pid):
 
 
 # ------------------------------- event branding + registration settings -------------------------------
+def _logo_bg(url):
+    """Sample a logo's background colour (corner/edge pixels) -> '#rrggbb', or None
+    when the logo is transparent (so the page keeps its default background)."""
+    if not url:
+        return None
+    try:
+        from collections import Counter
+        from PIL import Image
+        path = os.path.join(os.path.dirname(__file__), "static", "logos", os.path.basename(url))
+        im = Image.open(path).convert("RGBA")
+        w, h = im.size
+        pts = [(0, 0), (w - 1, 0), (0, h - 1), (w - 1, h - 1), (w // 2, 0), (w // 2, h - 1)]
+        cols = []
+        for x, y in pts:
+            r, g, b, a = im.getpixel((x, y))
+            if a < 200:
+                continue                       # transparent edge -> ignore
+            cols.append((r // 8 * 8, g // 8 * 8, b // 8 * 8))   # quantize to fight JPEG noise
+        if not cols:
+            return None
+        r, g, b = Counter(cols).most_common(1)[0][0]
+        return f"#{r:02x}{g:02x}{b:02x}"
+    except Exception:  # noqa: BLE001 — never block a logo upload on colour sampling
+        return None
+
+
 @bp.post("/meets/<int:mid>/logo")
 @login_required
 def event_logo(mid):
@@ -484,6 +510,7 @@ def event_logo(mid):
     if lp:
         s = _load_settings(mid)
         s["event_logo"] = lp
+        s["logo_bg"] = _logo_bg(lp)            # match the signup page to the logo
         _save_settings(mid, s)
     return redirect(f"/meets/{mid}")
 
@@ -538,19 +565,32 @@ def _fee_str(cents):
 
 
 def _reg_shell(m, inner):
-    logo = _load_settings(m["id"]).get("event_logo")
+    s = _load_settings(m["id"])
+    logo = s.get("event_logo")
     logo_tag = (f'<img src="{escape(logo)}" alt="" style="max-height:90px;max-width:230px;'
                 f'object-fit:contain">' if logo else "")
+    if logo and "logo_bg" not in s:            # backfill for logos uploaded before this feature
+        s["logo_bg"] = _logo_bg(logo)
+        _save_settings(m["id"], s)
+    # Match the page background to the logo; flip the header text to stay readable on it.
+    bg = s.get("logo_bg") or "#eef1f5"
+    try:
+        r, g, b = int(bg[1:3], 16), int(bg[3:5], 16), int(bg[5:7], 16)
+        dark_bg = (0.299 * r + 0.587 * g + 0.114 * b) < 140
+    except (ValueError, IndexError):
+        dark_bg = False
+    h1_col = "#ffffff" if dark_bg else "#12385f"
+    sub_col = "rgba(255,255,255,.85)" if dark_bg else "#5b6b7c"
     return f"""<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width, initial-scale=1">
 <title>Register · {escape(m['name'])}</title>{HEAD_EXTRA}<script>{CSRF_JS}</script>
 <style>
 *{{box-sizing:border-box}}
-body{{margin:0;font:16px/1.55 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:#eef1f5;color:#1b2b3a}}
+body{{margin:0;font:16px/1.55 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;background:{bg};color:#1b2b3a}}
 main{{max-width:640px;margin:0 auto;padding:1.2rem 1rem 3rem}}
 .hero{{text-align:center;padding:1.4rem 1rem .6rem}}
-.hero h1{{margin:.6rem 0 .2rem;color:#12385f}}
-.hero .sub{{color:#5b6b7c}}
+.hero h1{{margin:.6rem 0 .2rem;color:{h1_col}}}
+.hero .sub{{color:{sub_col}}}
 .card{{background:#fff;border:1px solid #d9e0e8;border-radius:14px;padding:1.1rem 1.2rem;margin:0 0 1rem}}
 label{{display:block;font-size:.72rem;text-transform:uppercase;letter-spacing:.04em;color:#5b6b7c;font-weight:700;margin:.5rem 0 .2rem}}
 input,select,textarea{{width:100%;padding:.6rem;border:1px solid #cdd8e6;border-radius:9px;font-size:1rem;background:#fff;color:#1b2b3a}}
