@@ -263,8 +263,9 @@ def participants(mid):
                 '<div class="card"><h2>Import registrations (CSV)</h2>'
                 '<p class="muted" style="margin-top:0">Columns (any order): '
                 '<code>bib, name, age, gender, race, city, club</code>. '
-                'A blank bib auto-numbers. The race column is matched to your races by name '
-                '(e.g. “5K” → “5K Run”).</p>'
+                'A blank bib auto-numbers; a bib that already exists updates that runner '
+                '(re-import a corrected file anytime). The race column is matched to your '
+                'races by name (e.g. “5K” → “5K Run”).</p>'
                 f'<form method="post" action="/meets/{mid}/participants/import" '
                 'enctype="multipart/form-data">'
                 '<input type="file" name="file" accept=".csv,text/csv"><br>'
@@ -285,7 +286,7 @@ def participants(mid):
                 '<div style="display:flex;align-items:flex-end"><button type="submit">Add</button></div>'
                 '</form></div>')
         else:
-            tools = ('<div class="card muted">Add at least one distance on the '
+            tools = ('<div class="card muted">Add at least one race on the '
                      f'<a href="/meets/{mid}">Setup</a> tab before adding participants.</div>')
 
     msg = request.args.get("msg", "")
@@ -372,7 +373,7 @@ def import_participants(mid):
         conn.close()
         return redirect(f"/meets/{mid}/participants?msg=Nothing+to+import")
     header = [h.strip().lower() for h in rows[0]]
-    added = skipped = unmatched = 0
+    added = updated = skipped = unmatched = 0
     nextbib = _next_bib(conn, mid)
     for r in rows[1:]:
         rowmap = {header[i]: (r[i] if i < len(r) else "") for i in range(len(header))}
@@ -384,8 +385,9 @@ def import_participants(mid):
             skipped += 1
             continue
         bib_s = _pick(rowmap, "bib", "bib number", "number", "bib #")
-        bib = int(bib_s) if bib_s.isdigit() else nextbib
-        if not bib_s.isdigit():
+        provided = bib_s.isdigit()
+        bib = int(bib_s) if provided else nextbib
+        if not provided:
             nextbib += 1
         age_s = _pick(rowmap, "age")
         age = int(age_s) if age_s.isdigit() else None
@@ -396,18 +398,38 @@ def import_participants(mid):
             unmatched += 1
         city = _pick(rowmap, "city", "town") or None
         club = _pick(rowmap, "club", "team") or None
-        try:
+
+        # Upsert by bib: a bib already in this event UPDATES that participant, filling
+        # only the fields the CSV actually provides (a sparse row won't wipe good data).
+        existing = conn.execute("SELECT * FROM participants WHERE meet_id=? AND bib=?",
+                                (mid, bib)).fetchone() if provided else None
+        if existing:
             conn.execute(
-                "INSERT INTO participants (meet_id, race_id, bib, name, age, gender, city, club) "
-                "VALUES (?,?,?,?,?,?,?,?)", (mid, race_id, bib, name, age, gender, city, club))
-            added += 1
-        except Exception:  # duplicate bib
-            skipped += 1
+                "UPDATE participants SET name=?, age=?, gender=?, race_id=?, city=?, club=? WHERE id=?",
+                (name,
+                 age if age is not None else existing["age"],
+                 gender if gender else existing["gender"],
+                 race_id if (dist and race_id is not None) else existing["race_id"],
+                 city if city else existing["city"],
+                 club if club else existing["club"],
+                 existing["id"]))
+            updated += 1
+        else:
+            try:
+                conn.execute(
+                    "INSERT INTO participants (meet_id, race_id, bib, name, age, gender, city, club) "
+                    "VALUES (?,?,?,?,?,?,?,?)", (mid, race_id, bib, name, age, gender, city, club))
+                added += 1
+            except Exception:  # rare bib race
+                skipped += 1
     conn.commit()
     conn.close()
-    msg = f"Imported {added}."
+    msg = f"Imported {added} new"
+    if updated:
+        msg += f", updated {updated} existing"
+    msg += "."
     if skipped:
-        msg += f" Skipped {skipped} (missing name or duplicate bib)."
+        msg += f" Skipped {skipped} (missing name)."
     if unmatched:
         msg += f" {unmatched} had a race that didn't match (left unassigned)."
     return redirect(f"/meets/{mid}/participants?msg={msg.replace(' ', '+')}")
