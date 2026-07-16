@@ -2246,7 +2246,13 @@ async function boot(){
     VID.srcObject=s; await VID.play();
     loop();
   }catch(e){
-    document.getElementById('cstatus').textContent='camera unavailable — manual entry still works';
+    document.getElementById('cstatus').textContent='camera unavailable ('+(e&&e.name||'error')+') — manual entry still works';
+    CAN.width=640; CAN.height=200;
+    CTX.fillStyle='#0b1826'; CTX.fillRect(0,0,640,200);
+    CTX.fillStyle='#f0b429'; CTX.font='bold 20px sans-serif';
+    CTX.fillText('Camera blocked or unavailable ('+(e&&e.name||'error')+').', 20, 90);
+    CTX.font='15px sans-serif'; CTX.fillStyle='#cdd8e6';
+    CTX.fillText('Check the camera icon in the address bar to allow access, then reload.', 20, 120);
   }
   poll();
 }

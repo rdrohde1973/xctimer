@@ -25,7 +25,7 @@ from .phone import bp as phone_bp
 from .waivers import bp as waivers_bp
 from .road import bp as road_bp
 
-APP_VERSION = "0.88.1-camera-links"
+APP_VERSION = "0.88.2-camera-permission"
 
 LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width, initial-scale=1">
@@ -466,7 +466,8 @@ def create_app():
         resp.headers.setdefault("X-Frame-Options", "DENY")
         resp.headers.setdefault("X-Content-Type-Options", "nosniff")
         resp.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
-        resp.headers.setdefault("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
+        # camera=(self): the finish-line camera page (/races/<id>/camera) needs it.
+        resp.headers.setdefault("Permissions-Policy", "geolocation=(), microphone=(), camera=(self)")
         # Inline <style>/<script> are used throughout, so 'unsafe-inline' is required;
         # frame-ancestors 'none' is the key clickjacking win.
         resp.headers.setdefault("Content-Security-Policy",
