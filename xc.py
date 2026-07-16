@@ -2230,6 +2230,17 @@ function toCanvas(e){ const r=CAN.getBoundingClientRect();
 function log(t){ const el=document.getElementById('clog');
   if(!LOGN) el.innerHTML=''; LOGN++;
   el.innerHTML='<div>'+t+'</div>'+el.innerHTML; el.classList.remove('muted'); }
+// Non-blocking toast — a modal alert() PAUSES the <video> on mobile (frozen camera).
+function toast(msg){
+  let t=document.getElementById('ctoast');
+  if(!t){ t=document.createElement('div'); t.id='ctoast';
+    t.style.cssText='position:fixed;left:50%;bottom:16px;transform:translateX(-50%);z-index:9999;'
+      +'background:#12385f;color:#fff;padding:.7rem 1.1rem;border-radius:10px;font-weight:700;'
+      +'box-shadow:0 6px 24px rgba(0,0,0,.35);max-width:92%;text-align:center';
+    document.body.appendChild(t); }
+  t.textContent=msg; t.style.display='';
+  clearTimeout(t._to); t._to=setTimeout(function(){ t.style.display='none'; }, 3500);
+}
 async function poll(){
   try{ const s=await jget('/races/'+RID+'/state');
     RUNNING=s.started&&!s.stopped;
@@ -2352,7 +2363,8 @@ async function manual(){
     const j=await jpost('/races/'+RID+'/finish',{bib:v}); el.value=''; el.focus();
     if(j&&j.duplicate){ log('#'+v+' — already recorded'); return; }
     log('⌨️ <b>#'+v+'</b>'+(j.name?(' '+j.name):'')+' ✓'+(j.warn?(' ⚠ '+j.warn):''));
-  }catch(e){ alert(e.message); }
+    if(j&&j.warn) toast('⚠ '+j.warn);
+  }catch(e){ toast(e.message); }
 }
 const ARUCO_CODES={0:[1,0,0,0,0],1:[1,0,1,1,1],2:[0,1,0,0,1],3:[0,1,1,1,0]};
 function drawMarker(ctx,x,y,size,id){
@@ -2365,9 +2377,12 @@ function selftest(){
   x.fillStyle='#fff'; x.fillRect(0,0,640,480);
   drawMarker(x,220,140,200,101);
   const ms=new AR.Detector().detect(x.getImageData(0,0,640,480));
-  alert(ms.length===1&&ms[0].id===101
-    ? '✅ Self-test PASS — drew tag 101, detector decoded '+ms[0].id
-    : '❌ Self-test FAIL — detected: '+JSON.stringify(ms.map(function(m){return m.id;})));
+  const pass = ms.length===1 && ms[0].id===101;
+  toast(pass ? '✅ Self-test PASS — decoded tag '+ms[0].id
+             : '❌ Self-test FAIL — got '+JSON.stringify(ms.map(function(m){return m.id;})));
+  document.getElementById('cstatus').textContent = pass ? '📷 ready · self-test OK'
+    : document.getElementById('cstatus').textContent;
+  if(VID && VID.srcObject){ try{ VID.play(); }catch(e){} }   // resume in case anything paused it
 }
 boot();
 </script>"""
