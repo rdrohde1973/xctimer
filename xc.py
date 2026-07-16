@@ -239,9 +239,10 @@ def _road_setup_section(m, setup, races, counts, _json, rename_js):
         if setup:
             nm = _json.dumps(r["name"])
             act += (
+                f" <button class='ghost' onclick='resetRace({r['id']})'>↺ Reset</button>"
                 f" <button class='ghost' onclick='renameHeat({r['id']}, {escape(nm)})'>✎ Rename</button>"
                 f" <form class='inline' method='post' action='/races/{r['id']}/delete' "
-                f"onsubmit=\"return confirm('Delete this event and its results?')\">"
+                f"onsubmit=\"return confirm('Delete this {'race' if org else 'event'} and its results?')\">"
                 f"<button class='danger'>✕</button></form>")
             override = (
                 f'<details style="margin-top:.5rem"><summary class="muted" style="cursor:pointer">'
@@ -275,7 +276,11 @@ def _road_setup_section(m, setup, races, counts, _json, rename_js):
             f'<div style="max-width:200px"><select name="capture_mode">{opts}</select></div>'
             f'<div style="display:flex;align-items:flex-end"><button type="submit">+ Add {noun_s}</button></div>'
             f'</form>')
-    events_card = f'<div class="card"><h2>{noun}</h2>{events_html}{assign_link}{add}{rename_js}</div>'
+    reset_js = ('<script>async function resetRace(id){'
+                'if(!confirm("Reset this race? This clears its clock and ALL recorded finishers."))return;'
+                'try{await jpost("/races/"+id+"/reset",{});location.reload();}'
+                'catch(e){alert(e.message);}}</script>') if setup else ""
+    events_card = f'<div class="card"><h2>{noun}</h2>{events_html}{assign_link}{add}{rename_js}{reset_js}</div>'
     if not org:
         return default_card + events_card
 
