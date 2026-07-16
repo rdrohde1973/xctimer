@@ -492,7 +492,8 @@ def send_setup_email(email, token, *, reset=False):
 def login_form():
     nxt = _safe_next(request.args.get("next")) or ""
     if getattr(g, "principal", None):
-        return redirect(nxt or "/dashboard")
+        from .ui import home_url
+        return redirect(nxt or home_url(g.principal))
     return auth_page("Sign in", "Cross-country & track timing", _login_body(nxt=nxt))
 
 
@@ -531,6 +532,12 @@ def login_submit():
     return _complete_login(u, nxt, ip, _log)
 
 
+def _landing_for(u):
+    """Post-login landing by role (race directors -> Events, coaches -> Meets, etc.)."""
+    from .ui import home_url
+    return home_url(Principal(user=u))
+
+
 def _complete_login(u, nxt, ip, _log, extra=""):
     """Finish a verified sign-in: stamp last_login, rotate the session, set the cookie."""
     conn = db.connect()
@@ -540,7 +547,7 @@ def _complete_login(u, nxt, ip, _log, extra=""):
     _log.info(f"XCLOG LOGIN ok {u['email']} {u['role']} {ip}{extra}")
     destroy_session(request.cookies.get(SESSION_COOKIE))   # rotate: drop any prior session id
     token = create_session(u["id"])
-    return _set_session_cookie(make_response(redirect(_safe_next(nxt) or "/dashboard")), token)
+    return _set_session_cookie(make_response(redirect(_safe_next(nxt) or _landing_for(u))), token)
 
 
 @bp.get("/login/verify")
@@ -675,7 +682,7 @@ def setup_submit():
     conn.commit()
     conn.close()
     token = create_session(u["id"])
-    return _set_session_cookie(make_response(redirect("/dashboard")), token)
+    return _set_session_cookie(make_response(redirect(_landing_for(u))), token)
 
 
 @bp.get("/forgot")
