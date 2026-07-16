@@ -548,7 +548,8 @@ def participant_stickers(mid):
     data = pdfs.bib_stickers_pdf(m["name"], athletes, template=template, logo_path=s.get("event_logo"))
     fname = (m["name"] or "stickers").replace(" ", "_")
     return Response(data, mimetype="application/pdf",
-                    headers={"Content-Disposition": f'inline; filename="{fname}-stickers.pdf"'})
+                    headers={"Content-Disposition": f'inline; filename="{fname}-stickers.pdf"',
+                             "Cache-Control": "no-store, max-age=0"})
 
 
 # ------------------------------- public self-registration -------------------------------
@@ -736,4 +737,5 @@ def participant_tags(mid):
     data = pdfs.road_tag_sheet_pdf(m["name"], [dict(p) for p in ps])
     fname = (m["name"] or "tags").replace(" ", "_")
     return Response(data, mimetype="application/pdf",
-                    headers={"Content-Disposition": f'inline; filename="{fname}-camera-tags.pdf"'})
+                    headers={"Content-Disposition": f'inline; filename="{fname}-camera-tags.pdf"',
+                             "Cache-Control": "no-store, max-age=0"})
