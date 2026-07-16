@@ -332,6 +332,9 @@ def _road_setup_section(m, setup, races, counts, _json, rename_js):
             f'<a class="btn ghost" href="/meets/{m["id"]}/participants/stickers.pdf?template=5160">Avery 5160</a> '
             f'<a class="btn ghost" href="/meets/{m["id"]}/participants/stickers.pdf?template=5163">Avery 5163</a> '
             f'<a class="btn ghost" href="/meets/{m["id"]}/participants/tags.pdf">📷 Camera tags</a></div>'
+            f'<div style="margin-top:.8rem"><b>Finish-line camera</b> '
+            f'<a class="btn" href="/meets/{m["id"]}/camera">📷 Whole-event camera</a> '
+            f'<span class="muted">— one camera for all races; each runner is routed to their own race.</span></div>'
             '</div>')
     return event_card + default_card + events_card
 
@@ -2178,6 +2181,7 @@ _CAMERA_PAGE = """
       <button class="ghost" onclick="selftest()">Self-test</button>
     </div>
   </div>
+  <div id="races" style="display:none;flex-wrap:wrap;gap:.4rem;margin-top:.5rem"></div>
   <div id="wrap" style="position:relative;max-width:720px;margin-top:.6rem;line-height:0">
     <video id="v" playsinline muted autoplay
       style="width:100%;border-radius:12px;background:#000;display:block;min-height:200px"></video>
@@ -2200,6 +2204,9 @@ _CAMERA_PAGE = """
 <script src="/static/vendor/aruco.js"></script>
 <script>
 const RID=__RID__;
+const MEET=__MEET__;   // 1 = whole-event camera (route each bib to its own race)
+const RECURL = MEET ? '/meets/'+RID+'/camera-record' : '/races/'+RID+'/finish';
+const STATEURL = MEET ? '/meets/'+RID+'/camera-state' : '/races/'+RID+'/state';
 // Bigger detection canvas on desktops (more pixels per tag); phones stay lean.
 const DW=/Mobi|iPhone|Android.*Mobile/.test(navigator.userAgent)?640:960;
 let SEEN=new Set(), DET=null, VID=null, CAN=null, CTX=null, RUNNING=false, LOGN=0;
@@ -2241,14 +2248,36 @@ function toast(msg){
   t.textContent=msg; t.style.display='';
   clearTimeout(t._to); t._to=setTimeout(function(){ t.style.display='none'; }, 3500);
 }
+function esc(s){ return String(s==null?'':s).replace(/[&<>"]/g,function(c){
+  return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]; }); }
+function renderRaces(s){
+  const box=document.getElementById('races'); box.style.display='flex';
+  box.innerHTML=(s.races||[]).map(function(r){
+    const c = r.running?'#28c76f':(r.ended?'#8a97a5':'#33475b');
+    const badge = r.running?'🟢 running':(r.ended?'✅ final':'⏸ ready');
+    return '<span style="background:'+c+';color:#fff;padding:.35rem .7rem;border-radius:999px;'
+      +'font-weight:700;font-size:.9rem">'+esc(r.name)+' · '+badge+' · '+r.count+'</span>';
+  }).join('');
+}
 async function poll(){
-  try{ const s=await jget('/races/'+RID+'/state');
-    RUNNING=s.started&&!s.stopped;
-    document.getElementById('cstatus').textContent = s.stopped?'🏁 ended':(s.started?'🟢 LIVE':'⏸ not started');
-    document.getElementById('ccount').textContent=s.finishers.length;
-    const el=(s.stop_ms||Date.now())-(s.start_ms||Date.now());
-    const sec=Math.max(0,el/1000), h=Math.floor(sec/3600), m=Math.floor(sec%3600/60), ss=Math.floor(sec%60);
-    document.getElementById('cclock').textContent=s.start_ms?(h+':'+String(m).padStart(2,'0')+':'+String(ss).padStart(2,'0')):'0:00:00';
+  try{ const s=await jget(STATEURL);
+    if(MEET){
+      RUNNING=!!s.any_running;
+      document.getElementById('cstatus').textContent = s.any_running
+        ? ('🟢 recording — running: '+(s.running_names||[]).join(', '))
+        : '⏸ no race running — start one from the console/phone';
+      document.getElementById('cclock').style.display='none';
+      let tot=0; (s.races||[]).forEach(function(r){ tot+=r.count; });
+      document.getElementById('ccount').textContent=tot;
+      renderRaces(s);
+    } else {
+      RUNNING=s.started&&!s.stopped;
+      document.getElementById('cstatus').textContent = s.stopped?'🏁 ended':(s.started?'🟢 LIVE':'⏸ not started');
+      document.getElementById('ccount').textContent=s.finishers.length;
+      const el=(s.stop_ms||Date.now())-(s.start_ms||Date.now());
+      const sec=Math.max(0,el/1000), h=Math.floor(sec/3600), m=Math.floor(sec%3600/60), ss=Math.floor(sec%60);
+      document.getElementById('cclock').textContent=s.start_ms?(h+':'+String(m).padStart(2,'0')+':'+String(ss).padStart(2,'0')):'0:00:00';
+    }
   }catch(e){}
   setTimeout(poll,2000);
 }
@@ -2350,19 +2379,27 @@ async function hit(id){
   if(!RUNNING || SEEN.has(id)) return;
   SEEN.add(id);
   try{
-    const j=await jpost('/races/'+RID+'/finish',{bib:id});
+    const j=await jpost(RECURL,{bib:id});
     if(j&&j.duplicate){ log('#'+id+' — already recorded'); return; }
+    if(j&&j.ok===false){                       // whole-event mode: not registered / race not running
+      SEEN.delete(id);                          // let it retry when the race is started
+      log('⚠ #'+id+' — '+(j.reason||'skipped'));
+      return;
+    }
     FLASH[id]=performance.now();
-    log('📷 <b>#'+id+'</b>'+(j.name?(' '+j.name):'')+' ✓'+(j.warn?(' ⚠ '+j.warn):''));
+    log('📷 <b>#'+id+'</b>'+(j.name?(' '+esc(j.name)):'')+(j.race?(' → '+esc(j.race)):'')
+        +' ✓'+(j.warn?(' ⚠ '+esc(j.warn)):''));
     try{ navigator.vibrate&&navigator.vibrate(35); }catch(e){}
   }catch(e){ SEEN.delete(id); log('#'+id+' ✕ '+e.message); }
 }
 async function manual(){
   const el=document.getElementById('mbib'); const v=el.value.trim(); if(!v)return;
   try{
-    const j=await jpost('/races/'+RID+'/finish',{bib:v}); el.value=''; el.focus();
+    const j=await jpost(RECURL,{bib:v}); el.value=''; el.focus();
     if(j&&j.duplicate){ log('#'+v+' — already recorded'); return; }
-    log('⌨️ <b>#'+v+'</b>'+(j.name?(' '+j.name):'')+' ✓'+(j.warn?(' ⚠ '+j.warn):''));
+    if(j&&j.ok===false){ log('⚠ #'+v+' — '+(j.reason||'skipped')); toast('⚠ '+(j.reason||'skipped')); return; }
+    log('⌨️ <b>#'+v+'</b>'+(j.name?(' '+esc(j.name)):'')+(j.race?(' → '+esc(j.race)):'')
+        +' ✓'+(j.warn?(' ⚠ '+esc(j.warn)):''));
     if(j&&j.warn) toast('⚠ '+j.warn);
   }catch(e){ toast(e.message); }
 }
@@ -2395,8 +2432,97 @@ def race_camera(rid):
     Manual entry stays available right on the page for any missed reads."""
     r, m = _race_or_403(rid, can_record_meet)
     body = (_CAMERA_PAGE
+            .replace("__MEET__", "0")
             .replace("__RID__", str(rid))
             .replace("__MID__", str(m["id"]))
             .replace("__MNAME__", str(escape(m["name"])))
             .replace("__RNAME__", str(escape(r["name"]))))
     return shell(g.principal, body, active="meets")
+
+
+@bp.get("/meets/<int:mid>/camera")
+@login_required
+def meet_camera(mid):
+    """Whole-event camera: one iPad at the line records EVERY race — each detected
+    bib is routed to the race that participant is registered for. Community events
+    only (participants carry a race); no need to pick a race."""
+    m = load_meet(mid)
+    if not can_record_meet(m) or not _is_org(m):
+        abort(403)
+    body = (_CAMERA_PAGE
+            .replace("__MEET__", "1")
+            .replace("__RID__", str(mid))
+            .replace("__MID__", str(mid))
+            .replace("__MNAME__", str(escape(m["name"])))
+            .replace("__RNAME__", "All races"))
+    return shell(g.principal, body, active="events")
+
+
+@bp.get("/meets/<int:mid>/camera-state")
+@login_required
+def camera_meet_state(mid):
+    m = load_meet(mid)
+    if not can_record_meet(m) or not _is_org(m):
+        abort(403)
+    conn = db.connect()
+    races = conn.execute("SELECT * FROM races WHERE meet_id=? ORDER BY id", (mid,)).fetchall()
+    counts = {r[0]: r[1] for r in conn.execute(
+        "SELECT f.race_id, COUNT(*) FROM finishers f JOIN races r ON r.id=f.race_id "
+        "WHERE r.meet_id=? GROUP BY f.race_id", (mid,)).fetchall()}
+    conn.close()
+    out, running = [], []
+    for r in races:
+        started, stopped = bool(r["start_time"]), bool(r["stop_time"])
+        run = started and not stopped
+        if run:
+            running.append(r["name"])
+        out.append({"id": r["id"], "name": r["name"], "running": run, "ended": stopped,
+                    "count": counts.get(r["id"], 0),
+                    "start_ms": _ms(_parse(r["start_time"])) if started else None,
+                    "stop_ms": _ms(_parse(r["stop_time"])) if stopped else None})
+    return jsonify(server_ms=_ms(_now()), any_running=bool(running),
+                   running_names=running, races=out)
+
+
+@bp.post("/meets/<int:mid>/camera-record")
+@login_required
+def camera_record(mid):
+    """Route a detected bib to the race that participant is registered for, and record
+    a finisher there (if that race is currently running). Returns ok=False + a reason
+    the camera page shows in its log — never a hard error, so timing keeps flowing."""
+    m = load_meet(mid)
+    if not can_record_meet(m) or not _is_org(m):
+        abort(403)
+    raw = (request.get_json(silent=True) or {}).get("bib")
+    try:
+        bib = int(str(raw).strip())
+    except (TypeError, ValueError):
+        return jsonify(ok=False, reason="bad bib")
+    conn = db.connect()
+    p = conn.execute("SELECT race_id FROM participants WHERE meet_id=? AND bib=?",
+                     (mid, bib)).fetchone()
+    if not p:
+        conn.close()
+        return jsonify(ok=False, bib=bib, reason=f"Bib {bib} not registered")
+    rid = p["race_id"]
+    r = conn.execute("SELECT * FROM races WHERE id=? AND meet_id=?", (rid, mid)).fetchone() if rid else None
+    if not r:
+        conn.close()
+        return jsonify(ok=False, bib=bib, reason=f"Bib {bib} has no race")
+    if not r["start_time"] or r["stop_time"]:
+        conn.close()
+        return jsonify(ok=False, bib=bib, race=r["name"], reason=f"{r['name']} not running")
+    if conn.execute("SELECT 1 FROM finishers WHERE race_id=? AND bib=?", (rid, bib)).fetchone():
+        conn.close()
+        return jsonify(ok=True, duplicate=True, bib=bib, race=r["name"])
+    elapsed = (_now() - _parse(r["start_time"])).total_seconds()
+    snap = _snap_for_bib(conn, m, bib)
+    seq = (conn.execute("SELECT COALESCE(MAX(seq),0) FROM finishers WHERE race_id=?",
+                        (rid,)).fetchone()[0]) + 1
+    conn.execute(
+        "INSERT INTO finishers (race_id, seq, finish_time, elapsed_seconds, bib, "
+        "snap_name, snap_grade, snap_gender, snap_school, snap_age) VALUES (?,?,?,?,?,?,?,?,?,?)",
+        (rid, seq, _iso(_now()), elapsed, bib, *snap))
+    conn.commit()
+    conn.close()
+    return jsonify(ok=True, bib=bib, race=r["name"], name=snap[0])
