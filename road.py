@@ -239,8 +239,9 @@ def create_event():
         race_name = "Fun Run"
     else:
         race_name = "Race 1"
+    # Community road races are camera/scan-first — each read records a new finisher.
     conn.execute("INSERT INTO races (meet_id, name, capture_mode) VALUES (?,?,?)",
-                 (mid, race_name, "tap"))
+                 (mid, race_name, "scan"))
     conn.commit()
     conn.close()
     return redirect(f"/meets/{mid}")

@@ -990,8 +990,12 @@ def race_finish(rid):
         # Accidental double-scan at the line: silently discard, don't block the timer.
         conn.close()
         return jsonify(ok=True, duplicate=True)
+    cam_mode = (request.get_json(silent=True) or {}).get("mode")
     snap = _snap_for_bib(conn, m, bib)
-    if r["capture_mode"] == "scan":
+    # Whole-frame / line camera IS the capture method — it records a new finisher on
+    # each first read (like scan), regardless of the race's own capture_mode. Only the
+    # chute camera and tap/tapselect manual entry fill pre-tapped open slots.
+    if r["capture_mode"] == "scan" or cam_mode in ("frame", "line"):
         start = _parse(r["start_time"])
         if not start or r["stop_time"]:
             conn.close()
@@ -2419,7 +2423,7 @@ async function hit(id){
   if(!RUNNING || SEEN.has(id)) return;
   SEEN.add(id);
   try{
-    const j=await jpost(RECURL,{bib:id});
+    const j=await jpost(RECURL,{bib:id,mode:MODE});
     if(j&&j.duplicate){ log('#'+id+' — already recorded'); return; }
     if(j&&j.ok===false){                       // whole-event mode: not registered / race not running
       SEEN.delete(id);                          // let it retry when the race is started
@@ -2436,7 +2440,7 @@ async function hit(id){
 async function manual(){
   const el=document.getElementById('mbib'); const v=el.value.trim(); if(!v)return;
   try{
-    const j=await jpost(RECURL,{bib:v}); el.value=''; el.focus();
+    const j=await jpost(RECURL,{bib:v,mode:MODE}); el.value=''; el.focus();
     if(j&&j.duplicate){ log('#'+v+' — already recorded'); return; }
     if(j&&j.ok===false){ log('⚠ #'+v+' — '+(j.reason||'skipped')); toast('⚠ '+(j.reason||'skipped')); return; }
     log('⌨️ <b>#'+v+'</b>'+(j.name?(' '+esc(j.name)):'')+(j.race?(' → '+esc(j.race)):'')
