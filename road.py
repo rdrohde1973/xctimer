@@ -1068,9 +1068,45 @@ def host_publish(mid):
     if not can_setup_meet(m):
         abort(403)
     s = _load_settings(mid)
-    s["host_paid"] = True     # honor-system Venmo for now; Square will verify later
+    s["host_paid"] = True     # honor-system Venmo confirmation
     _save_settings(mid, s)
     return redirect(f"/meets/{mid}")
+
+
+@bp.post("/meets/<int:mid>/host-pay-square")
+@login_required
+def host_pay_square(mid):
+    m = load_meet(mid)
+    if not can_setup_meet(m):
+        abort(403)
+    from . import square
+    if not square.is_configured():
+        return redirect(f"/meets/{mid}?payerr=1")
+    base = os.environ.get("XC_PUBLIC_URL", request.host_url.rstrip("/"))
+    ret = f"{base}/meets/{mid}/host-square-return"
+    try:
+        url = square.create_payment_link(f"XCTimer event — {m['name']}", HOST_FEE_CENTS,
+                                          ret, f"xctimer_meet={mid}")
+    except Exception:
+        return redirect(f"/meets/{mid}?payerr=1")
+    return redirect(url)
+
+
+@bp.get("/meets/<int:mid>/host-square-return")
+@login_required
+def host_square_return(mid):
+    m = load_meet(mid)
+    if not can_setup_meet(m):
+        abort(403)
+    from . import square
+    oid = request.args.get("orderId") or ""
+    if square.order_ok(oid, expect_note_substr=f"xctimer_meet={mid}"):
+        s = _load_settings(mid)
+        s["host_paid"] = True
+        s["square_order_id"] = oid          # idempotency breadcrumb
+        _save_settings(mid, s)
+        return redirect(f"/meets/{mid}?paid=1")
+    return redirect(f"/meets/{mid}?payerr=1")
 
 
 def host_banner(m):
@@ -1083,26 +1119,38 @@ def host_banner(m):
     if m["organizer_id"] != web:
         return ""
     fee = _fee_str(HOST_FEE_CENTS)
+    mid = m["id"]
     if host_paid(m):
         return ('<div class="card" style="border-color:#2e8b57"><b style="color:#2e8b57">✅ '
                 'Published.</b> <span class="muted">Registration can be opened in the settings below.</span></div>')
+    from . import square
+    msg = ('<p style="color:var(--err);font-weight:600;margin:.2rem 0">⚠ Payment didn\'t complete — '
+           'try again, or use Venmo.</p>') if request.args.get("payerr") else ""
+    # Verified card payment via Square (auto-publishes on a completed order).
+    sq = ""
+    if square.is_configured():
+        sq = (f'<form class="inline" method="post" action="/meets/{mid}/host-pay-square" style="display:inline">'
+              f'<button style="background:#006aff;color:#fff;border:0;border-radius:9px;padding:.55rem 1rem;'
+              f'font-weight:700;cursor:pointer">💳 Pay {fee} with Square (card)</button></form>')
+    # Venmo (honor-system) fallback — needs the manual "I've sent it" confirmation.
     handle = os.environ.get("XC_HOST_VENMO", "").lstrip("@")
-    pay = ""
+    vpay = ""
     if handle:
         vurl = _venmo_url(handle, HOST_FEE_CENTS, f"XCTimer event: {m['name']}")
-        pay = (f'<a class="btn" href="{escape(vurl)}" target="_blank" '
-               f'style="background:#3d95ce;color:#fff;padding:.55rem 1rem;border-radius:9px;'
-               f'text-decoration:none;font-weight:700">Pay {fee} with Venmo</a> ')
-    else:
-        pay = '<span class="muted">Venmo isn\'t configured yet — contact XCTimer.</span> '
+        vpay = (f'<a class="btn" href="{escape(vurl)}" target="_blank" '
+                f'style="background:#3d95ce;color:#fff;padding:.55rem 1rem;border-radius:9px;'
+                f'text-decoration:none;font-weight:700">Pay {fee} with Venmo</a>'
+                f'<form class="inline" method="post" action="/meets/{mid}/host-publish" style="display:inline" '
+                f'onsubmit="return confirm(\'Confirm you sent the {fee} via Venmo — this publishes your event.\')">'
+                f'<button class="ghost">I\'ve sent Venmo — publish</button></form>')
+    none_note = ('<span class="muted">Payment isn\'t configured yet — contact XCTimer.</span>'
+                 if not (square.is_configured() or handle) else "")
     return (f'<div class="card" style="border:2px solid #ea6a2d">'
             f'<h2 style="margin-top:0">🚦 Go live — {fee} per event</h2>'
             f'<p style="margin:.2rem 0 .6rem">Build your event below. When you\'re ready to open '
-            f'registration and time the race, pay the {fee} event fee.</p>{pay}'
-            f'<form class="inline" method="post" action="/meets/{m["id"]}/host-publish" '
-            f'style="display:inline" onsubmit="return confirm('
-            f'\'Confirm you have paid the {fee} fee. This publishes your event and lets you open registration.\')">'
-            f'<button>I\'ve paid — publish my event</button></form></div>')
+            f'registration and time the race, pay the {fee} event fee. Card (Square) is verified '
+            f'instantly; Venmo is on your honor.</p>{msg}'
+            f'<div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center">{sq}{vpay}{none_note}</div></div>')
 
 
 def reap_web_events(conn, today_iso):
