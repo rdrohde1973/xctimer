@@ -776,8 +776,11 @@ def console(rid):
   <div id="help" class="muted" style="margin-top:.5rem"></div>
 </div>
 <div class="card"><h2>Finishers (<span id="count">0</span>)</h2>
+  <div id="counts" class="muted" style="margin:-.35rem 0 .6rem;font-weight:600"></div>
   <table><thead><tr><th></th><th>#</th><th>Bib</th><th>Name</th><th>School</th><th>Time</th><th></th></tr></thead>
   <tbody id="rows"></tbody></table>
+  <div style="margin-top:.6rem"><button class="ghost" onclick="insEnd()"
+    title="Add an open place at the end for a missed runner">＋ Insert missed runner (end)</button></div>
 </div>
 <script>
 const RID={rid}, MID={m['id']};
@@ -819,6 +822,10 @@ function tick(){{
 }}
 function render(){{
   document.getElementById('count').textContent=FIN.length;
+  const scanned=FIN.filter(f=>f.bib!=null).length, open=FIN.length-scanned;
+  document.getElementById('counts').innerHTML = (MODE==='scan')
+    ? ('Recorded <b>'+FIN.length+'</b>')
+    : ('Tapped <b>'+FIN.length+'</b> · Scanned <b>'+scanned+'</b> · Open <b>'+open+'</b>');
   if(!FIN.length){{ document.getElementById('rows').innerHTML=
     '<tr><td colspan=7 class="muted">No finishers yet.</td></tr>'; return; }}
   let h='';
@@ -833,6 +840,7 @@ function render(){{
      +'<td>'+name+'</td><td>'+esc(f.school||'')+'</td>'
      +'<td style="font-variant-numeric:tabular-nums">'+fmt(f.elapsed)+'</td>'
      +'<td style="text-align:right;white-space:nowrap">'
+     +'<button class="ghost" onclick="ins('+f.id+')" title="Insert a missed runner at this place">＋↑</button> '
      +'<button class="ghost" onclick="dq('+f.id+')">'+(f.dq?'un-DQ':'DQ')+'</button> '
      +'<button class="danger" onclick="del('+f.id+')">✕</button></td></tr>';
   }});
@@ -846,8 +854,13 @@ async function stopRace(){{ if(!confirm('Stop the race clock?'))return; await jp
 async function resetRace(){{ if(!confirm('Reset clears the clock and all finishers. Continue?'))return;
   await jpost('/races/'+RID+'/reset',{{}}); load(); }}
 async function recordBib(){{ const el=document.getElementById('bib'); const v=el.value.trim(); if(!v)return;
-  try{{ const j=await jpost('/races/'+RID+'/finish',{{bib:v}}); if(j&&j.warn) alert('⚠ '+j.warn); el.value=''; el.focus(); load(); }}
+  try{{ const j=await jpost('/races/'+RID+'/finish',{{bib:v}});
+    if(j&&j.overflow){{ alert('⚠ '+j.warn); el.select(); return; }}   // nothing recorded — keep bib to retry
+    if(j&&j.warn) alert('⚠ '+j.warn); el.value=''; el.focus(); load(); }}
   catch(e){{ alert(e.message); el.select(); }} }}
+async function ins(id){{ if(!confirm('Insert an open place here? Everyone from this place down moves one place later. Then type the missed bib into the new blank row.'))return;
+  await jpost('/races/'+RID+'/insert',{{before:id}}); load(); }}
+async function insEnd(){{ await jpost('/races/'+RID+'/insert',{{}}); load(); }}
 async function setBib(id,v){{ try{{ const j=await jpost('/finishers/'+id+'/bib',{{bib:v}}); if(j&&j.warn) alert('⚠ '+j.warn); }}catch(e){{ alert(e.message); }} load(); }}
 async function dq(id){{ await jpost('/finishers/'+id+'/dq',{{}}); load(); }}
 async function del(id){{ if(!confirm('Delete finisher?'))return; await jpost('/finishers/'+id+'/delete',{{}}); load(); }}
@@ -1041,8 +1054,15 @@ def race_finish(rid):
             conn.commit()
             conn.close()
             return jsonify(ok=True, bib=bib, name=snap[0], school=snap[3], remaining=remaining, warn=warn)
-    # Scan mode, or a tap race whose open slots are all filled: record a new finisher at
-    # the current race time (scan-at-finish). Requires the race to be running.
+        # Tap / tap-select with NO open slot = more scans than taps. Don't silently append a
+        # finisher with a bogus scan-time — surface it loudly so the timer reconciles (a
+        # finish tap was likely missed → use ＋Insert to add that place, then enter the bib).
+        conn.close()
+        who = (" (%s)" % snap[0]) if snap[0] else ""
+        return jsonify(ok=True, overflow=True, bib=bib, name=snap[0],
+                       warn="No open tap for #%d%s — a finish tap may have been missed. "
+                            "Add its place with ＋Insert, then enter the bib." % (bib, who))
+    # Scan mode: record a new finisher at the current race time (scan-at-finish).
     start = _parse(r["start_time"])
     if not start or r["stop_time"]:
         conn.close()
@@ -1177,6 +1197,47 @@ def race_reorder(rid):
     conn.commit()
     conn.close()
     return jsonify(ok=True)
+
+
+@bp.post("/races/<int:rid>/insert")
+@login_required
+def race_insert(rid):
+    """Insert an OPEN place for a missed runner. `before` = finisher id to insert ahead
+    of (its place P); omit to append at the end. Every finisher keeps its own recorded
+    time; those from place P down move one place later (seq += 1). The new open slot gets
+    a time interpolated between its neighbours so ordering stays consistent — the timer
+    then types the missed bib into it."""
+    r, m = _race_or_403(rid, can_record_meet)
+    before = (request.get_json(silent=True) or {}).get("before")
+    conn = db.connect()
+    rows = conn.execute("SELECT id, seq, elapsed_seconds FROM finishers WHERE race_id=? ORDER BY seq",
+                        (rid,)).fetchall()
+    if before is not None:
+        target = next((f for f in rows if f["id"] == before), None)
+        if not target:
+            conn.close()
+            return jsonify(error="unknown finisher"), 400
+        p = target["seq"]
+    else:
+        p = (rows[-1]["seq"] + 1) if rows else 1
+    prev_t = next((f["elapsed_seconds"] for f in reversed(rows)
+                   if f["seq"] < p and f["elapsed_seconds"] is not None), None)
+    nxt_t = next((f["elapsed_seconds"] for f in rows
+                  if f["seq"] >= p and f["elapsed_seconds"] is not None), None)
+    if prev_t is None and nxt_t is None:
+        new_t = 0.0
+    elif prev_t is None:
+        new_t = max(0.0, nxt_t / 2)
+    elif nxt_t is None:
+        new_t = prev_t + 1.0
+    else:
+        new_t = (prev_t + nxt_t) / 2
+    conn.execute("UPDATE finishers SET seq = seq + 1 WHERE race_id=? AND seq >= ?", (rid, p))
+    conn.execute("INSERT INTO finishers (race_id, seq, finish_time, elapsed_seconds) VALUES (?,?,?,?)",
+                 (rid, p, None, new_t))
+    conn.commit()
+    conn.close()
+    return jsonify(ok=True, seq=p)
 
 
 # ------------------------------- scoring -------------------------------
@@ -2308,6 +2369,18 @@ function beep(){
     o.connect(g); g.connect(AC.destination); o.start(t); o.stop(t+0.17);
   }catch(e){}
 }
+// Distinct "problem" tone: two low square blips — used for an overflow (no open tap).
+function overBeep(){
+  try{ if(!AC){ unlockAudio(); if(!AC) return; }
+    [0,0.22].forEach(function(dt){
+      const o=AC.createOscillator(), g=AC.createGain(), t=AC.currentTime+dt;
+      o.type='square'; o.frequency.setValueAtTime(320,t);
+      g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(0.4,t+0.02);
+      g.gain.exponentialRampToValueAtTime(0.0001,t+0.18);
+      o.connect(g); g.connect(AC.destination); o.start(t); o.stop(t+0.2);
+    });
+  }catch(e){}
+}
 // Non-blocking toast — a modal alert() PAUSES the <video> on mobile (frozen camera).
 function toast(msg){
   let t=document.getElementById('ctoast');
@@ -2462,6 +2535,12 @@ async function hit(id){
   try{
     const j=await jpost(RECURL,{bib:id,mode:MODE});
     if(j&&j.duplicate){ log('#'+id+' — already recorded'); return; }
+    if(j&&j.overflow){                          // more scans than taps — do NOT record; warn loudly
+      log('⚠ <b>#'+id+'</b> — no open tap (missed one?). Add its place with ＋Insert, then enter it.');
+      toast('⚠ '+(j.warn||('#'+id+' — no open tap'))); overBeep();
+      try{ navigator.vibrate&&navigator.vibrate([80,60,80]); }catch(e){}
+      return;                                   // stays in SEEN so it doesn't re-warn every frame
+    }
     if(j&&j.ok===false){                       // whole-event mode: not registered / race not running
       SEEN.delete(id);                          // let it retry when the race is started
       log('⚠ #'+id+' — '+(j.reason||'skipped'));
@@ -2479,6 +2558,7 @@ async function manual(){
   try{
     const j=await jpost(RECURL,{bib:v,mode:MODE}); el.value=''; el.focus();
     if(j&&j.duplicate){ log('#'+v+' — already recorded'); return; }
+    if(j&&j.overflow){ log('⚠ <b>#'+v+'</b> — '+j.warn); toast('⚠ '+j.warn); overBeep(); return; }
     if(j&&j.ok===false){ log('⚠ #'+v+' — '+(j.reason||'skipped')); toast('⚠ '+(j.reason||'skipped')); return; }
     log('⌨️ <b>#'+v+'</b>'+(j.name?(' '+esc(j.name)):'')+(j.race?(' → '+esc(j.race)):'')
         +' ✓'+(j.warn?(' ⚠ '+esc(j.warn)):''));
