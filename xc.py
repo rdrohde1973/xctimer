@@ -855,7 +855,6 @@ async function resetRace(){{ if(!confirm('Reset clears the clock and all finishe
   await jpost('/races/'+RID+'/reset',{{}}); load(); }}
 async function recordBib(){{ const el=document.getElementById('bib'); const v=el.value.trim(); if(!v)return;
   try{{ const j=await jpost('/races/'+RID+'/finish',{{bib:v}});
-    if(j&&j.overflow){{ alert('⚠ '+j.warn); el.select(); return; }}   // nothing recorded — keep bib to retry
     if(j&&j.warn) alert('⚠ '+j.warn); el.value=''; el.focus(); load(); }}
   catch(e){{ alert(e.message); el.select(); }} }}
 async function ins(id){{ if(!confirm('Insert an open place here? Everyone from this place down moves one place later. Then type the missed bib into the new blank row.'))return;
@@ -1037,9 +1036,8 @@ def race_finish(rid):
     snap = _snap_for_bib(conn, m, bib)
     # Tap / tap-select ("tap then scan"): the tap already set each finisher's time and
     # order, so a read just attaches the bib to the next open (bib-less) slot, keeping the
-    # tapped time. This holds for ANY camera mode (whole-frame, line, or chute) and even
-    # after Stop. Only fall through to record a brand-new finisher when no open slots
-    # remain, so reads are never silently dropped.
+    # tapped time — even after Stop. When no open slot remains, fall through and record a
+    # new finisher (never drop a read).
     if r["capture_mode"] != "scan":
         # Claim the next open slot in ONE statement so two near-simultaneous reads can't
         # both grab the same slot (which would lose a bib). rowcount=0 => no open slot.
@@ -1054,15 +1052,9 @@ def race_finish(rid):
             conn.commit()
             conn.close()
             return jsonify(ok=True, bib=bib, name=snap[0], school=snap[3], remaining=remaining, warn=warn)
-        # Tap / tap-select with NO open slot = more scans than taps. Don't silently append a
-        # finisher with a bogus scan-time — surface it loudly so the timer reconciles (a
-        # finish tap was likely missed → use ＋Insert to add that place, then enter the bib).
-        conn.close()
-        who = (" (%s)" % snap[0]) if snap[0] else ""
-        return jsonify(ok=True, overflow=True, bib=bib, name=snap[0],
-                       warn="No open tap for #%d%s — a finish tap may have been missed. "
-                            "Add its place with ＋Insert, then enter the bib." % (bib, who))
-    # Scan mode: record a new finisher at the current race time (scan-at-finish).
+        # No open slot (more scans than taps): fall through and record a new finisher.
+    # Scan mode, or a tap race whose open slots are all filled: record a new finisher at
+    # the current race time (scan-at-finish). Requires the race to be running.
     start = _parse(r["start_time"])
     if not start or r["stop_time"]:
         conn.close()
@@ -2370,18 +2362,6 @@ function beep(){
     o.connect(g); g.connect(AC.destination); o.start(t); o.stop(t+0.17);
   }catch(e){}
 }
-// Distinct "problem" tone: two low square blips — used for an overflow (no open tap).
-function overBeep(){
-  try{ if(!AC){ unlockAudio(); if(!AC) return; }
-    [0,0.22].forEach(function(dt){
-      const o=AC.createOscillator(), g=AC.createGain(), t=AC.currentTime+dt;
-      o.type='square'; o.frequency.setValueAtTime(320,t);
-      g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(0.4,t+0.02);
-      g.gain.exponentialRampToValueAtTime(0.0001,t+0.18);
-      o.connect(g); g.connect(AC.destination); o.start(t); o.stop(t+0.2);
-    });
-  }catch(e){}
-}
 // Non-blocking toast — a modal alert() PAUSES the <video> on mobile (frozen camera).
 function toast(msg){
   let t=document.getElementById('ctoast');
@@ -2536,12 +2516,6 @@ async function hit(id){
   try{
     const j=await jpost(RECURL,{bib:id,mode:MODE});
     if(j&&j.duplicate){ log('#'+id+' — already recorded'); return; }
-    if(j&&j.overflow){                          // more scans than taps — do NOT record; warn loudly
-      log('⚠ <b>#'+id+'</b> — no open tap (missed one?). Add its place with ＋Insert, then enter it.');
-      toast('⚠ '+(j.warn||('#'+id+' — no open tap'))); overBeep();
-      try{ navigator.vibrate&&navigator.vibrate([80,60,80]); }catch(e){}
-      return;                                   // stays in SEEN so it doesn't re-warn every frame
-    }
     if(j&&j.ok===false){                       // whole-event mode: not registered / race not running
       SEEN.delete(id);                          // let it retry when the race is started
       log('⚠ #'+id+' — '+(j.reason||'skipped'));
@@ -2559,7 +2533,6 @@ async function manual(){
   try{
     const j=await jpost(RECURL,{bib:v,mode:MODE}); el.value=''; el.focus();
     if(j&&j.duplicate){ log('#'+v+' — already recorded'); return; }
-    if(j&&j.overflow){ log('⚠ <b>#'+v+'</b> — '+j.warn); toast('⚠ '+j.warn); overBeep(); return; }
     if(j&&j.ok===false){ log('⚠ #'+v+' — '+(j.reason||'skipped')); toast('⚠ '+(j.reason||'skipped')); return; }
     log('⌨️ <b>#'+v+'</b>'+(j.name?(' '+esc(j.name)):'')+(j.race?(' → '+esc(j.race)):'')
         +' ✓'+(j.warn?(' ⚠ '+esc(j.warn)):''));
