@@ -25,7 +25,7 @@ from .phone import bp as phone_bp
 from .waivers import bp as waivers_bp
 from .road import bp as road_bp
 
-APP_VERSION = "1.17.1-avery-note"
+APP_VERSION = "1.18.0-road-venmo"
 
 LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width, initial-scale=1">
@@ -226,9 +226,56 @@ LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
   </div>
 </div></section>
 
+<style>
+#funrun{background:linear-gradient(180deg,#ffffff 0%,#fdf1e8 100%);border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+#funrun .pill{background:#fff;border-color:#f3d6c1;color:var(--orange)}
+#funrun .frlist{list-style:none;padding:0;margin:1.2rem 0 0;display:grid;gap:.6rem}
+#funrun .frlist li{display:flex;gap:.6rem;align-items:flex-start;color:#3a4f63;font-size:1.02rem}
+#funrun .frlist .ck{color:var(--orange);font-weight:800;flex-shrink:0}
+.frcard{background:#fff;border:2px solid #f3d6c1;border-radius:18px;padding:1.4rem 1.5rem;
+        box-shadow:0 16px 38px rgba(234,106,45,.16);max-width:340px;margin:0 auto}
+.frcard h3{margin:.1rem 0 .2rem;color:var(--navy);font-size:1.25rem}
+.frcard .sub{margin:0;color:#4a5f73;font-size:.95rem}
+.frcard .bibrow{display:flex;gap:.5rem;margin-top:.9rem}
+.frcard .bib{background:#fff7f1;border:1px solid #f3d6c1;border-radius:11px;padding:.55rem .3rem;
+             text-align:center;flex:1}
+.frcard .bib b{display:block;font-size:1.4rem;color:var(--orange);line-height:1.1}
+.frcard .bib span{font-size:.72rem;color:var(--gray)}
+.frcard .go{margin:.95rem 0 0;font-size:.88rem;color:var(--gray)}
+</style>
+<section id="funrun"><div class="wrap split">
+  <div>
+    <div class="pill">🏅 New — community events</div>
+    <h2>Hosting a Fun Run or community 5K? Run that yourself, too.</h2>
+    <p class="lead">The same engine that runs a school meet now powers community races. Set up a
+    Fun Run, a neighborhood 5K, or a 10K &amp; half — no schools, no rosters, none of the paperwork.
+    Share one link and runners <b>sign themselves up</b>; you just show up and start the clock.</p>
+    <ul class="frlist">
+      <li><span class="ck">✓</span> A public sign-up page + QR — runners enter their own name, age, city &amp; club</li>
+      <li><span class="ck">✓</span> Your event's logo and colors on the registration page and printed bibs</li>
+      <li><span class="ck">✓</span> Results by gender &amp; age group — 10 &amp; Under through 60+, bracketed however you like</li>
+      <li><span class="ck">✓</span> Robot-vision camera timing, phone timing, or a no-login QR for helpers</li>
+      <li><span class="ck">✓</span> Live results the whole crowd follows as each runner crosses the line</li>
+    </ul>
+  </div>
+  <div>
+    <div class="frcard">
+      <div class="pill" style="margin:0 0 .6rem">🟢 Registration open</div>
+      <h3>Maple Grove Community 5K</h3>
+      <p class="sub">Pick your race · grab your bib · no account needed</p>
+      <div class="bibrow">
+        <div class="bib"><b>5K</b><span>Fun Run</span></div>
+        <div class="bib"><b>10K</b><span>Timed</span></div>
+        <div class="bib"><b>1&nbsp;mi</b><span>Kids</span></div>
+      </div>
+      <p class="go">Open the link, register in 20 seconds, from any phone.</p>
+    </div>
+  </div>
+</div></section>
+
 <section class="final"><div class="wrap">
   <h2>Ready to run your own meet?</h2>
-  <p class="lead" style="margin:.4rem auto 1.4rem">Sign in to get started — no timing company, no big invoice — or reach out to bring XCTimer to your district.</p>
+  <p class="lead" style="margin:.4rem auto 1.4rem">Whether it's a school meet or a community fun run — sign in to get started, no timing company and no big invoice, or reach out to bring XCTimer to your district.</p>
   <div class="cta" style="display:flex;gap:.8rem;justify-content:center;flex-wrap:wrap">
     <a class="btn" href="/login">Sign in</a>
     <a class="btn ghost" href="mailto:admin@xctimer.com?subject=XCTimer%20for%20our%20district">Get in touch</a>

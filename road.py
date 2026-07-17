@@ -619,6 +619,7 @@ def event_settings(mid):
         s["fee_cents"] = int(round(float(fee) * 100)) if fee else 0
     except ValueError:
         s["fee_cents"] = 0
+    s["venmo"] = _venmo_user(request.form.get("venmo"))
     _save_settings(mid, s)
     return redirect(f"/meets/{mid}")
 
@@ -665,6 +666,26 @@ def _event_by_token(token):
 
 def _fee_str(cents):
     return f"${cents/100:,.2f}" if cents else ""
+
+
+def _venmo_user(raw):
+    """Normalize a Venmo handle: accept '@name', 'name', or a full venmo.com/[u/]name link."""
+    v = (raw or "").strip()
+    if not v:
+        return ""
+    if "venmo.com/" in v:
+        v = v.split("venmo.com/", 1)[1]
+    v = v.split("?", 1)[0].strip("/")
+    if v.startswith("u/"):
+        v = v[2:]
+    return v.lstrip("@").strip("/")
+
+
+def _venmo_url(user, amount_cents, note):
+    """A Venmo 'pay' deep link — opens the Venmo app (mobile) prefilled to pay `user`."""
+    from urllib.parse import quote
+    return (f"https://venmo.com/{quote(user)}?txn=pay"
+            f"&amount={amount_cents/100:.2f}&note={quote(note)}")
 
 
 def _reg_shell(m, inner):
@@ -731,8 +752,9 @@ def register(token):
     blurb = escape(s.get("reg_text") or "").replace("\n", "<br>")
     blurb_card = f'<div class="card">{blurb}</div>' if blurb else ""
     fee = s.get("fee_cents", 0)
+    _pay = "pay by Venmo right after registering" if s.get("venmo") else "collected at packet pickup"
     fee_card = (f'<div class="card fee">Entry fee: {_fee_str(fee)} per runner — '
-                f'collected at packet pickup.</div>' if fee else "")
+                f'{_pay}.</div>' if fee else "")
     race_opts = "".join(f'<option value="{r["id"]}">{escape(r["name"])}</option>' for r in races)
 
     def block(n, removable):
@@ -815,13 +837,30 @@ def register_post(token):
                              f'<a href="/register/{escape(token)}">Back</a></div>'), 200
     rname = {r[0]: r[1] for r in db.connect().execute("SELECT id,name FROM races WHERE meet_id=?", (m["id"],)).fetchall()}
     rows = "".join(f'<li><b>Bib #{b}</b> — {escape(nm)}</li>' for b, nm in created)
-    fee_line = (f'<div class="card fee">Amount due at packet pickup: '
-                f'{_fee_str(fee * len(created))} ({len(created)} × {_fee_str(fee)}).</div>' if fee else "")
+    total = fee * len(created)
+    venmo = s.get("venmo") or ""
+    redirect_js = ""
+    if fee and venmo:
+        vurl = _venmo_url(venmo, total, f"{m['name']} entry")
+        fee_line = (
+            f'<div class="card fee">Entry fee: <b>{_fee_str(total)}</b> '
+            f'({len(created)} × {_fee_str(fee)}).<br>'
+            f'<a class="btn" href="{escape(vurl)}" style="display:inline-block;margin-top:.5rem;'
+            f'background:#3d95ce;color:#fff;padding:.6rem 1.1rem;border-radius:9px;'
+            f'text-decoration:none;font-weight:700">Pay {_fee_str(total)} with Venmo</a>'
+            f'<div class="muted" style="font-size:.8rem;margin-top:.3rem">Sends you to Venmo '
+            f'(@{escape(venmo)}). If it doesn\'t open automatically, tap the button.</div></div>')
+        redirect_js = f'<script>setTimeout(function(){{location.href={json.dumps(vurl)};}},1800);</script>'
+    elif fee:
+        fee_line = (f'<div class="card fee">Amount due at packet pickup: '
+                    f'{_fee_str(total)} ({len(created)} × {_fee_str(fee)}).</div>')
+    else:
+        fee_line = ""
     inner = (f'<div class="card"><h2 style="margin-top:0;color:#2e8b57">✅ You\'re registered!</h2>'
              f'<p>See you on race day. Your bib number(s):</p><ul>{rows}</ul></div>'
              f'{fee_line}'
              f'<div style="text-align:center"><a href="/register/{escape(token)}">'
-             f'Register more runners</a></div>')
+             f'Register more runners</a></div>{redirect_js}')
     return _reg_shell(m, inner)
 
 
