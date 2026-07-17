@@ -381,7 +381,8 @@ def participants(mid):
     print_bar = (
         f'<div class="card" style="display:flex;gap:.6rem;align-items:center;flex-wrap:wrap">'
         f'<b>🏁 Print bibs</b> {road_sticker_controls(mid)} '
-        '<span class="muted">Avery 5163 — event logo + number + name, one per runner.</span></div>')
+        '<span class="muted">Event logo + number + name, one per runner. '
+        'Use Avery 5163 (2"×4") sticker sheets.</span></div>')
     body = (
         f'<p class="muted"><a href="/meets/{mid}">← {escape(m["name"])}</a></p>'
         f'<h1>{escape(m["name"])} — Participants</h1>'

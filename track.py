@@ -714,7 +714,8 @@ def assign_page(mid):
   <b style="margin-right:.2rem">🖨 {escape(school['name'])} packet:</b>
   <a class="btn ghost" href="/meets/{mid}/school/{sid}/stickers.pdf">Stickers — QR</a>
   <a class="btn ghost" href="/meets/{mid}/school/{sid}/stickers.pdf?code=aruco">Stickers — ArUco</a>
-  <a class="btn ghost" href="/meets/{mid}/school/{sid}/biblist.pdf">Bib list + events</a></div>
+  <a class="btn ghost" href="/meets/{mid}/school/{sid}/biblist.pdf">Bib list + events</a>
+  <span class="muted" style="font-size:.85rem;flex-basis:100%">Use Avery 5163 (2"×4") sticker sheets.</span></div>
 <div class="card">
   <div class="row" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.5rem">
     <h2 style="margin:0">{escape(school['name'])} — assign athletes</h2>

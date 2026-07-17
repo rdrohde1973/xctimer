@@ -767,13 +767,14 @@ def xc_meet_day(mid):
         from .meets import road_sticker_controls
         print_bar = (
             f'<div class="card"><b>Print:</b> {road_sticker_controls(mid)} '
-            '<span class="muted">Avery 5163 · event logo.</span></div>')
+            '<span class="muted">Event logo on each. Use Avery 5163 (2"×4") sticker sheets.</span></div>')
     else:
         print_bar = (
             f'<div class="card"><b>Print:</b> '
             f'<a class="btn ghost" href="/meets/{mid}/stickers.pdf" target="_blank">Stickers — QR</a> '
             f'<a class="btn ghost" href="/meets/{mid}/stickers.pdf?code=aruco" target="_blank">Stickers — ArUco</a> '
-            f'<a class="btn ghost" href="/meets/{mid}/biblist.pdf" target="_blank">Bib lists</a></div>')
+            f'<a class="btn ghost" href="/meets/{mid}/biblist.pdf" target="_blank">Bib lists</a>'
+            f'<br><span class="muted" style="font-size:.85rem">Use Avery 5163 (2"×4") sticker sheets.</span></div>')
     walkup = "" if _is_org(m) else _walkup_card(m, mid)
     body = (f'<p class="muted"><a href="/meets">← Meets</a></p><h1>{escape(m["name"])}</h1>'
             f'{_xc_tabs(mid, "meetday", road=(m["sport"]=="road"), organizer=_is_org(m))}'

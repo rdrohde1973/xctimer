@@ -603,7 +603,8 @@ def meet_detail(mid):
         bibnote = f'<span class="muted">{nbibs} bibs assigned (1–{nbibs}).</span> {renumber}{lockbtn}'
         if locked:
             prints = (f'{sticker_btns}<a class="btn ghost" href="/meets/{mid}/biblist.pdf">Bib lists</a>{hs} '
-                      f'<span class="muted">🔒 locked</span>')
+                      f'<span class="muted">🔒 locked</span>'
+                      f'<br><span class="muted" style="font-size:.85rem">Use Avery 5163 (2"×4") sticker sheets.</span>')
         else:
             prints = '<span class="muted">🔒 Lock the bib numbers to enable printing.</span>'
         print_bar = (
