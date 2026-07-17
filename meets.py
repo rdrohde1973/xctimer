@@ -360,17 +360,117 @@ def delete_meet(mid):
     return redirect(f"/events?org={org}" if org is not None else "/meets")
 
 
+def bibs_locked(m):
+    """True once the meet's bib↔runner mapping is locked for printing."""
+    try:
+        return bool(json.loads(m["settings_json"] or "{}").get("bibs_locked"))
+    except (ValueError, TypeError):
+        return False
+
+
 @bp.post("/meets/<int:mid>/renumber-bibs")
 @login_required
 def renumber_bibs_route(mid):
     m = load_meet(mid)
     if not can_setup_meet(m):
         abort(403)
+    if bibs_locked(m):
+        return redirect(f"/meets/{mid}")   # locked: numbers are frozen for printing
     conn = db.connect()
     renumber_meet_bibs(conn, mid)
     conn.commit()
     conn.close()
     return redirect(f"/meets/{mid}")
+
+
+@bp.post("/meets/<int:mid>/lock-bibs")
+@login_required
+def lock_bibs_route(mid):
+    m = load_meet(mid)
+    if not can_setup_meet(m):
+        abort(403)
+    want = request.form.get("lock") == "1"
+    try:
+        s = json.loads(m["settings_json"] or "{}")
+    except (ValueError, TypeError):
+        s = {}
+    s["bibs_locked"] = want
+    conn = db.connect()
+    conn.execute("UPDATE meets SET settings_json=? WHERE id=?", (json.dumps(s), mid))
+    conn.commit()
+    conn.close()
+    return redirect(f"/meets/{mid}")
+
+
+@bp.post("/meets/<int:mid>/walkup")
+@login_required
+def walkup_route(mid):
+    """Meet-day: assign a walk-up (unregistered) runner to a spare bib number so the
+    hand-written sticker resolves to a name. Creates a lightweight, INACTIVE athlete
+    (never joins future auto-numbering) + the per-meet bib mapping. Bibs must be locked."""
+    m = load_meet(mid)
+    if not can_setup_meet(m):
+        abort(403)
+    if m["sport"] not in ("xc", "track") or not bibs_locked(m):
+        return redirect(f"/meets/{mid}/xc-day?werr=locked")
+    raw = (request.form.get("bib") or "").strip()
+    name = (request.form.get("name") or "").strip()
+    if not raw.isdigit() or int(raw) <= 0 or not name:
+        return redirect(f"/meets/{mid}/xc-day?werr=input")
+    bib = int(raw)
+    sid_raw = (request.form.get("school_id") or "").strip()
+    grade = (request.form.get("grade") or "").strip()
+    grade = int(grade) if grade.isdigit() else None
+    gender = (request.form.get("gender") or "").strip().upper()
+    gender = gender if gender in ("M", "F") else None
+    conn = db.connect()
+    if conn.execute("SELECT 1 FROM meet_bibs WHERE meet_id=? AND bib=?", (mid, bib)).fetchone():
+        conn.close()
+        return redirect(f"/meets/{mid}/xc-day?werr=taken&b={bib}")
+    if sid_raw == "unattached":
+        row = conn.execute("SELECT id FROM schools WHERE district_id=? AND name='Unattached' LIMIT 1",
+                           (m["district_id"],)).fetchone()
+        sid = row["id"] if row else conn.execute(
+            "INSERT INTO schools (district_id, name) VALUES (?, 'Unattached')",
+            (m["district_id"],)).lastrowid
+    elif sid_raw.isdigit() and conn.execute(
+            "SELECT 1 FROM meet_schools WHERE meet_id=? AND school_id=?",
+            (mid, int(sid_raw))).fetchone():
+        sid = int(sid_raw)
+    else:
+        conn.close()
+        return redirect(f"/meets/{mid}/xc-day?werr=school")
+    flag = "does_xc" if m["sport"] == "xc" else "does_track"
+    aid = conn.execute(
+        f"INSERT INTO athletes (school_id, name, grade, gender, {flag}, active) VALUES (?,?,?,?,1,0)",
+        (sid, name, grade, gender)).lastrowid
+    conn.execute("INSERT INTO meet_bibs (meet_id, athlete_id, bib, seq) VALUES (?,?,?,?)",
+                 (mid, aid, bib, bib))
+    conn.commit()
+    conn.close()
+    return redirect(f"/meets/{mid}/xc-day?wok={bib}")
+
+
+@bp.post("/meets/<int:mid>/walkup/delete")
+@login_required
+def walkup_delete_route(mid):
+    m = load_meet(mid)
+    if not can_setup_meet(m):
+        abort(403)
+    raw = (request.form.get("bib") or "").strip()
+    if not raw.isdigit():
+        return redirect(f"/meets/{mid}/xc-day")
+    bib = int(raw)
+    conn = db.connect()
+    row = conn.execute(
+        "SELECT mb.athlete_id, a.active FROM meet_bibs mb JOIN athletes a ON a.id=mb.athlete_id "
+        "WHERE mb.meet_id=? AND mb.bib=?", (mid, bib)).fetchone()
+    if row and row["active"] == 0:      # only remove walk-ups (inactive), never a roster athlete
+        conn.execute("DELETE FROM meet_bibs WHERE meet_id=? AND bib=?", (mid, bib))
+        conn.execute("DELETE FROM athletes WHERE id=?", (row["athlete_id"],))
+        conn.commit()
+    conn.close()
+    return redirect(f"/meets/{mid}/xc-day")
 
 
 @bp.post("/meets/<int:mid>/schools")
@@ -462,17 +562,33 @@ def meet_detail(mid):
         cb = db.connect()
         nbibs = cb.execute("SELECT COUNT(*) FROM meet_bibs WHERE meet_id=?", (mid,)).fetchone()[0]
         cb.close()
-        bibnote = (f'<span class="muted">{nbibs} bibs assigned (1–{nbibs}).</span> '
-                   f'<form class="inline" method="post" action="/meets/{mid}/renumber-bibs" '
-                   f'onsubmit="return confirm(\'Renumber all bibs 1…N from scratch?\')">'
-                   f'<button class="ghost">🔢 Renumber</button></form>' if setup else
-                   f'<span class="muted">{nbibs} bibs assigned.</span>')
+        locked = bibs_locked(m)
+        # Renumber only while editable AND unlocked; lock/unlock only for editors.
+        renumber = (f'<form class="inline" method="post" action="/meets/{mid}/renumber-bibs" '
+                    f'onsubmit="return confirm(\'Renumber all bibs 1…N from scratch?\')">'
+                    f'<button class="ghost">🔢 Renumber</button></form>') if (setup and not locked) else ""
+        if setup and not locked:
+            lockbtn = (f' <form class="inline" method="post" action="/meets/{mid}/lock-bibs">'
+                       f'<input type="hidden" name="lock" value="1">'
+                       f'<button>🔒 Lock bibs &amp; enable printing</button></form>')
+        elif setup and locked:
+            lockbtn = (f' <form class="inline" method="post" action="/meets/{mid}/lock-bibs" '
+                       f'onsubmit="return confirm(\'Unlock to edit bib numbers? Stickers you already '
+                       f'printed may no longer match — you would need to reprint.\')">'
+                       f'<input type="hidden" name="lock" value="0">'
+                       f'<button class="ghost">🔓 Unlock to edit</button></form>')
+        else:
+            lockbtn = ""
+        bibnote = f'<span class="muted">{nbibs} bibs assigned (1–{nbibs}).</span> {renumber}{lockbtn}'
+        if locked:
+            prints = (f'{sticker_btns}<a class="btn ghost" href="/meets/{mid}/biblist.pdf">Bib lists</a>{hs} '
+                      f'<span class="muted">🔒 locked</span>')
+        else:
+            prints = '<span class="muted">🔒 Lock the bib numbers to enable printing.</span>'
         print_bar = (
             f'<div class="card"><b>Bibs &amp; print:</b> {bibnote}<br>'
             f'<span class="muted" style="font-size:.85rem">Bibs number per meet from 1, in the order '
-            f'schools are added. Add a school to number its athletes.</span><br>'
-            f'{sticker_btns}'
-            f'<a class="btn ghost" href="/meets/{mid}/biblist.pdf">Bib lists</a>{hs}</div>')
+            f'schools are added. Add a school to number its athletes.</span><br>{prints}</div>')
 
     if is_xc:
         from . import xc as _sport

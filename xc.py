@@ -680,6 +680,63 @@ def _xc_tabs(mid, active, road=False, organizer=False):
             + '</div>')
 
 
+def _walkup_card(m, mid):
+    """Meet-day card to assign walk-up (unregistered) runners to spare bib numbers.
+    Only active once bibs are locked (the meet-day workflow)."""
+    from .meets import bibs_locked
+    conn = db.connect()
+    nbibs = conn.execute("SELECT COALESCE(MAX(bib),0) FROM meet_bibs WHERE meet_id=?", (mid,)).fetchone()[0]
+    schools = conn.execute(
+        "SELECT s.id, s.name FROM schools s JOIN meet_schools ms ON ms.school_id=s.id "
+        "WHERE ms.meet_id=? ORDER BY s.name", (mid,)).fetchall()
+    walkups = conn.execute(
+        "SELECT mb.bib, a.name, s.name AS sname FROM meet_bibs mb "
+        "JOIN athletes a ON a.id=mb.athlete_id JOIN schools s ON s.id=a.school_id "
+        "WHERE mb.meet_id=? AND a.active=0 ORDER BY mb.bib", (mid,)).fetchall()
+    conn.close()
+    if not bibs_locked(m):
+        return ('<div class="card"><h2>Walk-ups</h2>'
+                '<p class="muted">Lock the bib numbers on the <b>Setup</b> tab first — then assign a '
+                'walk-up runner to a spare sticker number here.</p></div>')
+    werr, wok = request.args.get("werr"), request.args.get("wok")
+    msg = ""
+    if wok:
+        msg = f'<p style="color:#1a7f37;font-weight:600;margin:.2rem 0">✓ Bib #{escape(wok)} assigned.</p>'
+    elif werr == "taken":
+        msg = (f'<p style="color:var(--err);font-weight:600;margin:.2rem 0">⚠ Bib '
+               f'#{escape(request.args.get("b", ""))} is already assigned.</p>')
+    elif werr in ("input", "school", "locked"):
+        note = {"input": "Enter a bib number and a name.", "school": "Pick a school.",
+                "locked": "Lock the bibs first."}[werr]
+        msg = f'<p style="color:var(--err);font-weight:600;margin:.2rem 0">⚠ {note}</p>'
+    sopts = "".join(f'<option value="{s["id"]}">{escape(s["name"])}</option>' for s in schools)
+    sopts += '<option value="unattached">Unattached (won\'t score)</option>'
+    rows = "".join(
+        f'<tr><td><b>#{w["bib"]}</b></td><td>{escape(w["name"])}</td><td>{escape(w["sname"])}</td>'
+        f'<td style="text-align:right"><form class="inline" method="post" '
+        f'action="/meets/{mid}/walkup/delete" onsubmit="return confirm(\'Remove walk-up #{w["bib"]}?\')">'
+        f'<input type="hidden" name="bib" value="{w["bib"]}">'
+        f'<button class="danger" style="padding:.15rem .5rem">✕</button></form></td></tr>'
+        for w in walkups)
+    tbl = (f'<table><tr><th>Bib</th><th>Name</th><th>School</th><th></th></tr>{rows}</table>'
+           if walkups else '<p class="muted">No walk-ups yet.</p>')
+    return (
+        f'<div class="card"><h2>Walk-ups — assign a spare bib</h2>'
+        f'<p class="muted" style="font-size:.85rem">Spare stickers are the blank ones at the bottom of '
+        f'your printed sheet (numbers above {nbibs}). Assign each walk-up to the number printed on the '
+        f'sticker, then hand-write their name on it.</p>{msg}'
+        f'<form method="post" action="/meets/{mid}/walkup" class="row" style="gap:.6rem;flex-wrap:wrap">'
+        f'<div style="max-width:110px"><label>Bib #</label><input name="bib" inputmode="numeric" required></div>'
+        f'<div><label>Runner name</label><input name="name" required></div>'
+        f'<div><label>School</label><select name="school_id">{sopts}</select></div>'
+        f'<div style="max-width:90px"><label>Grade</label><input name="grade" inputmode="numeric"></div>'
+        f'<div style="max-width:120px"><label>Gender</label><select name="gender">'
+        f'<option value="">—</option><option value="M">Boys</option><option value="F">Girls</option>'
+        f'</select></div>'
+        f'<div style="display:flex;align-items:flex-end"><button type="submit">Assign</button></div>'
+        f'</form><div style="margin-top:.8rem">{tbl}</div></div>')
+
+
 @bp.get("/meets/<int:mid>/xc-day")
 @login_required
 def xc_meet_day(mid):
@@ -717,8 +774,10 @@ def xc_meet_day(mid):
             f'<a class="btn ghost" href="/meets/{mid}/stickers.pdf" target="_blank">Stickers — QR</a> '
             f'<a class="btn ghost" href="/meets/{mid}/stickers.pdf?code=aruco" target="_blank">Stickers — ArUco</a> '
             f'<a class="btn ghost" href="/meets/{mid}/biblist.pdf" target="_blank">Bib lists</a></div>')
+    walkup = "" if _is_org(m) else _walkup_card(m, mid)
     body = (f'<p class="muted"><a href="/meets">← Meets</a></p><h1>{escape(m["name"])}</h1>'
-            f'{_xc_tabs(mid, "meetday", road=(m["sport"]=="road"), organizer=_is_org(m))}{tbl}{print_bar}')
+            f'{_xc_tabs(mid, "meetday", road=(m["sport"]=="road"), organizer=_is_org(m))}'
+            f'{tbl}{print_bar}{walkup}')
     return shell(g.principal, body, active="meets")
 
 
