@@ -220,6 +220,21 @@ def create_event():
         "INSERT INTO meets (organizer_id, sport, name, date, public_token, team_scoring) "
         "VALUES (?,?,?,?,?,0)",
         (oid, "road", name, date, secrets.token_urlsafe(8))).lastrowid
+    # Start with one race so the event works end-to-end immediately (registration needs
+    # a race to enter). Guess a distance from the name (e.g. "…5K"), else a generic name.
+    km = re.search(r"\b(\d+)\s?[kK]\b", name)
+    if km:
+        race_name = km.group(1) + "K"
+    elif re.search(r"half\s?marathon", name, re.IGNORECASE):
+        race_name = "Half Marathon"
+    elif re.search(r"\bmarathon\b", name, re.IGNORECASE):
+        race_name = "Marathon"
+    elif re.search(r"fun\s?run", name, re.IGNORECASE):
+        race_name = "Fun Run"
+    else:
+        race_name = "Race 1"
+    conn.execute("INSERT INTO races (meet_id, name, capture_mode) VALUES (?,?,?)",
+                 (mid, race_name, "tap"))
     conn.commit()
     conn.close()
     return redirect(f"/meets/{mid}")
@@ -624,7 +639,8 @@ def register(token):
         return _reg_shell(m, '<div class="card">Registration for this event is not open yet. '
                              'Please check back soon.</div>'), 200
     if not races:
-        return _reg_shell(m, '<div class="card">Registration isn\'t quite ready yet.</div>'), 200
+        return _reg_shell(m, '<div class="card">Registration will open once the organizer adds the '
+                             'race(s). Please check back soon.</div>'), 200
 
     blurb = escape(s.get("reg_text") or "").replace("\n", "<br>")
     blurb_card = f'<div class="card">{blurb}</div>' if blurb else ""
