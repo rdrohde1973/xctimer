@@ -2187,7 +2187,7 @@ def results_xlsx(mid):
 
 # ------------------------------- camera timing (ArUco prototype) -------------------------------
 _CAMERA_PAGE = """
-<p class="muted"><a href="/meets/__MID__">← __MNAME__</a></p>
+<p class="muted"><a href="__BACK__">__BACKLBL__</a></p>
 <h1>📷 Camera — __RNAME__</h1>
 <div class="card">
   <div style="display:flex;gap:1rem;flex-wrap:wrap;align-items:center;justify-content:space-between">
@@ -2483,13 +2483,19 @@ def race_camera(rid):
     """Camera timing (prototype): auto-record ArUco-tagged bibs as they cross.
     Manual entry stays available right on the page for any missed reads."""
     r, m = _race_or_403(rid, can_record_meet)
+    # Phone/kiosk context stays in the walled-garden phone app: bare chrome (no site
+    # nav) and Back goes to the phone console, never out to the full UI.
+    phone = request.args.get("phone") == "1" or bool(getattr(g.principal, "meet_scope", None))
+    back = f"/phone/race/{rid}" if phone else f"/meets/{m['id']}"
+    backlbl = "‹ Timer" if phone else f"← {escape(m['name'])}"
     body = (_CAMERA_PAGE
             .replace("__MEET__", "0")
             .replace("__RID__", str(rid))
             .replace("__MID__", str(m["id"]))
-            .replace("__MNAME__", str(escape(m["name"])))
+            .replace("__BACK__", back)
+            .replace("__BACKLBL__", backlbl)
             .replace("__RNAME__", str(escape(r["name"]))))
-    return shell(g.principal, body, active="meets")
+    return shell(g.principal, body, active="meets", bare=phone)
 
 
 @bp.get("/meets/<int:mid>/camera")
@@ -2501,13 +2507,17 @@ def meet_camera(mid):
     m = load_meet(mid)
     if not can_record_meet(m) or not _is_org(m):
         abort(403)
+    phone = request.args.get("phone") == "1" or bool(getattr(g.principal, "meet_scope", None))
+    back = "/phone" if phone else f"/meets/{mid}"
+    backlbl = "‹ Timer" if phone else f"← {escape(m['name'])}"
     body = (_CAMERA_PAGE
             .replace("__MEET__", "1")
             .replace("__RID__", str(mid))
             .replace("__MID__", str(mid))
-            .replace("__MNAME__", str(escape(m["name"])))
+            .replace("__BACK__", back)
+            .replace("__BACKLBL__", backlbl)
             .replace("__RNAME__", "All races"))
-    return shell(g.principal, body, active="events")
+    return shell(g.principal, body, active="events", bare=phone)
 
 
 @bp.get("/meets/<int:mid>/camera-state")

@@ -202,7 +202,7 @@ def phone_race(rid):
 </div>
 <div class="subbar"><a href="/phone" class="back">‹ Heats</a>
   <span class="rn">{escape(r['name'])}</span>
-  <a href="/races/{rid}/camera" class="camlink" title="Time with the camera">📷</a></div>
+  <a href="/races/{rid}/camera?phone=1" class="camlink" title="Time with the camera">📷</a></div>
 <div class="tmain">
   <button id="startb" class="bigbtn start" onclick="startRace()">START</button>
   <button id="tapb" class="bigbtn tap" onclick="tap()" style="display:none">FINISHER</button>
