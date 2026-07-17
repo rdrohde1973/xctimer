@@ -25,12 +25,12 @@ from .phone import bp as phone_bp
 from .waivers import bp as waivers_bp
 from .road import bp as road_bp
 
-APP_VERSION = "1.14.0-track-walkups-blank-page"
+APP_VERSION = "1.13.0-marketing-diy"
 
 LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width, initial-scale=1">
-<title>XCTimer — meet timing &amp; coach management for junior high &amp; middle school XC &amp; track</title>
-<meta name="description" content="Affordable, simple cross-country and track & field meet timing and roster management built for junior high & middle school — live results the whole crowd can follow, AI roster import, and athlete insights. Built by a coach of 7 years and a parent of three XC & track kids.">
+<title>XCTimer — the do-it-yourself meet manager for junior high &amp; middle school XC &amp; track</title>
+<meta name="description" content="Run your own cross-country or track meet — no expensive timing company required. XCTimer is a complete do-it-yourself meet manager for junior high & middle school: rosters, live timing, field events, scoring, and live results the whole crowd can follow. Built by a coach of 7 years and a parent of three XC & track kids.">
 <style>
   :root{--navy:#164271;--navy-d:#0f3157;--orange:#ea6a2d;--orange-d:#cf5a22;
         --gray:#868686;--ink:#20303f;--bg:#f5f8fc;--card:#ffffff;--line:#e3e9f1}
@@ -102,10 +102,11 @@ LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
 
 <header class="hero"><div class="wrap">
   <img class="logo" src="/static/branding/xctimer.png" alt="XCTimer">
-  <div class="pill">Built for <b>junior high &amp; middle school</b> cross country &amp; track</div>
-  <h1>Meet timing &amp; coach management, made for junior high &amp; middle school.</h1>
-  <p class="sub">Rosters, live timing, field events, and instant results — everything a
-     junior high or middle school XC or track meet needs, and nothing it doesn't.</p>
+  <div class="pill">Run your own meet — <b>no timing company required</b></div>
+  <h1>Any coach can run the whole meet. No timing company required.</h1>
+  <p class="sub">XCTimer isn't just a timer — it's a complete do-it-yourself meet manager.
+     Rosters, live timing, field events, scoring, and instant results — everything it takes
+     to run a junior high or middle school XC or track meet yourself, start to finish.</p>
   <div class="cta">
     <a class="btn" href="/login">Sign in</a>
     <a class="btn ghost" href="#features">See what it does</a>
@@ -114,26 +115,28 @@ LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
 
 <section><div class="wrap split">
   <div>
-    <h2>Made for jr high &amp; middle school — not a hand-me-down from high school.</h2>
-    <p class="lead">The big timing systems are built for high school and college programs, and
-    they're priced and complicated to match. Coaches end up paying for enterprise features
-    they'll never use and fighting menus on meet day. XCTimer does what a junior high meet
-    actually needs — simple enough to run from your phone, priced for a jr-high budget.</p>
+    <h2>Stop hiring a timing company. Run the whole meet yourself.</h2>
+    <p class="lead">Timing a meet used to mean paying an outside company hundreds of dollars a day
+    to show up with their gear and their staff — and waiting on their schedule for the results.
+    Not anymore. XCTimer puts the entire meet in your own hands: rosters, bibs, live timing,
+    field events, scoring, and results — all from your phone, for a fraction of the cost.
+    Any coach can run it, no timing crew required.</p>
   </div>
   <div class="contrast">
     <h3>The difference</h3>
-    <div class="row"><span class="x">✕</span><div>Enterprise software priced for varsity budgets</div></div>
-    <div class="row"><span class="ok">✓</span><div>Affordable and built for junior high</div></div>
-    <div class="row"><span class="x">✕</span><div>Menus and settings you'll never use</div></div>
-    <div class="row"><span class="ok">✓</span><div>Run a whole meet from your phone</div></div>
-    <div class="row"><span class="x">✕</span><div>Made for high school &amp; college rules</div></div>
-    <div class="row"><span class="ok">✓</span><div>Works the way a jr-high meet really runs</div></div>
+    <div class="row"><span class="x">✕</span><div>Hire a timing company and pay per meet</div></div>
+    <div class="row"><span class="ok">✓</span><div>Run it yourself — no vendor, no invoice</div></div>
+    <div class="row"><span class="x">✕</span><div>Wait on their crew and their timeline</div></div>
+    <div class="row"><span class="ok">✓</span><div>You're in control of your own meet day</div></div>
+    <div class="row"><span class="x">✕</span><div>Just a stopwatch-and-results service</div></div>
+    <div class="row"><span class="ok">✓</span><div>A full meet manager: rosters → results</div></div>
   </div>
 </div></section>
 
 <section id="features"><div class="wrap">
-  <h2>Everything meet day needs</h2>
-  <p class="lead">From the roster to the results table — one tool for cross country and track &amp; field.</p>
+  <h2>Not just timing — the whole meet, start to finish.</h2>
+  <p class="lead">Every job you used to hand off to a timing company, now in one tool you run yourself —
+     from the roster all the way to the results table, for cross country and track &amp; field.</p>
   <div class="grid">
     <div class="card"><div class="ic">📋</div><h3>AI roster intake &amp; bib stickers</h3>
       <p>Drop in a spreadsheet, PDF, or even a photo of a roster — AI reads and cleans up the names — then auto-assign bibs and print Avery stickers with a scannable code.</p></div>
@@ -222,15 +225,15 @@ LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
 </div></section>
 
 <section class="final"><div class="wrap">
-  <h2>Ready to run a simpler meet?</h2>
-  <p class="lead" style="margin:.4rem auto 1.4rem">Sign in to get started, or reach out to bring XCTimer to your district.</p>
+  <h2>Ready to run your own meet?</h2>
+  <p class="lead" style="margin:.4rem auto 1.4rem">Sign in to get started — no timing company, no big invoice — or reach out to bring XCTimer to your district.</p>
   <div class="cta" style="display:flex;gap:.8rem;justify-content:center;flex-wrap:wrap">
     <a class="btn" href="/login">Sign in</a>
     <a class="btn ghost" href="mailto:admin@xctimer.com?subject=XCTimer%20for%20our%20district">Get in touch</a>
   </div>
 </div></section>
 
-<footer>© XCTimer · xctimer.com · timing &amp; coach management for junior high cross country &amp; track
+<footer>© XCTimer · xctimer.com · the do-it-yourself meet manager for junior high cross country &amp; track
 <br><a href="/security" style="color:var(--navy);font-weight:700">Security &amp; data privacy</a></footer>
 </body></html>"""
 
