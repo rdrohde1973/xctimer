@@ -326,7 +326,18 @@ def _road_setup_section(m, setup, races, counts, _json, rename_js):
             'owed; online payment is coming later — collect at packet pickup for now.</div>'
             '<button type="submit" style="margin-top:.4rem">Save</button></form>'
             f'<div style="margin-top:.8rem"><b>Public registration link</b><br>{link_html}</div>'
-            f'<div style="margin-top:.8rem"><b>Bib stickers</b> '
+            '</div>')
+        # Bibs / print / camera — separate from registration.
+        pc = db.connect()
+        nparts = pc.execute("SELECT COUNT(*) FROM participants WHERE meet_id=?", (m["id"],)).fetchone()[0]
+        pc.close()
+        pnote = (f'<span class="muted">{nparts} participant(s) registered.</span>' if nparts else
+                 '<span class="muted">No participants yet — import or register runners on the '
+                 f'<a href="/meets/{m["id"]}/participants">Participants</a> tab, then these print with bibs.</span>')
+        event_card += (
+            '<div class="card"><h2>Bibs, print &amp; camera</h2>'
+            f'<p style="margin-top:0">{pnote}</p>'
+            f'<div style="margin-top:.4rem"><b>Bib stickers</b> '
             f'<a class="btn ghost" href="/meets/{m["id"]}/participants/stickers.pdf?template=5160">Avery 5160</a> '
             f'<a class="btn ghost" href="/meets/{m["id"]}/participants/stickers.pdf?template=5163">Avery 5163</a> '
             f'<a class="btn ghost" href="/meets/{m["id"]}/participants/tags.pdf">📷 Camera tags</a></div>'
