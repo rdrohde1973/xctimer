@@ -1028,11 +1028,13 @@ def race_finish(rid):
     # after Stop. Only fall through to record a brand-new finisher when no open slots
     # remain, so reads are never silently dropped.
     if r["capture_mode"] != "scan":
-        slot = conn.execute("SELECT id FROM finishers WHERE race_id=? AND bib IS NULL "
-                            "ORDER BY seq LIMIT 1", (rid,)).fetchone()
-        if slot:
-            conn.execute("UPDATE finishers SET bib=?, snap_name=?, snap_grade=?, snap_gender=?, "
-                         "snap_school=?, snap_age=? WHERE id=?", (bib, *snap, slot["id"]))
+        # Claim the next open slot in ONE statement so two near-simultaneous reads can't
+        # both grab the same slot (which would lose a bib). rowcount=0 => no open slot.
+        cur = conn.execute(
+            "UPDATE finishers SET bib=?, snap_name=?, snap_grade=?, snap_gender=?, snap_school=?, "
+            "snap_age=? WHERE id=(SELECT id FROM finishers WHERE race_id=? AND bib IS NULL "
+            "ORDER BY seq LIMIT 1)", (bib, *snap, rid))
+        if cur.rowcount:
             remaining = conn.execute("SELECT COUNT(*) FROM finishers WHERE race_id=? AND bib IS NULL",
                                      (rid,)).fetchone()[0]
             warn = _road_unassigned_warn(conn, m, rid, bib)
@@ -1046,12 +1048,12 @@ def race_finish(rid):
         conn.close()
         return jsonify(error="Race not running"), 400
     elapsed = (_now() - start).total_seconds()
-    seq = (conn.execute("SELECT COALESCE(MAX(seq),0) FROM finishers WHERE race_id=?",
-                        (rid,)).fetchone()[0]) + 1
+    # seq computed in-statement so concurrent inserts can't collide on the same number.
     conn.execute(
         "INSERT INTO finishers (race_id, seq, finish_time, elapsed_seconds, bib, "
-        "snap_name, snap_grade, snap_gender, snap_school, snap_age) VALUES (?,?,?,?,?,?,?,?,?,?)",
-        (rid, seq, _iso(_now()), elapsed, bib, *snap))
+        "snap_name, snap_grade, snap_gender, snap_school, snap_age) "
+        "VALUES (?, (SELECT COALESCE(MAX(seq),0)+1 FROM finishers WHERE race_id=?), ?,?,?,?,?,?,?,?)",
+        (rid, rid, _iso(_now()), elapsed, bib, *snap))
     warn = _road_unassigned_warn(conn, m, rid, bib)
     conn.commit()
     conn.close()
@@ -1069,12 +1071,13 @@ def race_tap(rid):
         return jsonify(error="Race has ended — Reset to run again"), 400
     elapsed = (_now() - start).total_seconds()
     conn = db.connect()
-    seq = (conn.execute("SELECT COALESCE(MAX(seq),0) FROM finishers WHERE race_id=?",
-                        (rid,)).fetchone()[0]) + 1
+    # seq computed in-statement so two near-simultaneous taps can't get the same number.
     cur = conn.execute(
-        "INSERT INTO finishers (race_id, seq, finish_time, elapsed_seconds) VALUES (?,?,?,?)",
-        (rid, seq, _iso(_now()), elapsed))
+        "INSERT INTO finishers (race_id, seq, finish_time, elapsed_seconds) "
+        "VALUES (?, (SELECT COALESCE(MAX(seq),0)+1 FROM finishers WHERE race_id=?), ?, ?)",
+        (rid, rid, _iso(_now()), elapsed))
     fid = cur.lastrowid
+    seq = conn.execute("SELECT seq FROM finishers WHERE id=?", (fid,)).fetchone()[0]
     conn.commit()
     conn.close()
     return jsonify(id=fid, seq=seq, bib=None, elapsed=elapsed, dq=False, name=None, school=None)
