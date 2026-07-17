@@ -25,7 +25,7 @@ from .phone import bp as phone_bp
 from .waivers import bp as waivers_bp
 from .road import bp as road_bp
 
-APP_VERSION = "1.13.1-coach-8yrs"
+APP_VERSION = "1.14.0-robot-vision"
 
 LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width, initial-scale=1">
@@ -141,7 +141,9 @@ LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
     <div class="card"><div class="ic">📋</div><h3>AI roster intake &amp; bib stickers</h3>
       <p>Drop in a spreadsheet, PDF, or even a photo of a roster — AI reads and cleans up the names — then auto-assign bibs and print Avery stickers with a scannable code.</p></div>
     <div class="card"><div class="ic">⏱️</div><h3>Live timing from your phone</h3>
-      <p>Tap finishers for cross country, time heats and lanes for track — right from a phone at the line.</p></div>
+      <p>Tap finishers for cross country, time heats and lanes for track — right from a phone at the line.
+      Or point the camera and let <b>robot vision</b> read each runner's bib tag automatically as they cross the
+      line — hands-free timing no other system has, right on the phone in your pocket.</p></div>
     <div class="card"><div class="ic">📏</div><h3>Field events in feet &amp; inches</h3>
       <p>Long Jump and Shot Put with all three attempts, plus a High Jump make/miss grid — the way officials record them.</p></div>
     <div class="card"><div class="ic">🖨️</div><h3>Heat sheets &amp; scan</h3>
