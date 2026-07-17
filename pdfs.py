@@ -485,15 +485,19 @@ def _draw_label(c, t, slot, ph, a, school_name, qr_prefix, logo=None):
         except Exception:  # noqa: BLE001
             pass
 
-    # QR (top-right corner)
+    # Code (top-right corner): camera-readable ArUco or QR of the bib.
     qr_sz = min(lh * 0.5, 0.72 * inch)
-    qr_text = f"{qr_prefix}{a['bib']}" if qr_prefix else str(a["bib"])
     qr_x = x + lw - qr_sz - pad
-    try:
-        c.drawImage(_qr_image(qr_text), qr_x, top - qr_sz,
-                    qr_sz, qr_sz, preserveAspectRatio=True, mask="auto")
-    except Exception:  # noqa: BLE001
-        pass
+    code = a.get("code") if isinstance(a, dict) else None
+    if code == "aruco" and isinstance(a["bib"], int) and a["bib"] <= 1023:
+        draw_aruco(c, qr_x, top - qr_sz, qr_sz, a["bib"])
+    else:
+        qr_text = f"{qr_prefix}{a['bib']}" if qr_prefix else str(a["bib"])
+        try:
+            c.drawImage(_qr_image(qr_text), qr_x, top - qr_sz,
+                        qr_sz, qr_sz, preserveAspectRatio=True, mask="auto")
+        except Exception:  # noqa: BLE001
+            pass
 
     content_l = left
     content_r = qr_x - 0.07 * inch

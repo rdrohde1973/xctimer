@@ -712,7 +712,8 @@ def assign_page(mid):
   <b style="margin-right:.2rem">School:</b> {picker}</div>
 <div class="card" style="display:flex;flex-wrap:wrap;gap:.45rem;align-items:center">
   <b style="margin-right:.2rem">🖨 {escape(school['name'])} packet:</b>
-  <a class="btn ghost" href="/meets/{mid}/school/{sid}/stickers.pdf?template=5163">Stickers (5163)</a>
+  <a class="btn ghost" href="/meets/{mid}/school/{sid}/stickers.pdf">Stickers — QR</a>
+  <a class="btn ghost" href="/meets/{mid}/school/{sid}/stickers.pdf?code=aruco">Stickers — ArUco</a>
   <a class="btn ghost" href="/meets/{mid}/school/{sid}/biblist.pdf">Bib list + events</a></div>
 <div class="card">
   <div class="row" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.5rem">

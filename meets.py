@@ -452,14 +452,10 @@ def meet_detail(mid):
 
     hs = (f' <a class="btn ghost" href="/meets/{mid}/heatsheets.pdf">Heat sheets</a>'
           if not is_xc else "")
-    # All meets print Avery 5163 (2×4). XC offers a QR or camera-readable ArUco code;
-    # track labels carry event text and stay QR (no ArUco layout for them).
-    if is_xc:
-        sticker_btns = (
-            f'<a class="btn ghost" href="/meets/{mid}/stickers.pdf">Stickers — QR</a> '
-            f'<a class="btn ghost" href="/meets/{mid}/stickers.pdf?code=aruco">Stickers — ArUco</a> ')
-    else:
-        sticker_btns = f'<a class="btn ghost" href="/meets/{mid}/stickers.pdf">Stickers (5163)</a> '
+    # All meets print Avery 5163 (2×4), with a QR or camera-readable ArUco code of the bib.
+    sticker_btns = (
+        f'<a class="btn ghost" href="/meets/{mid}/stickers.pdf">Stickers — QR</a> '
+        f'<a class="btn ghost" href="/meets/{mid}/stickers.pdf?code=aruco">Stickers — ArUco</a> ')
     if is_org:
         print_bar = ""
     else:
@@ -778,8 +774,7 @@ def meet_stickers(mid):
     if not can_view_meet(m):
         abort(403)
     template = "5163"             # the only sticker sheet we print now
-    # ArUco codes are XC-only (track labels carry event text, no ArUco layout).
-    code = "aruco" if request.args.get("code") == "aruco" and m["sport"] != "track" else None
+    code = "aruco" if request.args.get("code") == "aruco" else None
     groups = _sticker_groups(mid, with_events=(m["sport"] == "track"),
                              fill_to=pdfs.per_page(template), code=code)
     # QR/ArUco encodes just the bib number (no URL).
@@ -824,7 +819,7 @@ def school_meet_stickers(mid, sid):
     if not can_view_meet(m):
         abort(403)
     template = "5163"             # the only sticker sheet we print now
-    code = "aruco" if request.args.get("code") == "aruco" and m["sport"] != "track" else None
+    code = "aruco" if request.args.get("code") == "aruco" else None
     groups = _sticker_groups(mid, with_events=(m["sport"] == "track"),
                              fill_to=pdfs.per_page(template), only_sid=sid, code=code)
     pdf = pdfs.meet_stickers_pdf(groups, template=template, qr_prefix="")
