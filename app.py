@@ -25,7 +25,7 @@ from .phone import bp as phone_bp
 from .waivers import bp as waivers_bp
 from .road import bp as road_bp
 
-APP_VERSION = "1.20.0-square-checkout"
+APP_VERSION = "1.21.0-square-webhook"
 
 LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width, initial-scale=1">
@@ -429,6 +429,8 @@ def create_app():
     @app.before_request
     def _csrf_protect():
         if request.method in _CSRF_SAFE:
+            return
+        if request.path == "/square/webhook":   # Square server-to-server call, HMAC-verified instead
             return
         cookie = request.cookies.get(CSRF_COOKIE)
         # header first (covers fetch/JSON/file uploads without parsing the body)

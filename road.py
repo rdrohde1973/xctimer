@@ -1101,12 +1101,41 @@ def host_square_return(mid):
     from . import square
     oid = request.args.get("orderId") or ""
     if square.order_ok(oid, expect_note_substr=f"xctimer_meet={mid}"):
-        s = _load_settings(mid)
-        s["host_paid"] = True
-        s["square_order_id"] = oid          # idempotency breadcrumb
-        _save_settings(mid, s)
+        _mark_host_paid(mid, oid)
         return redirect(f"/meets/{mid}?paid=1")
     return redirect(f"/meets/{mid}?payerr=1")
+
+
+def _mark_host_paid(mid, order_id):
+    s = _load_settings(mid)
+    if not s.get("host_paid"):
+        s["host_paid"] = True
+        s["square_order_id"] = order_id
+        _save_settings(mid, s)
+
+
+@bp.post("/square/webhook")
+def square_webhook():
+    """Square server-to-server callback (HMAC-verified; CSRF-exempt). A COMPLETED
+    payment.updated auto-publishes the event even if the buyer never returns to the
+    redirect URL — the bulletproof path."""
+    from . import square
+    body = request.get_data()
+    sig = request.headers.get("X-Square-Hmacsha256-Signature", "")
+    notif = os.environ.get("XC_PUBLIC_URL", request.host_url.rstrip("/")) + "/square/webhook"
+    if not square.verify_webhook_signature(body, sig, notif):
+        abort(401)
+    try:
+        evt = json.loads(body.decode() or "{}")
+    except ValueError:
+        return ("", 200)
+    if evt.get("type") in ("payment.updated", "payment.created"):
+        pay = (evt.get("data", {}).get("object", {}) or {}).get("payment", {}) or {}
+        if pay.get("status") == "COMPLETED" and pay.get("order_id"):
+            mid = square.order_meet_id(pay["order_id"])
+            if mid:
+                _mark_host_paid(mid, pay["order_id"])
+    return ("", 200)
 
 
 def host_banner(m):

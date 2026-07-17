@@ -11,9 +11,13 @@ Env (loaded by systemd from ~/xctimer/env):
   SQUARE_ACCESS_TOKEN  account access token (shared with the other Rohde Square apps)
   SQUARE_LOCATION_ID   the XCTimer location (LGXPPYDV1GASR)
 """
+import base64
+import hashlib
+import hmac
 import json
 import logging
 import os
+import re
 import urllib.error
 import urllib.request
 import uuid
@@ -84,3 +88,33 @@ def order_ok(order_id, expect_note_substr=None):
     except Exception:
         log.exception("order_ok failed for %s", order_id)
         return False
+
+
+def order_meet_id(order_id):
+    """Parse `xctimer_meet=<id>` from a COMPLETED order's note (set at checkout).
+    Used by the webhook to bind a payment to its event. Returns int or None."""
+    if not order_id:
+        return None
+    try:
+        o = _request("GET", f"/v2/orders/{order_id}").get("order", {})
+        if o.get("state") != "COMPLETED":
+            return None
+        mt = re.search(r"xctimer_meet=(\d+)", o.get("note") or "")
+        return int(mt.group(1)) if mt else None
+    except Exception:
+        log.exception("order_meet_id failed for %s", order_id)
+        return None
+
+
+def verify_webhook_signature(body_bytes, signature_header, notification_url):
+    """Validate Square's X-Square-Hmacsha256-Signature: base64(HMAC-SHA256(key,
+    notification_url + body)). `notification_url` must exactly match the URL
+    registered on the webhook subscription. False when the key/header is missing
+    or doesn't match (caller rejects with 401)."""
+    key = _env("SQUARE_WEBHOOK_SIGNATURE_KEY")
+    if not key or not signature_header:
+        return False
+    payload = notification_url.encode("utf-8") + body_bytes
+    expected = base64.b64encode(
+        hmac.new(key.encode("utf-8"), payload, hashlib.sha256).digest()).decode("ascii")
+    return hmac.compare_digest(expected, signature_header.strip())
