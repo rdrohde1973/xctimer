@@ -763,11 +763,11 @@ def xc_meet_day(mid):
            f'<th>Status</th><th>Finishers</th><th></th></tr>{"".join(rows)}</table></div>'
            if races else f'<div class="card muted">No {noun.lower()} yet — add them on the Setup tab.</div>')
     if _is_org(m):
-        # Community events: one print option — the big camera-readable bib tags.
+        # Community events: Avery 5163 stickers (QR/ArUco) with the event logo, + spares.
+        from .meets import road_sticker_controls
         print_bar = (
-            f'<div class="card"><b>Print:</b> '
-            f'<a class="btn" href="/meets/{mid}/participants/tags.pdf" target="_blank">🏁 Bib tags (camera-readable)</a> '
-            '<span class="muted">print on matte paper.</span></div>')
+            f'<div class="card"><b>Print:</b> {road_sticker_controls(mid)} '
+            '<span class="muted">Avery 5163 · event logo.</span></div>')
     else:
         print_bar = (
             f'<div class="card"><b>Print:</b> '

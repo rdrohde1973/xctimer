@@ -377,13 +377,11 @@ def participants(mid):
 
     msg = request.args.get("msg", "")
     msg_html = f'<div class="card" style="border-color:var(--ok)">{escape(msg)}</div>' if msg else ""
-    n_bibbed = sum(1 for p in ps if p["bib"] is not None)
+    from .meets import road_sticker_controls
     print_bar = (
         f'<div class="card" style="display:flex;gap:.6rem;align-items:center;flex-wrap:wrap">'
-        f'<b>🏁 Print bibs</b> '
-        f'<a class="btn" href="/meets/{mid}/participants/tags.pdf" target="_blank">Bib tags ({n_bibbed})</a> '
-        '<span class="muted">big camera-readable tag + number + name — one per runner. '
-        '<b>Print on matte paper.</b></span></div>') if (ps and n_bibbed) else ""
+        f'<b>🏁 Print bibs</b> {road_sticker_controls(mid)} '
+        '<span class="muted">Avery 5163 — event logo + number + name, one per runner.</span></div>')
     body = (
         f'<p class="muted"><a href="/meets/{mid}">← {escape(m["name"])}</a></p>'
         f'<h1>{escape(m["name"])} — Participants</h1>'
@@ -628,7 +626,13 @@ def event_settings(mid):
 @login_required
 def participant_stickers(mid):
     m = _event_or_403(mid, can_view_meet)
-    template = request.args.get("template", "5160")
+    template = "5163"          # same Avery sheet as Track / XC
+    code = "aruco" if request.args.get("code") == "aruco" else None   # else QR
+    try:
+        spares = int(request.args.get("spares", "0"))
+    except (TypeError, ValueError):
+        spares = 0
+    spares = max(0, min(spares, 200))
     s = _load_settings(mid)
     conn = db.connect()
     ps = conn.execute(
@@ -636,8 +640,11 @@ def participant_stickers(mid):
         (mid,)).fetchall()
     conn.close()
     from . import pdfs
-    # code='aruco' -> the camera-readable tag replaces the QR (bib <= 1023).
-    athletes = [{"bib": p["bib"], "name": p["name"], "code": "aruco"} for p in ps]
+    athletes = [{"bib": p["bib"], "name": p["name"], "code": code} for p in ps]
+    nextspare = max((p["bib"] for p in ps), default=0) + 1
+    for _ in range(spares):    # blank stickers (number + code, no name) to hand-write walk-ups
+        athletes.append({"bib": nextspare, "name": "", "code": code})
+        nextspare += 1
     data = pdfs.bib_stickers_pdf(m["name"], athletes, template=template, logo_path=s.get("event_logo"))
     fname = (m["name"] or "stickers").replace(" ", "_")
     return Response(data, mimetype="application/pdf",

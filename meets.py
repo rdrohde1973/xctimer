@@ -164,6 +164,20 @@ def athlete_by_meet_bib(conn, mid, bib):
         "WHERE mb.meet_id=? AND mb.bib=? LIMIT 1", (mid, bib)).fetchone()
 
 
+def road_sticker_controls(mid):
+    """GET-form sticker controls for a community/road event: QR / ArUco Avery-5163
+    stickers (with the event logo) + a spare-blank count. No JS — the two submit
+    buttons share name=code, and the number input rides along as ?spares=."""
+    a = f"/meets/{mid}/participants/stickers.pdf"
+    return (f'<form action="{a}" method="get" target="_blank" '
+            f'style="display:inline-flex;gap:.5rem;align-items:center;flex-wrap:wrap;margin:0">'
+            f'<button class="ghost" name="code" value="">Stickers — QR</button>'
+            f'<button class="ghost" name="code" value="aruco">Stickers — ArUco</button>'
+            f'<label class="muted" style="font-size:.85rem">+ spare blanks '
+            f'<input name="spares" type="number" value="10" min="0" max="200" style="width:3.6rem">'
+            f'</label></form>')
+
+
 def meet_bib_rows(conn, mid):
     """All (bib → athlete) rows for a meet, bib order — for stickers/bib lists."""
     return conn.execute(
