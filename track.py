@@ -1927,9 +1927,10 @@ def scan_post(meid):
     # bib -> entry (individual entries in this event/group)
     entrymap = {}
     for r in conn.execute(
-        f"SELECT en.id AS eid, a.bib, a.name, s.name AS sname FROM entries en "
+        f"SELECT en.id AS eid, mb.bib AS bib, a.name, s.name AS sname FROM entries en "
         f"JOIN athletes a ON a.id=en.runner_id JOIN schools s ON s.id=a.school_id "
-        f"WHERE en.meet_event_id IN ({qm}) AND a.bib IS NOT NULL", tuple(meids)).fetchall():
+        f"JOIN meet_bibs mb ON mb.athlete_id=en.runner_id AND mb.meet_id=? "
+        f"WHERE en.meet_event_id IN ({qm})", (m["id"], *meids)).fetchall():
         entrymap[r["bib"]] = r
     applied, unmatched, added = 0, [], []
     for mk in marks:
@@ -1942,9 +1943,9 @@ def scan_post(meid):
             # Last-minute athlete on the sheet but not entered: if that bib belongs to
             # an athlete at this meet, enter them on the spot (a real sheet is truth).
             a = conn.execute(
-                "SELECT a.id, a.name, a.bib, s.name AS sname, a.school_id FROM athletes a "
-                "JOIN schools s ON s.id=a.school_id JOIN meet_schools ms ON ms.school_id=s.id "
-                "WHERE ms.meet_id=? AND a.bib=? AND a.active=1", (m["id"], bib)).fetchone()
+                "SELECT a.id, a.name, mb.bib AS bib, s.name AS sname, a.school_id FROM meet_bibs mb "
+                "JOIN athletes a ON a.id=mb.athlete_id JOIN schools s ON s.id=a.school_id "
+                "WHERE mb.meet_id=? AND mb.bib=?", (m["id"], bib)).fetchone()
             if not a:
                 unmatched.append(bib)
                 continue
@@ -2339,20 +2340,22 @@ def tap_assign_bib(tid):
         return jsonify(error="Enter a valid bib number."), 400
     meids = _combine_meids(conn, me)
     qm = ",".join("?" * len(meids))
-    # reuse an existing entry for this bib in the event (group), else enter them now
+    # Resolve the per-meet bib -> athlete via meet_bibs (the current bib map; athletes.bib is
+    # vestigial/unused). Includes walk-ups (inactive athletes have a meet_bibs row too).
+    mb = conn.execute(
+        "SELECT mb.athlete_id AS aid, a.school_id FROM meet_bibs mb "
+        "JOIN athletes a ON a.id=mb.athlete_id WHERE mb.meet_id=? AND mb.bib=?",
+        (m["id"], bib)).fetchone()
+    if not mb:
+        conn.close()
+        return jsonify(error=f"No athlete with bib #{bib} at this meet."), 400
+    # reuse an existing entry for this runner in the event (group), else enter them now
     e = conn.execute(
-        f"SELECT en.* FROM entries en JOIN athletes a ON a.id=en.runner_id "
-        f"WHERE en.meet_event_id IN ({qm}) AND a.bib=?", (*meids, bib)).fetchone()
+        f"SELECT en.* FROM entries en WHERE en.meet_event_id IN ({qm}) AND en.runner_id=?",
+        (*meids, mb["aid"])).fetchone()
     if not e:
-        a = conn.execute(
-            "SELECT a.id, a.school_id FROM athletes a "
-            "JOIN schools s ON s.id=a.school_id JOIN meet_schools ms ON ms.school_id=s.id "
-            "WHERE ms.meet_id=? AND a.bib=? AND a.active=1", (m["id"], bib)).fetchone()
-        if not a:
-            conn.close()
-            return jsonify(error=f"No athlete with bib #{bib} at this meet."), 400
         eid = conn.execute("INSERT INTO entries (meet_event_id, runner_id, school_id, heat) "
-                           "VALUES (?,?,?,?)", (me["id"], a["id"], a["school_id"], t["heat"] or None)).lastrowid
+                           "VALUES (?,?,?,?)", (me["id"], mb["aid"], mb["school_id"], t["heat"] or None)).lastrowid
         e = conn.execute("SELECT * FROM entries WHERE id=?", (eid,)).fetchone()
     if conn.execute("SELECT 1 FROM track_taps WHERE entry_id=? AND id!=?", (e["id"], tid)).fetchone():
         conn.close()
