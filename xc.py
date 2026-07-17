@@ -2285,13 +2285,18 @@ _CAMERA_PAGE = """
     </div>
   </div>
   <div id="races" style="display:none;flex-wrap:wrap;gap:.4rem;margin-top:.5rem"></div>
-  <div id="wrap" style="position:relative;max-width:720px;margin-top:.6rem;line-height:0">
+  <div id="wrap" style="position:relative;max-width:720px;margin-top:.6rem;line-height:0;overflow:hidden;border-radius:12px">
     <video id="v" playsinline muted autoplay
-      style="width:100%;border-radius:12px;background:#000;display:block;min-height:200px"></video>
+      style="width:100%;border-radius:12px;background:#000;display:block;min-height:200px;transform-origin:center center"></video>
     <canvas id="c" style="position:absolute;inset:0;width:100%;height:100%;touch-action:none"></canvas>
     <button id="enablecam" onclick="startCamera()" style="position:absolute;left:50%;top:50%;
       transform:translate(-50%,-50%);font-size:1.15rem;padding:.9rem 1.6rem;border:0;border-radius:12px;
       background:#ea6a2d;color:#fff;font-weight:800;cursor:pointer;line-height:1.2">📷 Enable camera</button>
+  </div>
+  <div id="zoomrow" style="display:flex;gap:.4rem;justify-content:center;margin-top:.5rem">
+    <button id="z1" onclick="setZoom(1)">1×</button>
+    <button id="z2" class="ghost" onclick="setZoom(2)">2×</button>
+    <button id="z3" class="ghost" onclick="setZoom(3)">3×</button>
   </div>
   <p id="chint" class="muted" style="margin:.4rem 0 0"></p>
   <p class="muted" style="margin:.2rem 0 0">Each bib records once (repeats ignored). Start/stop the
@@ -2322,15 +2327,20 @@ let MODE=_sm||DEF_MODE,
     LINEP=parseFloat(localStorage.getItem('camP'+RID)||'0.55'),
     DIR=parseInt(localStorage.getItem('camD'+RID)||'1',10),
     TRACKS={}, DRAG=false, FLASH={};
+let ZOOM=parseFloat(localStorage.getItem('camZ'+RID)||'1');   // digital zoom (1/2/3×)
 function saveCfg(){ localStorage.setItem('camM'+RID,MODE); localStorage.setItem('camO'+RID,ORIENT);
   localStorage.setItem('camP'+RID,String(LINEP)); localStorage.setItem('camD'+RID,String(DIR)); }
 function setMode(m){ MODE=m; saveCfg(); updUi(); }
 function flipDir(){ DIR=-DIR; saveCfg(); updUi(); }
 function flipOrient(){ ORIENT=ORIENT==='h'?'v':'h'; DIR=1; saveCfg(); updUi(); }
+function applyZoom(){ if(VID) VID.style.transform='scale('+(ZOOM||1)+')'; }
+function setZoom(z){ ZOOM=z; try{ localStorage.setItem('camZ'+RID,String(z)); }catch(e){} applyZoom(); updUi(); }
 function dirArrow(){ return ORIENT==='v' ? (DIR===1?'→':'←') : (DIR===1?'↓':'↑'); }
 function updUi(){
   document.getElementById('mLine').className = MODE==='line'?'':'ghost';
   document.getElementById('mChute').className = MODE==='chute'?'':'ghost';
+  [1,2,3].forEach(function(z){ var el=document.getElementById('z'+z); if(el) el.className=(ZOOM==z?'':'ghost'); });
+  applyZoom();
   document.getElementById('mChute').style.display = MEET?'none':'';   // chute fill is per-race
   document.getElementById('dirbtn').style.display = MODE==='line'?'':'none';
   document.getElementById('orbtn').style.display = MODE==='line'?'':'none';
@@ -2447,7 +2457,7 @@ async function startCamera(){
       throw {name:'InsecureContext'};
     const s=await navigator.mediaDevices.getUserMedia({audio:false,
       video:{facingMode:'environment',width:{ideal:1920}}});
-    VID.srcObject=s; await VID.play();
+    VID.srcObject=s; await VID.play(); applyZoom();
     document.getElementById('cstatus').textContent='📷 ready';
     document.getElementById('chint').textContent='';
     if(btn) btn.style.display='none';
@@ -2470,7 +2480,11 @@ function loop(){
   if(VID && VID.videoWidth>0){
     const w=DW, h=Math.round(VID.videoHeight*w/VID.videoWidth)||Math.round(w*0.75);
     if(CAN.width!==w||CAN.height!==h){ CAN.width=w; CAN.height=h; DCAN.width=w; DCAN.height=h; }
-    DCTX.drawImage(VID,0,0,w,h);          // offscreen: feed for the detector only
+    // Digital zoom: sample the centre 1/ZOOM of the frame so tags fill more of the
+    // detector (bigger = more reliable reads). The visible <video> is CSS-scaled to match.
+    const zf=ZOOM||1, vw=VID.videoWidth, vh=VID.videoHeight,
+          sw=vw/zf, sh=vh/zf, sx=(vw-sw)/2, sy=(vh-sh)/2;
+    DCTX.drawImage(VID, sx, sy, sw, sh, 0, 0, w, h);   // offscreen: feed for the detector only
     let ms=[];
     try{ ms=DET.detect(DCTX.getImageData(0,0,w,h)); }catch(e){}
     CTX.clearRect(0,0,w,h);               // visible canvas: transparent overlay atop the <video>
