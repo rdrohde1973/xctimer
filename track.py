@@ -2644,6 +2644,11 @@ def results_inner(mid, name_mode=None):
                     f'data-title="{escape((label + " team scores").lower())}">'
                     f'<h2>{escape(label)} — Team scores</h2><table><tr><th>Rank</th><th>School</th>'
                     f'<th>Points</th></tr>{trs}</table></div>')
+    # One shared column width (meet-wide longest competitor/school) so the division tables
+    # line up within each event. Per-event Best/Attempts columns still vary by event type.
+    _items = [i for ev in data["events"] for i in ev["items"]]
+    maxname = max([len(i["name"] or "") for i in _items] + [10]) + 2
+    maxschool = max([len(i["school"] or "") for i in _items] + [6]) + 1
     for ev in data["events"]:
         if not ev["items"]:
             continue
@@ -2658,9 +2663,14 @@ def results_inner(mid, name_mode=None):
                     f'<td><b>{escape(i["mark"])}</b></td>{att_td}'
                     f'<td>{_fmt_pts(i["points"])}</td></tr>')
         att_th = "<th>Attempts</th>" if any_att else ""
+        cg = ('<colgroup><col style="width:2.6rem"><col style="width:%dch">'
+              '<col style="width:%dch"><col style="width:6.8rem">%s'
+              '<col style="width:3.4rem"></colgroup>'
+              % (maxname, maxschool, '<col>' if any_att else ''))
         html.append(f'<div class="card rcard" data-gender="{ev["gkey"]}" '
                     f'data-title="{escape(ev["name"].lower())}"><h2>{escape(ev["name"])}</h2>'
-                    f'<table><tr><th>Pl</th><th>Competitor</th><th>School</th>'
+                    f'<table style="table-layout:fixed;width:100%">{cg}'
+                    f'<tr><th>Pl</th><th>Competitor</th><th>School</th>'
                     f'<th>Best</th>{att_th}<th>Pts</th></tr>{trs}</table></div>')
     html.append("""<script>
 function _v(id){var e=document.getElementById(id);return e?e.value:'';}
