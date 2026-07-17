@@ -351,7 +351,7 @@ def participants(mid):
     print_bar = (
         f'<div class="card" style="display:flex;gap:.6rem;align-items:center;flex-wrap:wrap">'
         f'<b>🏁 Print bibs</b> '
-        f'<a class="btn" href="/meets/{mid}/participants/tags.pdf">Bib tags ({n_bibbed})</a> '
+        f'<a class="btn" href="/meets/{mid}/participants/tags.pdf" target="_blank">Bib tags ({n_bibbed})</a> '
         '<span class="muted">big camera-readable tag + number + name — one per runner. '
         '<b>Print on matte paper.</b></span></div>') if (ps and n_bibbed) else ""
     body = (

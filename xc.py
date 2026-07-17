@@ -254,10 +254,22 @@ def _road_setup_section(m, setup, races, counts, _json, rename_js):
                 f'<span class="muted">Blank = use the default above.</span></form></details>')
         # Community events register participants (no race-entry "assigned" count).
         assigned_txt = "" if org else f" · {nassigned} assigned"
+        if setup:
+            mopts = "".join(
+                f'<option value="{v}"{" selected" if v == r["capture_mode"] else ""}>{escape(lbl)}</option>'
+                for v, lbl in CAPTURE_MODES)
+            mode_html = (
+                f'<form class="inline" method="post" action="/races/{r["id"]}/rename" '
+                f'style="margin:0"><select name="capture_mode" onchange="this.form.submit()" '
+                f'title="Timing mode" '
+                f'style="padding:.15rem .3rem;font-size:.85rem">{mopts}</select></form>')
+        else:
+            mode_html = f'<span class="muted">{escape(r["capture_mode"])}</span>'
         ev_blocks.append(
             f'<div class="card" style="padding:.8rem 1rem">'
             f'<div style="display:flex;justify-content:space-between;align-items:center;gap:.6rem;flex-wrap:wrap">'
-            f'<div><b>{escape(r["name"])}</b> <span class="muted">· {r["capture_mode"]} · {status}'
+            f'<div style="display:flex;align-items:center;gap:.4rem;flex-wrap:wrap">'
+            f'<b>{escape(r["name"])}</b> {mode_html} <span class="muted">· {status}'
             f'{assigned_txt} · {counts.get(r["id"], 0)} finishers</span></div>'
             f'<div style="text-align:right">{act}</div></div>'
             f'<div style="margin-top:.3rem">{groups_line}</div>{override}</div>')
@@ -338,7 +350,7 @@ def _road_setup_section(m, setup, races, counts, _json, rename_js):
             '<div class="card"><h2>Bibs, print &amp; camera</h2>'
             f'<p style="margin-top:0">{pnote}</p>'
             f'<div style="margin-top:.4rem"><b>Bibs to print</b> '
-            f'<a class="btn" href="/meets/{m["id"]}/participants/tags.pdf">🏁 Bib tags (camera-readable)</a> '
+            f'<a class="btn" href="/meets/{m["id"]}/participants/tags.pdf" target="_blank">🏁 Bib tags (camera-readable)</a> '
             '<span class="muted">big ArUco tag + number + name, one per runner — '
             '<b>print on matte paper</b> for reliable camera reads.</span></div>'
             f'<div style="margin-top:.8rem"><b>Finish-line camera</b> '
@@ -686,14 +698,14 @@ def xc_meet_day(mid):
         # Community events: one print option — the big camera-readable bib tags.
         print_bar = (
             f'<div class="card"><b>Print:</b> '
-            f'<a class="btn" href="/meets/{mid}/participants/tags.pdf">🏁 Bib tags (camera-readable)</a> '
+            f'<a class="btn" href="/meets/{mid}/participants/tags.pdf" target="_blank">🏁 Bib tags (camera-readable)</a> '
             '<span class="muted">print on matte paper.</span></div>')
     else:
         print_bar = (
             f'<div class="card"><b>Print:</b> '
-            f'<a class="btn ghost" href="/meets/{mid}/stickers.pdf?template=5160">Stickers 5160</a> '
-            f'<a class="btn ghost" href="/meets/{mid}/stickers.pdf?template=5163">Stickers 5163</a> '
-            f'<a class="btn ghost" href="/meets/{mid}/biblist.pdf">Bib lists</a></div>')
+            f'<a class="btn ghost" href="/meets/{mid}/stickers.pdf?template=5160" target="_blank">Stickers 5160</a> '
+            f'<a class="btn ghost" href="/meets/{mid}/stickers.pdf?template=5163" target="_blank">Stickers 5163</a> '
+            f'<a class="btn ghost" href="/meets/{mid}/biblist.pdf" target="_blank">Bib lists</a></div>')
     body = (f'<p class="muted"><a href="/meets">← Meets</a></p><h1>{escape(m["name"])}</h1>'
             f'{_xc_tabs(mid, "meetday", road=(m["sport"]=="road"), organizer=_is_org(m))}{tbl}{print_bar}')
     return shell(g.principal, body, active="meets")
