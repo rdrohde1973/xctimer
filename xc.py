@@ -2251,6 +2251,22 @@ function toCanvas(e){ const r=CAN.getBoundingClientRect();
 function log(t){ const el=document.getElementById('clog');
   if(!LOGN) el.innerHTML=''; LOGN++;
   el.innerHTML='<div>'+t+'</div>'+el.innerHTML; el.classList.remove('muted'); }
+// Audible confirm on FIRST read (not duplicates). WebAudio must be unlocked by a gesture.
+let AC=null;
+function unlockAudio(){ try{ if(!AC) AC=new (window.AudioContext||window.webkitAudioContext)();
+  if(AC.state==='suspended') AC.resume(); }catch(e){} }
+document.addEventListener('touchend', unlockAudio, {once:false});
+document.addEventListener('click', unlockAudio, {once:false});
+function beep(){
+  try{ if(!AC){ unlockAudio(); if(!AC) return; }
+    const o=AC.createOscillator(), g=AC.createGain(), t=AC.currentTime;
+    o.type='sine'; o.frequency.setValueAtTime(1050, t);
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.35, t+0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, t+0.16);
+    o.connect(g); g.connect(AC.destination); o.start(t); o.stop(t+0.17);
+  }catch(e){}
+}
 // Non-blocking toast — a modal alert() PAUSES the <video> on mobile (frozen camera).
 function toast(msg){
   let t=document.getElementById('ctoast');
@@ -2413,6 +2429,7 @@ async function hit(id){
     FLASH[id]=performance.now();
     log((MODE==='chute'?'🚶':'📷')+' <b>#'+id+'</b>'+(j.name?(' '+esc(j.name)):'')+(j.race?(' → '+esc(j.race)):'')
         +' ✓'+(j.remaining!=null&&MODE==='chute'?(' · '+j.remaining+' left'):'')+(j.warn?(' ⚠ '+esc(j.warn)):''));
+    beep();                                        // audible confirm — first read only
     try{ navigator.vibrate&&navigator.vibrate(35); }catch(e){}
   }catch(e){ SEEN.delete(id); log('#'+id+' ✕ '+e.message); }
 }
