@@ -124,6 +124,55 @@ def can_record_meet(m):
     return False
 
 
+def assign_meet_bibs(conn, mid):
+    """Append per-meet bib numbers (1…N) for eligible athletes of the meet's
+    attending schools, in add order. Existing numbers are kept; only new athletes
+    get appended. School (XC/track) meets only — road events use participants."""
+    m = conn.execute("SELECT sport FROM meets WHERE id=?", (mid,)).fetchone()
+    if not m or m["sport"] not in ("xc", "track"):
+        return
+    flag = "does_xc" if m["sport"] == "xc" else "does_track"
+    have = {r[0] for r in conn.execute(
+        "SELECT athlete_id FROM meet_bibs WHERE meet_id=?", (mid,)).fetchall()}
+    nextb = (conn.execute("SELECT COALESCE(MAX(bib),0) FROM meet_bibs WHERE meet_id=?",
+                          (mid,)).fetchone()[0]) + 1
+    ath = conn.execute(
+        f"SELECT a.id FROM athletes a JOIN meet_schools ms ON ms.school_id=a.school_id "
+        f"JOIN schools s ON s.id=a.school_id "
+        f"WHERE ms.meet_id=? AND a.active=1 AND a.{flag}=1 "
+        f"ORDER BY s.name, a.name, a.id", (mid,)).fetchall()
+    for r in ath:
+        if r["id"] in have:
+            continue
+        conn.execute("INSERT OR IGNORE INTO meet_bibs (meet_id, athlete_id, bib, seq) "
+                     "VALUES (?,?,?,?)", (mid, r["id"], nextb, nextb))
+        nextb += 1
+
+
+def renumber_meet_bibs(conn, mid):
+    """Clear and re-assign 1…N from scratch (compacts gaps)."""
+    conn.execute("DELETE FROM meet_bibs WHERE meet_id=?", (mid,))
+    assign_meet_bibs(conn, mid)
+
+
+def athlete_by_meet_bib(conn, mid, bib):
+    """Resolve a scanned bib to its athlete via the per-meet mapping."""
+    return conn.execute(
+        "SELECT a.id, a.name, a.grade, a.age, a.gender, s.name AS sname "
+        "FROM meet_bibs mb JOIN athletes a ON a.id=mb.athlete_id "
+        "JOIN schools s ON s.id=a.school_id "
+        "WHERE mb.meet_id=? AND mb.bib=? LIMIT 1", (mid, bib)).fetchone()
+
+
+def meet_bib_rows(conn, mid):
+    """All (bib → athlete) rows for a meet, bib order — for stickers/bib lists."""
+    return conn.execute(
+        "SELECT mb.bib, a.id AS athlete_id, a.name, a.grade, a.gender, a.age, "
+        "s.name AS sname, s.id AS school_id FROM meet_bibs mb "
+        "JOIN athletes a ON a.id=mb.athlete_id JOIN schools s ON s.id=a.school_id "
+        "WHERE mb.meet_id=? ORDER BY mb.bib", (mid,)).fetchall()
+
+
 def _district_schools(did):
     conn = db.connect()
     rows = conn.execute("SELECT * FROM schools WHERE district_id=? ORDER BY name", (did,)).fetchall()
@@ -204,9 +253,7 @@ def list_meets():
         form = '<p class="muted">Pick a district in the header to create a meet.</p>'
 
     from .phone import _install_card
-    body = (f'<div class="row" style="justify-content:space-between;align-items:center">'
-            f"<div><h1>Meets</h1><p class='sub'>Cross-country &amp; track meets.</p></div>"
-            f'<a class="btn ghost" href="/bibcheck">🔍 Bib check</a></div>'
+    body = (f"<h1>Meets</h1><p class='sub'>Cross-country &amp; track meets.</p>"
             f"{_install_card()}{table}{form}")
     return shell(p, body, active="meets", active_district=did, districts=_districts_for_switcher())
 
@@ -244,6 +291,7 @@ def create_meet():
     mid = cur.lastrowid
     for s in set(school_ids) | ({host} if host else set()):
         conn.execute("INSERT OR IGNORE INTO meet_schools (meet_id, school_id) VALUES (?,?)", (mid, s))
+    assign_meet_bibs(conn, mid)     # per-meet bibs from 1 for the attending athletes
     if sport == "xc":
         # Auto-create the two standard heats (like the reference XC app).
         for hn in ("Boys", "Girls"):
@@ -301,6 +349,19 @@ def delete_meet(mid):
     return redirect("/meets")
 
 
+@bp.post("/meets/<int:mid>/renumber-bibs")
+@login_required
+def renumber_bibs_route(mid):
+    m = load_meet(mid)
+    if not can_setup_meet(m):
+        abort(403)
+    conn = db.connect()
+    renumber_meet_bibs(conn, mid)
+    conn.commit()
+    conn.close()
+    return redirect(f"/meets/{mid}")
+
+
 @bp.post("/meets/<int:mid>/schools")
 @login_required
 def update_meet_schools(mid):
@@ -315,6 +376,7 @@ def update_meet_schools(mid):
     for s in school_ids:
         if s in valid:
             conn.execute("INSERT OR IGNORE INTO meet_schools (meet_id, school_id) VALUES (?,?)", (mid, s))
+    assign_meet_bibs(conn, mid)     # per-meet bibs for the (new) attending athletes
     conn.commit()
     conn.close()
     return redirect(f"/meets/{mid}")
@@ -386,10 +448,23 @@ def meet_detail(mid):
             f'<a class="btn ghost" href="/meets/{mid}/stickers.pdf?template=5163">Stickers 5163</a> ')
     else:
         sticker_btns = f'<a class="btn ghost" href="/meets/{mid}/stickers.pdf?template=5163">Stickers (5163)</a> '
-    print_bar = "" if is_org else (
-        f'<div class="card"><b>Print — all attending schools:</b> '
-        f'{sticker_btns}'
-        f'<a class="btn ghost" href="/meets/{mid}/biblist.pdf">Bib lists</a>{hs}</div>')
+    if is_org:
+        print_bar = ""
+    else:
+        cb = db.connect()
+        nbibs = cb.execute("SELECT COUNT(*) FROM meet_bibs WHERE meet_id=?", (mid,)).fetchone()[0]
+        cb.close()
+        bibnote = (f'<span class="muted">{nbibs} bibs assigned (1–{nbibs}).</span> '
+                   f'<form class="inline" method="post" action="/meets/{mid}/renumber-bibs" '
+                   f'onsubmit="return confirm(\'Renumber all bibs 1…N from scratch?\')">'
+                   f'<button class="ghost">🔢 Renumber</button></form>' if setup else
+                   f'<span class="muted">{nbibs} bibs assigned.</span>')
+        print_bar = (
+            f'<div class="card"><b>Bibs &amp; print:</b> {bibnote}<br>'
+            f'<span class="muted" style="font-size:.85rem">Bibs number per meet from 1, in the order '
+            f'schools are added. Add a school to number its athletes.</span><br>'
+            f'{sticker_btns}'
+            f'<a class="btn ghost" href="/meets/{mid}/biblist.pdf">Bib lists</a>{hs}</div>')
 
     if is_xc:
         from . import xc as _sport
@@ -607,8 +682,10 @@ def _attending_groups(mid):
         "WHERE ms.meet_id=? ORDER BY s.name", (mid,)).fetchall()
     groups = []
     for s in schools:
-        ath = conn.execute("SELECT bib,name,grade,gender FROM athletes WHERE school_id=? "
-                           "ORDER BY bib IS NULL, bib, name", (s["id"],)).fetchall()
+        ath = conn.execute(
+            "SELECT mb.bib AS bib, a.name, a.grade, a.gender FROM meet_bibs mb "
+            "JOIN athletes a ON a.id=mb.athlete_id WHERE mb.meet_id=? AND a.school_id=? "
+            "ORDER BY mb.bib", (mid, s["id"])).fetchall()
         groups.append((s["name"], [dict(a) for a in ath]))
     conn.close()
     return groups
@@ -621,17 +698,23 @@ def _sticker_groups(mid, with_events, fill_to=0, only_sid=None):
     on the next open bibs (for last-minute adds). only_sid = one school's packet."""
     conn = db.connect()
     schools = conn.execute(
-        "SELECT s.id, s.name, s.logo_path, s.bib_start, s.bib_end FROM schools s "
+        "SELECT s.id, s.name, s.logo_path FROM schools s "
         "JOIN meet_schools ms ON ms.school_id=s.id WHERE ms.meet_id=? ORDER BY s.name", (mid,)).fetchall()
     if only_sid is not None:
         schools = [s for s in schools if s["id"] == only_sid]
+    bibmap = {r["athlete_id"]: r["bib"] for r in conn.execute(
+        "SELECT athlete_id, bib FROM meet_bibs WHERE meet_id=?", (mid,)).fetchall()}
+    nextspare = (max(bibmap.values()) if bibmap else 0) + 1
     groups = []
     for s in schools:
-        ath = conn.execute("SELECT id, bib, name, grade, gender FROM athletes WHERE school_id=? "
-                           "ORDER BY bib IS NULL, bib, name", (s["id"],)).fetchall()
+        ath = conn.execute(
+            "SELECT a.id, a.name, a.grade, a.gender FROM athletes a "
+            "WHERE a.school_id=? AND a.id IN (SELECT athlete_id FROM meet_bibs WHERE meet_id=?) "
+            "ORDER BY a.name", (s["id"], mid)).fetchall()
         arr = []
         for a in ath:
             d = dict(a)
+            d["bib"] = bibmap.get(a["id"])
             if with_events:
                 evs = conn.execute(
                     "SELECT e.name AS ename, en.heat, en.lane FROM entries en "
@@ -662,10 +745,10 @@ def _sticker_groups(mid, with_events, fill_to=0, only_sid=None):
                 d["events"] = ev_list
             arr.append(d)
         if fill_to:
-            real = [a for a in arr if a["bib"] is not None]
-            need = (fill_to - len(real) % fill_to) % fill_to
-            arr += pdfs.blank_fillers([a["bib"] for a in real],
-                                      s["bib_start"], s["bib_end"], need)
+            need = (fill_to - len(arr) % fill_to) % fill_to
+            for _ in range(need):    # spare blank stickers on the next free meet numbers
+                arr.append({"bib": nextspare, "name": "", "grade": None, "gender": None})
+                nextspare += 1
         groups.append((s["name"], s["logo_path"], arr))
     conn.close()
     return groups

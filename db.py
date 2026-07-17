@@ -213,6 +213,19 @@ CREATE TABLE IF NOT EXISTS entries (
     lane INTEGER
 );
 
+-- Per-meet bib numbers for school (XC/track) meets. Bibs are assigned per meet
+-- starting at 1 (no permanent per-school blocks); every scan/sticker/result for a
+-- school meet resolves through here. Community events use `participants` instead.
+CREATE TABLE IF NOT EXISTS meet_bibs (
+    id INTEGER PRIMARY KEY,
+    meet_id INTEGER NOT NULL REFERENCES meets(id),
+    athlete_id INTEGER NOT NULL REFERENCES athletes(id),
+    bib INTEGER NOT NULL,
+    seq INTEGER,
+    UNIQUE(meet_id, athlete_id),
+    UNIQUE(meet_id, bib)
+);
+
 -- Road events: which athletes are assigned to which event (race). Exactly one
 -- event per athlete per meet (UNIQUE on meet_id+athlete_id enforces it).
 CREATE TABLE IF NOT EXISTS race_entries (
@@ -294,6 +307,7 @@ INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_finishers_bib ON finishers(bib)",
     "CREATE INDEX IF NOT EXISTS idx_race_entries_race ON race_entries(race_id)",
     "CREATE INDEX IF NOT EXISTS idx_race_entries_meet ON race_entries(meet_id)",
+    "CREATE INDEX IF NOT EXISTS idx_meet_bibs_meet ON meet_bibs(meet_id)",
     "CREATE INDEX IF NOT EXISTS idx_participants_meet ON participants(meet_id)",
     "CREATE INDEX IF NOT EXISTS idx_participants_race ON participants(race_id)",
     "CREATE INDEX IF NOT EXISTS idx_meets_organizer ON meets(organizer_id)",

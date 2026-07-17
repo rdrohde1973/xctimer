@@ -173,12 +173,11 @@ def list_schools():
     show_d = p.is_super and did is None
 
     hdr = ("<tr><th>School</th>" + ("<th>District</th>" if show_d else "")
-           + "<th>Athletes</th><th>Bib block</th><th></th></tr>")
+           + "<th>Athletes</th><th></th></tr>")
     conn = db.connect()
     trs = []
     for s in rows:
         n = conn.execute("SELECT COUNT(*) FROM athletes WHERE school_id=?", (s["id"],)).fetchone()[0]
-        bib = f'{s["bib_start"]}&ndash;{s["bib_end"]}' if s["bib_start"] else '<span class="muted">—</span>'
         dcol = f'<td>{escape(s["dname"])}</td>' if show_d else ""
         actions = f'<a class="btn ghost" href="/schools/{s["id"]}">Open roster</a>'
         if p.is_admin:
@@ -189,7 +188,7 @@ def list_schools():
                 f'style="height:28px;width:28px;object-fit:contain;vertical-align:middle;margin-right:.5rem">'
                 if s["logo_path"] else "")
         trs.append(f'<tr><td>{logo}<b>{escape(s["name"])}</b></td>{dcol}<td>{n}</td>'
-                   f'<td>{bib}</td><td style="text-align:right">{actions}</td></tr>')
+                   f'<td style="text-align:right">{actions}</td></tr>')
     conn.close()
     table = (f'<div class="card"><table>{hdr}{"".join(trs)}</table></div>'
              if rows else '<div class="card muted">No schools yet.</div>')
@@ -223,11 +222,9 @@ def create_school():
         abort(400)
     logo_path = _save_logo(request.files.get("logo"), name)
     conn = db.connect()
-    lo, hi = _alloc_block(conn, did)   # auto-assigned bib block (no manual ranges)
-    conn.execute(
-        "INSERT INTO schools (district_id, name, bib_start, bib_end, logo_path) VALUES (?,?,?,?,?)",
-        (did, name, lo, hi, logo_path),
-    )
+    # Bibs are now assigned per meet (starting at 1) — no permanent per-school blocks.
+    conn.execute("INSERT INTO schools (district_id, name, logo_path) VALUES (?,?,?)",
+                 (did, name, logo_path))
     conn.commit()
     conn.close()
     return redirect("/schools")
@@ -309,7 +306,7 @@ def roster(sid):
                 f'<form class="inline" method="post" action="/athletes/{a["id"]}/restore">'
                 f'<button class="ghost" type="submit">Restore</button></form>')
             trs.append(
-                f'<tr style="opacity:.7"><td>{"" if a["bib"] is None or mode=="anon" else a["bib"]}</td>'
+                f'<tr style="opacity:.7">'
                 f'<td><b><a href="/athletes/{a["id"]}/progress">{escape(nm)}</a></b> 📈</td>'
                 f'<td>{"" if a["grade"] is None else a["grade"]}</td>'
                 f'<td>{a["gender"] or ""}</td>'
@@ -329,7 +326,7 @@ def roster(sid):
                 f'onsubmit="return confirm(\'Remove {escape(nm)}?\')">'
                 f'<button class="ic del" type="submit" title="Delete">✕</button></form>')
         trs.append(
-            f'<tr><td>{"" if a["bib"] is None or mode=="anon" else a["bib"]}</td>'
+            f'<tr>'
             f'<td><b><a href="#" onclick="openCard({aid});return false">{escape(nm)}</a></b></td>'
             f'<td>{"" if a["grade"] is None else a["grade"]}</td>'
             f'<td>{a["gender"] or ""}</td>'
@@ -342,12 +339,12 @@ def roster(sid):
             + f'<td><div class="rowacts">{"".join(acts)}</div></td></tr>')
 
     if grad_view:
-        head = ('<tr><th>Bib</th><th>Name</th><th>Gr</th><th>Sex</th><th></th></tr>'
+        head = ('<tr><th>Name</th><th>Gr</th><th>Sex</th><th></th></tr>'
                 if ath else "")
         empty = "No graduated athletes."
     else:
         road_head = '<th style="text-align:center">Road</th>' if road_on else ""
-        head = ('<tr><th>Bib</th><th>Name</th><th>Gr</th><th>Sex</th>'
+        head = ('<tr><th>Name</th><th>Gr</th><th>Sex</th>'
                 '<th style="text-align:center">XC</th><th style="text-align:center">Track</th>'
                 f'{road_head}<th></th></tr>'
                 if ath else "")
@@ -368,8 +365,6 @@ def roster(sid):
             f'{_f("All", "all")}{_f("🏃 XC", "xc")}{_f("🎽 Track", "track")}{road_chip}'
             f'<span style="flex:1"></span>{grad_link}</div>')
 
-    bib_hint = (f'{s["bib_start"]}–{s["bib_end"]}' if s["bib_start"]
-                else "no block set (bibs left blank)")
     logo_img = (f'<img src="{escape(s["logo_path"])}" alt="" style="height:42px;width:42px;'
                 f'object-fit:contain;vertical-align:middle;margin-right:.6rem;background:#fff;'
                 f'border-radius:8px;padding:3px"> ' if s["logo_path"] else "")
@@ -377,13 +372,7 @@ def roster(sid):
 <p class="muted"><a href="/schools">← Schools</a></p>
 <h1>{logo_img}{escape(s['name'])}</h1>"""
     body += f"""
-<p class="sub">{len(ath)} athletes · bib block {bib_hint}</p>
-
-<div class="row">
-  <a class="btn ghost" href="/schools/{sid}/bibs.pdf">Bib list (PDF)</a>
-  <a class="btn ghost" href="/schools/{sid}/stickers.pdf?template=5160">Avery 5160 stickers</a>
-  <a class="btn ghost" href="/schools/{sid}/stickers.pdf?template=5163">Avery 5163 stickers</a>
-</div>
+<p class="sub">{len(ath)} athletes · bibs are assigned per meet (print them from the meet page)</p>
 {filt}
 {table}
 <div id="cardModal" class="cardmodal" style="display:none" onclick="if(event.target===this)closeCard()">
@@ -473,7 +462,6 @@ async function tog(aid, sport, el){
 <form method="post" action="/schools/{sid}/athletes">
   <div class="row">
     <div><label>Name</label><input name="name" required></div>
-    <div style="max-width:110px"><label>Bib</label><input name="bib" type="number" placeholder="auto"></div>
     <div style="max-width:90px"><label>Grade</label><input name="grade" type="number"></div>
     <div style="max-width:100px"><label>Age</label><input name="age" type="number" min="0" placeholder="{age_hint}"></div>
     <div style="max-width:110px"><label>Sex</label>
@@ -488,7 +476,7 @@ async function tog(aid, sport, el){
     {road_add_cb}
   </div>
   <button type="submit" style="margin-top:1rem">Add</button>
-  <span class="muted">Leave bib blank to auto-assign the next free bib in the block.</span>
+  <span class="muted">Bib numbers are assigned per meet (from 1) when the school is added to a meet.</span>
 </form></div>
 
 <div class="card"><h2>Import roster</h2>
@@ -692,25 +680,16 @@ def add_athlete(sid):
     gender = (request.form.get("gender") or "").strip().upper() or None
     if gender not in ("M", "F", None):
         gender = None
-    bib_raw = (request.form.get("bib") or "").strip()
     dx = 1 if request.form.get("does_xc") else 0
     dt = 1 if request.form.get("does_track") else 0
     road_event = (request.form.get("road_event") or "").strip() or None
     dr = 1 if (request.form.get("does_road") or road_event) else 0
     conn = db.connect()
-    bib = int(bib_raw) if bib_raw.isdigit() else _next_bib(conn, s)
-    # Manual bib must be unique across the district (stickers/scans key on it).
-    dup = conn.execute(
-        "SELECT a.name, sc.name AS sname FROM athletes a JOIN schools sc ON sc.id=a.school_id "
-        "WHERE a.bib=? AND sc.district_id=? AND a.active=1", (bib, s["district_id"])).fetchone()
-    if dup:
-        conn.close()
-        return redirect(f"/schools/{sid}?err=Bib+{bib}+is+already+assigned+to+"
-                        f"{dup['name'].replace(' ', '+')}+({dup['sname'].replace(' ', '+')})")
+    # No permanent bib — bibs are assigned per meet (starting at 1) when schools attend.
     conn.execute(
-        "INSERT INTO athletes (school_id, bib, name, grade, age, gender, does_xc, does_track, does_road, road_event) "
-        "VALUES (?,?,?,?,?,?,?,?,?,?)",
-        (sid, bib, name, grade, age, gender, dx, dt, dr, road_event),
+        "INSERT INTO athletes (school_id, name, grade, age, gender, does_xc, does_track, does_road, road_event) "
+        "VALUES (?,?,?,?,?,?,?,?,?)",
+        (sid, name, grade, age, gender, dx, dt, dr, road_event),
     )
     conn.commit()
     conn.close()
@@ -1084,7 +1063,6 @@ def import_commit(sid):
         age = int(age) if isinstance(age, int) or (isinstance(age, str) and age.isdigit()) else None
         gender = r.get("gender")
         gender = gender if gender in ("M", "F") else None
-        bib = _next_bib(conn, s)
         cf = {k: (str(r.get(k)).strip() if r.get(k) else None) for k in
               ("dob", "email", "phone", "parent_name", "parent_email", "parent_phone",
                "emergency_name", "emergency_phone")}
@@ -1097,10 +1075,10 @@ def import_commit(sid):
         road_event = (str(r.get("event") or r.get("road_event") or "").strip() or None)
         dr = 1 if (r.get("does_road") or road_event) else 0  # having an event implies road
         conn.execute(
-            "INSERT INTO athletes (school_id, bib, name, grade, age, gender, does_xc, does_track, does_road, "
+            "INSERT INTO athletes (school_id, name, grade, age, gender, does_xc, does_track, does_road, "
             "road_event, dob, email, phone, parent_name, parent_email, parent_phone, emergency_name, emergency_phone) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-            (sid, bib, name, grade, age, gender, dx, dt, dr, road_event, cf["dob"], cf["email"], cf["phone"],
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (sid, name, grade, age, gender, dx, dt, dr, road_event, cf["dob"], cf["email"], cf["phone"],
              cf["parent_name"], cf["parent_email"], cf["parent_phone"], cf["emergency_name"],
              cf["emergency_phone"]),
         )
@@ -1124,28 +1102,14 @@ def _roster_rows(sid):
 @bp.get("/schools/<int:sid>/bibs.pdf")
 @login_required
 def bibs_pdf(sid):
-    s = _load_school_or_403(sid)
-    pdf = pdfs.bib_list_pdf(s["name"], _roster_rows(sid))
-    return Response(pdf, mimetype="application/pdf",
-                    headers={"Content-Disposition": f'inline; filename="{s["name"]}-bibs.pdf"'})
+    # Bibs are per-meet now — print bib lists/stickers from the meet page.
+    return redirect(f"/schools/{sid}")
 
 
 @bp.get("/schools/<int:sid>/stickers.pdf")
 @login_required
 def stickers_pdf(sid):
-    s = _load_school_or_403(sid)
-    template = request.args.get("template", "5160")
-    ath = _roster_rows(sid)
-    # Fill the rest of the last sheet with blank stickers on the next open bibs.
-    real = [a for a in ath if a["bib"] is not None]
-    pp = pdfs.per_page(template)
-    ath += pdfs.blank_fillers([a["bib"] for a in real], s["bib_start"], s["bib_end"],
-                              (pp - len(real) % pp) % pp)
-    # QR encodes just the bib number (no URL).
-    pdf = pdfs.bib_stickers_pdf(s["name"], ath, template=template,
-                                qr_prefix="", logo_path=s["logo_path"])
-    return Response(pdf, mimetype="application/pdf",
-                    headers={"Content-Disposition": f'inline; filename="{s["name"]}-stickers.pdf"'})
+    return redirect(f"/schools/{sid}")
 
 
 # ------------------------------- bib check -------------------------------

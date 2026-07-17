@@ -74,11 +74,9 @@ def _race_or_403(rid, check):
 
 
 def _athlete_for_bib(conn, meet_id, bib):
-    return conn.execute(
-        "SELECT a.name, a.grade, a.age, a.gender, s.name AS sname FROM athletes a "
-        "JOIN schools s ON s.id=a.school_id "
-        "JOIN meet_schools ms ON ms.school_id=a.school_id "
-        "WHERE ms.meet_id=? AND a.bib=? LIMIT 1", (meet_id, bib)).fetchone()
+    # Per-meet bib numbering: resolve the scanned bib via the meet's bib map.
+    from .meets import athlete_by_meet_bib
+    return athlete_by_meet_bib(conn, meet_id, bib)
 
 
 def _participant_for_bib(conn, meet_id, bib):

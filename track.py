@@ -392,6 +392,8 @@ def track_setup(mid):
         settings.update(hj_low=hj_low, hj_high=hj_high, hj_inc=int(hj_inc_s))
         conn.execute("UPDATE meets SET settings_json=? WHERE id=?", (json.dumps(settings), mid))
         _apply_hj_schedule(conn, mid, hj_low, hj_high, int(hj_inc_s))
+    from .meets import assign_meet_bibs
+    assign_meet_bibs(conn, mid)     # per-meet bibs for the attending athletes
     conn.commit()
     conn.close()
     return redirect(f"/meets/{mid}")
@@ -525,8 +527,8 @@ def add_entry(meid):
         if not raw.isdigit():
             conn.close()
             return redirect(f"/meet-events/{meid}?err=bib")
-        a = conn.execute("SELECT a.* FROM athletes a JOIN meet_schools ms ON ms.school_id=a.school_id "
-                         "WHERE ms.meet_id=? AND a.bib=? LIMIT 1", (me["meet_id"], int(raw))).fetchone()
+        a = conn.execute("SELECT a.* FROM meet_bibs mb JOIN athletes a ON a.id=mb.athlete_id "
+                         "WHERE mb.meet_id=? AND mb.bib=? LIMIT 1", (me["meet_id"], int(raw))).fetchone()
         if not a:
             conn.close()
             return redirect(f"/meet-events/{meid}?err=nobib")
@@ -629,6 +631,8 @@ def assign_page(mid):
     athletes = conn.execute(
         "SELECT * FROM athletes WHERE school_id=? AND does_track=1 AND active=1 "
         "ORDER BY grade, gender, name", (sid,)).fetchall()
+    bibmap = {r["athlete_id"]: r["bib"] for r in conn.execute(
+        "SELECT athlete_id, bib FROM meet_bibs WHERE meet_id=?", (mid,)).fetchall()}
     mes = conn.execute(
         "SELECT me.*, e.name AS ename, e.kind FROM meet_events me JOIN events e ON e.id=me.event_id "
         "WHERE me.meet_id=? ORDER BY e.sort, me.gender, me.grade", (mid,)).fetchall()
@@ -681,7 +685,7 @@ def assign_page(mid):
         rows.append(
             f'<tr class="arow" data-g="{a["gender"] or ""}" data-gr="{a["grade"] or ""}">'
             f'<td><b>{escape(a["name"])}</b><br><span class="muted">gr {a["grade"] or "?"} '
-            f'{a["gender"] or ""}{" · bib "+str(a["bib"]) if a["bib"] else ""}</span></td>'
+            f'{a["gender"] or ""}{" · bib "+str(bibmap[a["id"]]) if bibmap.get(a["id"]) else ""}</span></td>'
             f'<td>{boxes}<div class="muted" id="c{a["id"]}"></div></td></tr>')
     hdr = f'Events (limit {limit}; relays 🔗 not counted)' if relay_mes else f'Events (limit {limit})'
     ath_tbl = (f'<table><tr><th>Athlete</th><th>{hdr}</th></tr>{"".join(rows)}</table>'
@@ -1018,9 +1022,9 @@ def pit_lookup(mid):
         return jsonify(found=False)
     conn = db.connect()
     a = conn.execute(
-        "SELECT a.id, a.name, a.grade, a.gender, s.name AS sname FROM athletes a "
-        "JOIN schools s ON s.id=a.school_id JOIN meet_schools ms ON ms.school_id=s.id "
-        "WHERE ms.meet_id=? AND a.bib=? AND a.active=1", (mid, bib)).fetchone()
+        "SELECT a.id, a.name, a.grade, a.gender, s.name AS sname FROM meet_bibs mb "
+        "JOIN athletes a ON a.id=mb.athlete_id JOIN schools s ON s.id=a.school_id "
+        "WHERE mb.meet_id=? AND mb.bib=? AND a.active=1", (mid, bib)).fetchone()
     if not a:
         conn.close()
         return jsonify(found=False)
@@ -1071,8 +1075,8 @@ def pit_post(mid):
         return jsonify(error="Enter at least one attempt"), 400
     conn = db.connect()
     a = conn.execute(
-        "SELECT a.*, s.name AS sname FROM athletes a JOIN schools s ON s.id=a.school_id "
-        "JOIN meet_schools ms ON ms.school_id=s.id WHERE ms.meet_id=? AND a.bib=? AND a.active=1",
+        "SELECT a.*, s.name AS sname FROM meet_bibs mb JOIN athletes a ON a.id=mb.athlete_id "
+        "JOIN schools s ON s.id=a.school_id WHERE mb.meet_id=? AND mb.bib=? AND a.active=1",
         (mid, bib)).fetchone()
     if not a:
         conn.close()
@@ -1317,8 +1321,12 @@ def draw_all(mid):
 # ------------------------------- marks + placing -------------------------------
 def _entry_label(conn, e):
     if e["runner_id"]:
-        a = conn.execute("SELECT a.name, a.bib, s.name AS sname FROM athletes a "
-                         "JOIN schools s ON s.id=a.school_id WHERE a.id=?", (e["runner_id"],)).fetchone()
+        a = conn.execute(
+            "SELECT a.name, mb.bib AS bib, s.name AS sname FROM athletes a "
+            "JOIN schools s ON s.id=a.school_id "
+            "JOIN meet_events me ON me.id=? "
+            "LEFT JOIN meet_bibs mb ON mb.athlete_id=a.id AND mb.meet_id=me.meet_id "
+            "WHERE a.id=?", (e["meet_event_id"], e["runner_id"])).fetchone()
         if a:
             return a["name"], a["bib"], a["sname"]
         return "—", None, None
@@ -1565,9 +1573,9 @@ def add_bib(meid):
     except (TypeError, ValueError):
         return jsonify(error="Enter a bib number"), 400
     conn = db.connect()
-    a = conn.execute("SELECT a.id, a.school_id, a.name FROM athletes a "
-                     "JOIN meet_schools ms ON ms.school_id=a.school_id "
-                     "WHERE ms.meet_id=? AND a.bib=? LIMIT 1", (me["meet_id"], bib)).fetchone()
+    a = conn.execute("SELECT a.id, a.school_id, a.name FROM meet_bibs mb "
+                     "JOIN athletes a ON a.id=mb.athlete_id "
+                     "WHERE mb.meet_id=? AND mb.bib=? LIMIT 1", (me["meet_id"], bib)).fetchone()
     if not a:
         conn.close()
         return jsonify(error=f"No athlete with bib {bib} at this meet"), 400
