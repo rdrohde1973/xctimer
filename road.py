@@ -269,6 +269,16 @@ def participants(mid):
     for p in ps:
         by_race.setdefault(p["race_id"], []).append(p)
 
+    def race_select(p):
+        opts = ""
+        for r in races:
+            sel = " selected" if r["id"] == p["race_id"] else ""
+            opts += f'<option value="{r["id"]}"{sel}>{escape(r["name"])}</option>'
+        opts += f'<option value=""{" selected" if p["race_id"] is None else ""}>— unassigned —</option>'
+        return (f'<form class="inline" method="post" action="/participants/{p["id"]}/race">'
+                f'<select name="race_id" onchange="this.form.submit()" '
+                f'style="padding:.2rem .3rem;font-size:.85rem">{opts}</select></form>')
+
     def prow(p):
         bits = []
         if p["age"] is not None:
@@ -283,10 +293,11 @@ def participants(mid):
         rm = (f'<form class="inline" method="post" action="/participants/{p["id"]}/delete" '
               f'onsubmit="return confirm(\'Remove {escape(p["name"])}?\')">'
               f'<button class="ic del">✕</button></form>') if editable else ""
+        move = race_select(p) if (editable and len(races) > 1) else ""
         bib = f'<b>#{p["bib"]}</b>' if p["bib"] is not None else '<span class="muted">no bib</span>'
         return (f'<div class="arow" data-name="{escape((p["name"] or "").lower())}">'
                 f'<span>{bib} &nbsp; {escape(p["name"])} <span class="muted">{meta}</span></span>'
-                f'<span>{rm}</span></div>')
+                f'<span style="display:flex;gap:.4rem;align-items:center">{move}{rm}</span></div>')
 
     sections = []
     order = [r["id"] for r in races] + [None]
@@ -336,6 +347,13 @@ def participants(mid):
 
     msg = request.args.get("msg", "")
     msg_html = f'<div class="card" style="border-color:var(--ok)">{escape(msg)}</div>' if msg else ""
+    n_bibbed = sum(1 for p in ps if p["bib"] is not None)
+    print_bar = (
+        f'<div class="card" style="display:flex;gap:.6rem;align-items:center;flex-wrap:wrap">'
+        f'<b>🏁 Print bibs</b> '
+        f'<a class="btn" href="/meets/{mid}/participants/tags.pdf">Bib tags ({n_bibbed})</a> '
+        '<span class="muted">big camera-readable tag + number + name — one per runner. '
+        '<b>Print on matte paper.</b></span></div>') if (ps and n_bibbed) else ""
     body = (
         f'<p class="muted"><a href="/meets/{mid}">← {escape(m["name"])}</a></p>'
         f'<h1>{escape(m["name"])} — Participants</h1>'
@@ -343,6 +361,7 @@ def participants(mid):
         '<style>.arow{display:flex;justify-content:space-between;align-items:center;gap:.6rem;'
         'padding:.3rem .1rem;border-bottom:1px solid var(--line)}.arow:last-child{border-bottom:0}</style>'
         f'{msg_html}'
+        f'{print_bar}'
         f'<input id="psearch" placeholder="Search name…" oninput="pfilt()" style="width:100%;margin:.2rem 0 1rem">'
         f'{"".join(sections) or "<div class=card muted>No participants yet.</div>"}'
         f'{tools}'
@@ -491,6 +510,28 @@ def delete_participant(pid):
     _event_or_403(p["meet_id"], can_setup_meet)
     conn = db.connect()
     conn.execute("DELETE FROM participants WHERE id=?", (pid,))
+    conn.commit()
+    conn.close()
+    return redirect(f"/meets/{p['meet_id']}/participants")
+
+
+@bp.post("/participants/<int:pid>/race")
+@login_required
+def participant_race(pid):
+    """Move a runner to a different race (inline dropdown on the Participants tab)."""
+    conn = db.connect()
+    p = conn.execute("SELECT * FROM participants WHERE id=?", (pid,)).fetchone()
+    conn.close()
+    if not p:
+        abort(404)
+    _event_or_403(p["meet_id"], can_setup_meet)
+    rid_raw = (request.form.get("race_id") or "").strip()
+    race_id = int(rid_raw) if rid_raw.isdigit() else None
+    conn = db.connect()
+    if race_id is not None and not conn.execute(
+            "SELECT 1 FROM races WHERE id=? AND meet_id=?", (race_id, p["meet_id"])).fetchone():
+        conn.close(); abort(400)
+    conn.execute("UPDATE participants SET race_id=? WHERE id=?", (race_id, pid))
     conn.commit()
     conn.close()
     return redirect(f"/meets/{p['meet_id']}/participants")

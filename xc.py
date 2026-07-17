@@ -682,11 +682,18 @@ def xc_meet_day(mid):
     tbl = (f'<div class="card"><h2>{noun} — tap to time</h2><table><tr><th>{noun[:-1]}</th><th>Mode</th>'
            f'<th>Status</th><th>Finishers</th><th></th></tr>{"".join(rows)}</table></div>'
            if races else f'<div class="card muted">No {noun.lower()} yet — add them on the Setup tab.</div>')
-    print_bar = (
-        f'<div class="card"><b>Print:</b> '
-        f'<a class="btn ghost" href="/meets/{mid}/stickers.pdf?template=5160">Stickers 5160</a> '
-        f'<a class="btn ghost" href="/meets/{mid}/stickers.pdf?template=5163">Stickers 5163</a> '
-        f'<a class="btn ghost" href="/meets/{mid}/biblist.pdf">Bib lists</a></div>')
+    if _is_org(m):
+        # Community events: one print option — the big camera-readable bib tags.
+        print_bar = (
+            f'<div class="card"><b>Print:</b> '
+            f'<a class="btn" href="/meets/{mid}/participants/tags.pdf">🏁 Bib tags (camera-readable)</a> '
+            '<span class="muted">print on matte paper.</span></div>')
+    else:
+        print_bar = (
+            f'<div class="card"><b>Print:</b> '
+            f'<a class="btn ghost" href="/meets/{mid}/stickers.pdf?template=5160">Stickers 5160</a> '
+            f'<a class="btn ghost" href="/meets/{mid}/stickers.pdf?template=5163">Stickers 5163</a> '
+            f'<a class="btn ghost" href="/meets/{mid}/biblist.pdf">Bib lists</a></div>')
     body = (f'<p class="muted"><a href="/meets">← Meets</a></p><h1>{escape(m["name"])}</h1>'
             f'{_xc_tabs(mid, "meetday", road=(m["sport"]=="road"), organizer=_is_org(m))}{tbl}{print_bar}')
     return shell(g.principal, body, active="meets")
