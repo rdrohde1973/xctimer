@@ -323,14 +323,8 @@ def can_delete_meet(m):
     return p.is_admin and (p.is_super or p.district_id == m["district_id"])
 
 
-@bp.post("/meets/<int:mid>/delete")
-@login_required
-def delete_meet(mid):
-    m = load_meet(mid)
-    if not can_delete_meet(m):
-        abort(403)
-    org = _meet_organizer_id(m)
-    conn = db.connect()
+def _purge_meet(conn, mid):
+    """Delete a meet and every row that hangs off it. Caller opens/commits the conn."""
     # Track data: results -> entries -> meet_events (+ live tap-timer state, which has
     # no FK — left behind it could attach to a future event that reuses the rowid)
     conn.execute("DELETE FROM results WHERE entry_id IN (SELECT en.id FROM entries en "
@@ -350,6 +344,17 @@ def delete_meet(mid):
     conn.execute("DELETE FROM races WHERE meet_id=?", (mid,))
     conn.execute("DELETE FROM meet_schools WHERE meet_id=?", (mid,))
     conn.execute("DELETE FROM meets WHERE id=?", (mid,))
+
+
+@bp.post("/meets/<int:mid>/delete")
+@login_required
+def delete_meet(mid):
+    m = load_meet(mid)
+    if not can_delete_meet(m):
+        abort(403)
+    org = _meet_organizer_id(m)
+    conn = db.connect()
+    _purge_meet(conn, mid)
     conn.commit()
     conn.close()
     return redirect(f"/events?org={org}" if org is not None else "/meets")

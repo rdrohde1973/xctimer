@@ -15,7 +15,7 @@ from flask import Blueprint, request, redirect, g, abort, Response
 
 from . import db
 from .auth import login_required, role_required, create_user, send_setup_email
-from .meets import load_meet, can_view_meet, can_setup_meet
+from .meets import load_meet, can_view_meet, can_setup_meet, _purge_meet
 from .xc import _is_org, _match_event
 from .ui import shell, CSRF_JS, BRAND_HTML, HEAD_EXTRA
 
@@ -104,8 +104,15 @@ def list_organizers():
             f'<div class="card"><div style="display:flex;justify-content:space-between;'
             f'align-items:center;flex-wrap:wrap;gap:.5rem">'
             f'<h2 style="margin:0">🏁 {escape(o["name"])}</h2>'
+            f'<div style="display:flex;gap:.4rem;align-items:center">'
             f'<a class="btn ghost" href="/events?org={o["id"]}">Events '
-            f'({counts.get(o["id"], 0)}) →</a></div>'
+            f'({counts.get(o["id"], 0)}) →</a>'
+            f'<form class="inline" method="post" action="/organizers/{o["id"]}/delete" '
+            f'onsubmit="return confirm(\'Delete organizer “{escape(o["name"])}” and its '
+            f'{counts.get(o["id"], 0)} event(s), all its race directors, participants, and '
+            f'results? This cannot be undone.\')">'
+            f'<button class="danger" title="Delete organizer">✕ Delete</button></form>'
+            f'</div></div>'
             f'<h3 style="margin:.8rem 0 .3rem">Race directors</h3><ul style="margin:.2rem 0">{dl}</ul>'
             f'<form method="post" action="/organizers/{o["id"]}/directors" class="row" '
             f'style="gap:.5rem;flex-wrap:wrap;margin-top:.4rem">'
@@ -158,6 +165,29 @@ def add_director(oid):
     except Exception:  # duplicate email etc.
         return redirect("/organizers")
     send_setup_email(email, token)
+    return redirect("/organizers")
+
+
+@bp.post("/organizers/<int:oid>/delete")
+@role_required("super_admin")
+def delete_organizer(oid):
+    if not _organizer(oid):
+        abort(404)
+    conn = db.connect()
+    # Cascade every event this organizer owns (participants, races, results, …).
+    mids = [r[0] for r in conn.execute(
+        "SELECT id FROM meets WHERE organizer_id=?", (oid,)).fetchall()]
+    for mid in mids:
+        _purge_meet(conn, mid)
+    # Remove the organizer's race-director logins and their active sessions.
+    dir_ids = [r[0] for r in conn.execute(
+        "SELECT id FROM users WHERE role='race_director' AND organizer_id=?", (oid,)).fetchall()]
+    for uid in dir_ids:
+        conn.execute("DELETE FROM sessions WHERE user_id=?", (uid,))
+    conn.execute("DELETE FROM users WHERE role='race_director' AND organizer_id=?", (oid,))
+    conn.execute("DELETE FROM organizers WHERE id=?", (oid,))
+    conn.commit()
+    conn.close()
     return redirect("/organizers")
 
 
