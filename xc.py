@@ -1020,38 +1020,42 @@ def race_finish(rid):
         # Accidental double-scan at the line: silently discard, don't block the timer.
         conn.close()
         return jsonify(ok=True, duplicate=True)
-    cam_mode = (request.get_json(silent=True) or {}).get("mode")
+    cam_mode = (request.get_json(silent=True) or {}).get("mode")  # noqa: F841 (kept for callers)
     snap = _snap_for_bib(conn, m, bib)
-    # Whole-frame / line camera IS the capture method — it records a new finisher on
-    # each first read (like scan), regardless of the race's own capture_mode. Only the
-    # chute camera and tap/tapselect manual entry fill pre-tapped open slots.
-    if r["capture_mode"] == "scan" or cam_mode in ("frame", "line"):
-        start = _parse(r["start_time"])
-        if not start or r["stop_time"]:
-            conn.close()
-            return jsonify(error="Race not running"), 400
-        elapsed = (_now() - start).total_seconds()
-        seq = (conn.execute("SELECT COALESCE(MAX(seq),0) FROM finishers WHERE race_id=?",
-                            (rid,)).fetchone()[0]) + 1
-        conn.execute(
-            "INSERT INTO finishers (race_id, seq, finish_time, elapsed_seconds, bib, "
-            "snap_name, snap_grade, snap_gender, snap_school, snap_age) VALUES (?,?,?,?,?,?,?,?,?,?)",
-            (rid, seq, _iso(_now()), elapsed, bib, *snap))
-        remaining = 0
-    else:
+    # Tap / tap-select ("tap then scan"): the tap already set each finisher's time and
+    # order, so a read just attaches the bib to the next open (bib-less) slot, keeping the
+    # tapped time. This holds for ANY camera mode (whole-frame, line, or chute) and even
+    # after Stop. Only fall through to record a brand-new finisher when no open slots
+    # remain, so reads are never silently dropped.
+    if r["capture_mode"] != "scan":
         slot = conn.execute("SELECT id FROM finishers WHERE race_id=? AND bib IS NULL "
                             "ORDER BY seq LIMIT 1", (rid,)).fetchone()
-        if not slot:
+        if slot:
+            conn.execute("UPDATE finishers SET bib=?, snap_name=?, snap_grade=?, snap_gender=?, "
+                         "snap_school=?, snap_age=? WHERE id=?", (bib, *snap, slot["id"]))
+            remaining = conn.execute("SELECT COUNT(*) FROM finishers WHERE race_id=? AND bib IS NULL",
+                                     (rid,)).fetchone()[0]
+            warn = _road_unassigned_warn(conn, m, rid, bib)
+            conn.commit()
             conn.close()
-            return jsonify(error="No open slots — tap a finisher first"), 400
-        conn.execute("UPDATE finishers SET bib=?, snap_name=?, snap_grade=?, snap_gender=?, "
-                     "snap_school=?, snap_age=? WHERE id=?", (bib, *snap, slot["id"]))
-        remaining = conn.execute("SELECT COUNT(*) FROM finishers WHERE race_id=? AND bib IS NULL",
-                                 (rid,)).fetchone()[0]
+            return jsonify(ok=True, bib=bib, name=snap[0], school=snap[3], remaining=remaining, warn=warn)
+    # Scan mode, or a tap race whose open slots are all filled: record a new finisher at
+    # the current race time (scan-at-finish). Requires the race to be running.
+    start = _parse(r["start_time"])
+    if not start or r["stop_time"]:
+        conn.close()
+        return jsonify(error="Race not running"), 400
+    elapsed = (_now() - start).total_seconds()
+    seq = (conn.execute("SELECT COALESCE(MAX(seq),0) FROM finishers WHERE race_id=?",
+                        (rid,)).fetchone()[0]) + 1
+    conn.execute(
+        "INSERT INTO finishers (race_id, seq, finish_time, elapsed_seconds, bib, "
+        "snap_name, snap_grade, snap_gender, snap_school, snap_age) VALUES (?,?,?,?,?,?,?,?,?,?)",
+        (rid, seq, _iso(_now()), elapsed, bib, *snap))
     warn = _road_unassigned_warn(conn, m, rid, bib)
     conn.commit()
     conn.close()
-    return jsonify(ok=True, bib=bib, name=snap[0], school=snap[3], remaining=remaining, warn=warn)
+    return jsonify(ok=True, bib=bib, name=snap[0], school=snap[3], remaining=0, warn=warn)
 
 
 @bp.post("/races/<int:rid>/tap")
