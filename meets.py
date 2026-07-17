@@ -312,10 +312,14 @@ def create_meet():
 
 
 def can_delete_meet(m):
-    """Deleting a meet is Super Admin / District Admin (own district) only."""
+    """Super Admin / District Admin (own district) for school meets; the owning
+    race director (or super) for community events."""
     p = g.principal
     if not p or p.meet_scope:
         return False
+    org = _meet_organizer_id(m)
+    if org is not None:
+        return p.is_super or getattr(p, "organizer_id", None) == org
     return p.is_admin and (p.is_super or p.district_id == m["district_id"])
 
 
@@ -325,6 +329,7 @@ def delete_meet(mid):
     m = load_meet(mid)
     if not can_delete_meet(m):
         abort(403)
+    org = _meet_organizer_id(m)
     conn = db.connect()
     # Track data: results -> entries -> meet_events (+ live tap-timer state, which has
     # no FK — left behind it could attach to a future event that reuses the rowid)
@@ -341,12 +346,13 @@ def delete_meet(mid):
     conn.execute("DELETE FROM finishers WHERE race_id IN (SELECT id FROM races WHERE meet_id=?)", (mid,))
     conn.execute("DELETE FROM race_entries WHERE meet_id=?", (mid,))
     conn.execute("DELETE FROM participants WHERE meet_id=?", (mid,))
+    conn.execute("DELETE FROM meet_bibs WHERE meet_id=?", (mid,))
     conn.execute("DELETE FROM races WHERE meet_id=?", (mid,))
     conn.execute("DELETE FROM meet_schools WHERE meet_id=?", (mid,))
     conn.execute("DELETE FROM meets WHERE id=?", (mid,))
     conn.commit()
     conn.close()
-    return redirect("/meets")
+    return redirect(f"/events?org={org}" if org is not None else "/meets")
 
 
 @bp.post("/meets/<int:mid>/renumber-bibs")

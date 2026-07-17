@@ -188,8 +188,14 @@ def list_events():
 
     trs = "".join(
         f'<tr><td><b><a href="/meets/{m["id"]}">{escape(m["name"])}</a></b></td>'
-        f'<td>{escape(m["date"] or "")}</td></tr>' for m in rows)
-    table = (f'<div class="card"><table><tr><th>Event</th><th>Date</th></tr>{trs}</table></div>'
+        f'<td>{escape(m["date"] or "")}</td>'
+        f'<td style="text-align:right"><form class="inline" method="post" '
+        f'action="/meets/{m["id"]}/delete" onsubmit="return confirm('
+        f'\'Delete “{escape(m["name"])}” and ALL its participants, bibs, and results? '
+        f'This cannot be undone.\')">'
+        f'<button class="danger" style="padding:.2rem .5rem;line-height:1" title="Delete event">✕</button>'
+        f'</form></td></tr>' for m in rows)
+    table = (f'<div class="card"><table><tr><th>Event</th><th>Date</th><th></th></tr>{trs}</table></div>'
              if rows else '<div class="card muted">No events yet — create one below.</div>')
     org_field = f'<input type="hidden" name="org" value="{oid}">' if p.is_super else ""
     body = (
