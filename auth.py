@@ -86,6 +86,7 @@ class Principal:
         self.user = user
         self.session_token = session_token
         self.meet_scope = meet_scope        # meet_id for QR sessions, else None
+        self.owns_meet = None               # meet_id for self-serve event owners (setup rights)
         if user is not None:
             self.id = user["id"]
             self.email = user["email"]
@@ -233,6 +234,18 @@ def load_principal():
         # Meet-scoped, no-login session — valid anytime, only for this one meet.
         g.principal = Principal(session_token=tok, meet_scope=s["meet_id"],
                                 role="timer", district_id=meet["district_id"])
+        return
+    if s["kind"] == "event_owner":
+        # Self-serve fun-run creator: a real user, but locked to their ONE event
+        # (view + record via meet_scope, and setup via owns_meet). No idle timeout.
+        u = conn.execute("SELECT * FROM users WHERE id=?", (s["user_id"],)).fetchone()
+        meet = conn.execute("SELECT id FROM meets WHERE id=?", (s["meet_id"],)).fetchone()
+        conn.close()
+        if not u or not meet:
+            return
+        p = Principal(user=u, session_token=tok, meet_scope=s["meet_id"])
+        p.owns_meet = s["meet_id"]
+        g.principal = p
         return
     # Idle timeout for logged-in users (meet-day timer sessions are exempt above).
     now = _now()

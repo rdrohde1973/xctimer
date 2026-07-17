@@ -25,7 +25,7 @@ from .phone import bp as phone_bp
 from .waivers import bp as waivers_bp
 from .road import bp as road_bp
 
-APP_VERSION = "1.18.0-road-venmo"
+APP_VERSION = "1.19.0-selfserve-funrun"
 
 LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width, initial-scale=1">
@@ -257,6 +257,7 @@ LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
       <li><span class="ck">✓</span> Robot-vision camera timing, phone timing, or a no-login QR for helpers</li>
       <li><span class="ck">✓</span> Live results the whole crowd follows as each runner crosses the line</li>
     </ul>
+    <a class="btn" href="/host" style="margin-top:1.1rem">🏁 Set up your own fun run — $50</a>
   </div>
   <div>
     <div class="frcard">

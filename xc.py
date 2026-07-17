@@ -144,7 +144,8 @@ def setup_section(m, setup):
         'document.body.appendChild(f);f.submit();}</script>')
 
     if is_road:
-        return _road_setup_section(m, setup, races, counts, _json, rename_js)
+        from .road import host_banner
+        return host_banner(m) + _road_setup_section(m, setup, races, counts, _json, rename_js)
 
     # ---- XC / track: classic heats table ----
     rows = []

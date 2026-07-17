@@ -88,8 +88,12 @@ def can_view_meet(m):
 
 def can_setup_meet(m):
     p = g.principal
-    if not p or p.meet_scope:
+    if not p:
         return False
+    if getattr(p, "owns_meet", None) is not None:
+        return p.owns_meet == m["id"]      # self-serve event owner: only their own event
+    if p.meet_scope:
+        return False                        # QR kiosk timer: record only, never setup
     if p.is_super:
         return True
     org = _meet_organizer_id(m)

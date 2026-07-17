@@ -9,15 +9,18 @@ import json
 import os
 import re
 import secrets
+from datetime import timedelta
 
 from markupsafe import escape
-from flask import Blueprint, request, redirect, g, abort, Response
+from flask import Blueprint, request, redirect, g, abort, Response, make_response
 
 from . import db
 from .auth import login_required, role_required, create_user, send_setup_email
 from .meets import load_meet, can_view_meet, can_setup_meet, _purge_meet
 from .xc import _is_org, _match_event
 from .ui import shell, CSRF_JS, BRAND_HTML, HEAD_EXTRA
+
+HOST_FEE_CENTS = int(os.environ.get("XC_HOST_FEE_CENTS", "5000"))   # self-serve event fee ($50)
 
 bp = Blueprint("road", __name__)
 
@@ -196,6 +199,8 @@ def delete_organizer(oid):
 @role_required("super_admin", "race_director")
 def list_events():
     p = g.principal
+    if getattr(p, "owns_meet", None) is not None:   # self-serve owner: only their one event
+        return redirect(f"/meets/{p.owns_meet}")
     oid = _resolve_org()
     conn = db.connect()
     # Super with no organizer chosen: show a picker.
@@ -244,6 +249,8 @@ def list_events():
 @bp.post("/events")
 @role_required("super_admin", "race_director")
 def create_event():
+    if getattr(g.principal, "owns_meet", None) is not None:   # owners get exactly one event
+        abort(403)
     oid = _resolve_org()
     if oid is None or not _organizer(oid):
         abort(400)
@@ -610,9 +617,15 @@ def event_logo(mid):
 @bp.post("/meets/<int:mid>/event-settings")
 @login_required
 def event_settings(mid):
-    _event_or_403(mid, can_setup_meet)
+    m = _event_or_403(mid, can_setup_meet)
     s = _load_settings(mid)
-    s["reg_open"] = bool(request.form.get("reg_open"))
+    cwo = db.connect()
+    web = _web_org_id(cwo)
+    cwo.commit()
+    cwo.close()
+    # Self-serve web events can't open registration until the $50 is paid (pay-to-go-live).
+    unpaid_web = (m["organizer_id"] == web) and not s.get("host_paid")
+    s["reg_open"] = bool(request.form.get("reg_open")) and not unpaid_web
     s["reg_text"] = (request.form.get("reg_text") or "").strip()
     fee = (request.form.get("fee") or "").strip()
     try:
@@ -880,3 +893,236 @@ def participant_tags(mid):
     return Response(data, mimetype="application/pdf",
                     headers={"Content-Disposition": f'inline; filename="{fname}-camera-tags.pdf"',
                              "Cache-Control": "no-store, max-age=0"})
+
+
+# ============================ self-serve "host your own fun run" ============================
+# Strangers create a SINGLE community event under one shared "XCTimer Web" organizer, get a
+# magic link scoped to just that event, pay $50 to go live (Venmo now; Square later), and the
+# event auto-deletes 30 days after its date (see reap_web_events + the xctimer-reap timer).
+
+def _web_org_id(conn):
+    """The shared 'XCTimer Web' organizer for self-serve events (lazily created)."""
+    row = conn.execute("SELECT id FROM organizers WHERE slug='xctimer-web'").fetchone()
+    return row["id"] if row else conn.execute(
+        "INSERT INTO organizers (name, slug) VALUES ('XCTimer Web','xctimer-web')").lastrowid
+
+
+def host_paid(m):
+    try:
+        return bool(json.loads(m["settings_json"] or "{}").get("host_paid"))
+    except (ValueError, TypeError):
+        return False
+
+
+def _owner_uid(row):
+    try:
+        return json.loads(row["settings_json"] or "{}").get("owner_user_id")
+    except (ValueError, TypeError):
+        return None
+
+
+def _host_page(title, inner):
+    return (f"""<!doctype html><html lang=en><head><meta charset=utf-8>
+<meta name=viewport content="width=device-width, initial-scale=1">
+<title>{escape(title)} · XCTimer</title>{HEAD_EXTRA}<script>{CSRF_JS}</script>
+<style>body{{font:16px/1.6 system-ui,-apple-system,Segoe UI,sans-serif;background:#f5f8fc;color:#20303f;margin:0}}
+.wrap{{max-width:560px;margin:0 auto;padding:1.4rem 1.1rem 3rem}}
+.card{{background:#fff;border:1px solid #e3e9f1;border-radius:12px;padding:1.1rem;margin:0 0 1rem}}
+label{{display:block;font-weight:600;margin:.6rem 0 .2rem}}
+input,button{{font:inherit}} input{{width:100%;padding:.55rem;border:1px solid #cdd7e2;border-radius:8px}}
+.btn{{background:#ea6a2d;color:#fff;border:0;border-radius:9px;padding:.7rem 1.3rem;font-weight:700;cursor:pointer;text-decoration:none;display:inline-block}}
+h1{{color:#164271;margin-top:0}} a{{color:#164271}}</style></head><body><div class="wrap">
+<p><a href="/">← XCTimer</a></p>{inner}</div></body></html>""")
+
+
+@bp.get("/host")
+def host_start():
+    fee = _fee_str(HOST_FEE_CENTS)
+    inner = (f"""<h1>Run your own fun run</h1>
+<p>Set up a community 5K / 10K / fun run yourself — a public sign-up page, printed bibs, phone or
+camera timing, and live results the whole crowd can follow. <b>{fee} per event</b>, paid when you
+open registration.</p>
+<div class="card"><form method="post" action="/host">
+<label>Event name</label><input name="name" required placeholder="e.g. Maple Grove Community 5K">
+<label>Event date</label><input name="date" type="date" required>
+<label>Your name</label><input name="who" required>
+<label>Your email</label><input name="email" type="email" required>
+<p style="font-size:.85rem;color:#6a7c8e">We'll email you a private link to build and manage your event.</p>
+<button class="btn" type="submit">Create my event →</button>
+</form></div>
+<div class="card"><b>Already started one?</b>
+<form method="post" action="/host/resend" style="display:flex;gap:.5rem;margin-top:.4rem">
+<input name="email" type="email" placeholder="your email" required>
+<button class="btn" type="submit" style="white-space:nowrap;background:#3d6fa5">Email my link</button></form></div>""")
+    return _host_page("Run your own fun run", inner)
+
+
+def _send_host_link(email, token):
+    from .auth import send_email, _public_url
+    link = f"{_public_url()}/host/go/{token}"
+    send_email(email, "Your XCTimer event link",
+               f"<p>Here's your private link to build and manage your XCTimer event:</p>"
+               f'<p><a href="{link}">{link}</a></p>'
+               f"<p>Keep it private — anyone with the link can edit your event.</p>")
+    return link
+
+
+def _email_existing_host(email):
+    """Regenerate + email the magic link for an existing host. Returns True if one existed."""
+    from .auth import _iso, _now
+    conn = db.connect()
+    web = _web_org_id(conn)
+    u = conn.execute("SELECT id FROM users WHERE email=? AND organizer_id=?", (email, web)).fetchone()
+    if not u:
+        conn.close()
+        return False
+    token = secrets.token_urlsafe(32)
+    conn.execute("UPDATE users SET setup_token=?, token_expires=? WHERE id=?",
+                 (token, _iso(_now() + timedelta(days=60)), u["id"]))
+    conn.commit()
+    conn.close()
+    _send_host_link(email, token)
+    return True
+
+
+@bp.post("/host")
+def host_create():
+    from .auth import _iso, _now
+    name = (request.form.get("name") or "").strip()
+    date = (request.form.get("date") or "").strip() or None
+    who = (request.form.get("who") or "").strip()
+    email = (request.form.get("email") or "").strip().lower()
+    if not name or "@" not in email:
+        return _host_page("Run your own fun run",
+                          '<div class="card">Please enter an event name and a valid email. '
+                          '<a href="/host">← Back</a></div>'), 400
+    conn = db.connect()
+    web = _web_org_id(conn)
+    if conn.execute("SELECT 1 FROM users WHERE email=? AND organizer_id=?", (email, web)).fetchone():
+        conn.close()
+        _email_existing_host(email)   # already have an event -> just resend the link
+        return _host_page("Check your email",
+                          f'<div class="card"><h1>Check your email</h1><p>You already have an event under '
+                          f'<b>{escape(email)}</b> — we re-sent your private link.</p></div>')
+    token = secrets.token_urlsafe(32)
+    uid = conn.execute(
+        "INSERT INTO users (organizer_id, email, name, role, setup_token, token_expires) "
+        "VALUES (?,?,?,?,?,?)",
+        (web, email, who or name, "race_director", token, _iso(_now() + timedelta(days=60)))).lastrowid
+    mid = conn.execute(
+        "INSERT INTO meets (organizer_id, sport, name, date, public_token, team_scoring, settings_json) "
+        "VALUES (?,?,?,?,?,0,?)",
+        (web, "road", name, date, secrets.token_urlsafe(8),
+         json.dumps({"host_paid": False, "owner_user_id": uid, "owner_email": email}))).lastrowid
+    conn.execute("INSERT INTO races (meet_id, name, capture_mode) VALUES (?,?,?)", (mid, "5K", "scan"))
+    conn.commit()
+    conn.close()
+    _send_host_link(email, token)
+    return _host_page("Check your email",
+                      f'<div class="card"><h1>✅ Check your email</h1><p>We emailed <b>{escape(email)}</b> a '
+                      f'private link to build and manage <b>{escape(name)}</b>. Tap it to get started.</p></div>')
+
+
+@bp.post("/host/resend")
+def host_resend():
+    email = (request.form.get("email") or "").strip().lower()
+    _email_existing_host(email)   # silent regardless (no account enumeration)
+    return _host_page("Check your email",
+                      '<div class="card"><h1>Check your email</h1><p>If an event exists for that address, '
+                      'we just emailed its private link.</p></div>')
+
+
+@bp.get("/host/go/<token>")
+def host_go(token):
+    from .auth import create_session, SESSION_COOKIE, _now, _parse
+    conn = db.connect()
+    web = _web_org_id(conn)
+    u = conn.execute("SELECT * FROM users WHERE setup_token=? AND organizer_id=?", (token, web)).fetchone()
+    if not u:
+        conn.close()
+        return _host_page("Link not found",
+                          '<div class="card"><h1>Link not found</h1><p>That link is invalid. '
+                          '<a href="/host">Start over or email a fresh link</a>.</p></div>'), 404
+    exp = _parse(u["token_expires"]) if u["token_expires"] else None
+    if exp and exp < _now():
+        conn.close()
+        return _host_page("Link expired",
+                          '<div class="card"><h1>Link expired</h1>'
+                          '<p><a href="/host">Email a fresh link</a>.</p></div>'), 410
+    rows = conn.execute("SELECT id, settings_json FROM meets WHERE organizer_id=?", (web,)).fetchall()
+    conn.close()
+    m = next((r for r in rows if _owner_uid(r) == u["id"]), None)
+    if not m:
+        return _host_page("No event", '<div class="card">No event found for this link.</div>'), 404
+    tok = create_session(u["id"], kind="event_owner", meet_id=m["id"], ttl_days=60)
+    resp = make_response(redirect(f"/meets/{m['id']}"))
+    resp.set_cookie(SESSION_COOKIE, tok, httponly=True, samesite="Lax",
+                    secure=bool(os.environ.get("XC_SECURE_COOKIES")), max_age=60 * 24 * 3600)
+    return resp
+
+
+@bp.post("/meets/<int:mid>/host-publish")
+@login_required
+def host_publish(mid):
+    m = load_meet(mid)
+    if not can_setup_meet(m):
+        abort(403)
+    s = _load_settings(mid)
+    s["host_paid"] = True     # honor-system Venmo for now; Square will verify later
+    _save_settings(mid, s)
+    return redirect(f"/meets/{mid}")
+
+
+def host_banner(m):
+    """Pay-to-go-live banner shown on a self-serve web event until the $50 is paid."""
+    if not _is_org(m):
+        return ""
+    conn = db.connect()
+    web = _web_org_id(conn)
+    conn.close()
+    if m["organizer_id"] != web:
+        return ""
+    fee = _fee_str(HOST_FEE_CENTS)
+    if host_paid(m):
+        return ('<div class="card" style="border-color:#2e8b57"><b style="color:#2e8b57">✅ '
+                'Published.</b> <span class="muted">Registration can be opened in the settings below.</span></div>')
+    handle = os.environ.get("XC_HOST_VENMO", "").lstrip("@")
+    pay = ""
+    if handle:
+        vurl = _venmo_url(handle, HOST_FEE_CENTS, f"XCTimer event: {m['name']}")
+        pay = (f'<a class="btn" href="{escape(vurl)}" target="_blank" '
+               f'style="background:#3d95ce;color:#fff;padding:.55rem 1rem;border-radius:9px;'
+               f'text-decoration:none;font-weight:700">Pay {fee} with Venmo</a> ')
+    else:
+        pay = '<span class="muted">Venmo isn\'t configured yet — contact XCTimer.</span> '
+    return (f'<div class="card" style="border:2px solid #ea6a2d">'
+            f'<h2 style="margin-top:0">🚦 Go live — {fee} per event</h2>'
+            f'<p style="margin:.2rem 0 .6rem">Build your event below. When you\'re ready to open '
+            f'registration and time the race, pay the {fee} event fee.</p>{pay}'
+            f'<form class="inline" method="post" action="/meets/{m["id"]}/host-publish" '
+            f'style="display:inline" onsubmit="return confirm('
+            f'\'Confirm you have paid the {fee} fee. This publishes your event and lets you open registration.\')">'
+            f'<button>I\'ve paid — publish my event</button></form></div>')
+
+
+def reap_web_events(conn, today_iso):
+    """Delete self-serve web events (and their owner logins) 30+ days after the event date.
+    `today_iso` = 'YYYY-MM-DD' passed in (no wall-clock in callers that need determinism)."""
+    web = conn.execute("SELECT id FROM organizers WHERE slug='xctimer-web'").fetchone()
+    if not web:
+        return 0
+    from datetime import date as _date, timedelta as _td
+    cutoff = (_date.fromisoformat(today_iso) - _td(days=30)).isoformat()
+    rows = conn.execute(
+        "SELECT id, settings_json FROM meets WHERE organizer_id=? AND date IS NOT NULL AND date < ?",
+        (web["id"], cutoff)).fetchall()
+    n = 0
+    for r in rows:
+        owner = _owner_uid(r)
+        _purge_meet(conn, r["id"])
+        if owner:
+            conn.execute("DELETE FROM sessions WHERE user_id=?", (owner,))
+            conn.execute("DELETE FROM users WHERE id=?", (owner,))
+        n += 1
+    conn.commit()
+    return n
