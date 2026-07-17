@@ -25,7 +25,7 @@ from .phone import bp as phone_bp
 from .waivers import bp as waivers_bp
 from .road import bp as road_bp
 
-APP_VERSION = "1.14.1-robot-vision-copy"
+APP_VERSION = "1.15.0-results-align"
 
 LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width, initial-scale=1">

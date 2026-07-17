@@ -1681,10 +1681,20 @@ def _pub_rows(individuals, mode, show_grade):
     return "".join(out)
 
 
-def _pub_table(label, individuals, mode, show_grade):
+def _pub_table(label, individuals, mode, show_grade, maxname=0, maxschool=0):
     head = ('<tr><th>Pl</th><th>Name</th><th>School</th>'
             + ('<th>Gr</th>' if show_grade else '') + '<th>Time</th></tr>')
-    return (f'<div class="sec"><h2>{escape(label)}</h2><table><thead>{head}</thead>'
+    # Fixed layout + a shared colgroup (widths from the meet-wide longest name/school) so
+    # every section's columns line up, not just within one section.
+    cols = ['<col style="width:2.6rem">',                                    # Pl
+            f'<col style="width:{maxname}ch">' if maxname else '<col>',      # Name
+            f'<col style="width:{maxschool}ch">' if maxschool else '<col>']  # School
+    if show_grade:
+        cols.append('<col style="width:2.8rem">')                           # Gr
+    cols.append('<col style="width:6.8rem">')                               # Time
+    colgroup = '<colgroup>' + "".join(cols) + '</colgroup>'
+    return (f'<div class="sec"><h2>{escape(label)}</h2>'
+            f'<table style="table-layout:fixed">{colgroup}<thead>{head}</thead>'
             f'<tbody>{_pub_rows(individuals, mode, show_grade)}</tbody></table></div>')
 
 
@@ -1807,6 +1817,10 @@ def _live_races(mid):
 def _public_xc(m, mode):
     mid = m["id"]
     results = build_results(mid)
+    # Meet-wide longest name/school → one column width used by every section (so tables align).
+    allfins = _meet_finishers(mid)
+    maxname = max([len(f["snap_name"] or "") for f in allfins] + [4]) + 2
+    maxschool = max([len(f["snap_school"] or "") for f in allfins] + [6]) + 1
     conn = db.connect()
     races = conn.execute("SELECT start_time, stop_time FROM races WHERE meet_id=?", (mid,)).fetchall()
     conn.close()
@@ -1818,11 +1832,12 @@ def _public_xc(m, mode):
         status = ""
 
     overall = "".join(
-        _pub_table(f"{lbl} Overall", results[key]["individuals"], mode, True)
+        _pub_table(f"{lbl} Overall", results[key]["individuals"], mode, True, maxname, maxschool)
         for key, lbl in (("F", "Girls"), ("M", "Boys"), ("U", "Other")) if results.get(key)
     ) or '<div class="sec"><h2>No results yet</h2></div>'
 
-    grade = "".join(_pub_table(lbl, rows, mode, False) for lbl, rows in _grade_gender_groups(mid)) \
+    grade = "".join(_pub_table(lbl, rows, mode, False, maxname, maxschool)
+                    for lbl, rows in _grade_gender_groups(mid)) \
         or '<div class="sec"><h2>No results yet</h2></div>'
 
     team_parts = []
@@ -1969,7 +1984,7 @@ def _road_results_inner(m, events, name_mode=None):
     return "".join(html)
 
 
-def _pub_road_table(label, individuals, mode):
+def _pub_road_table(label, individuals, mode, maxname=0):
     rows = []
     for i in individuals:
         nm = i["name"]
@@ -1984,7 +1999,12 @@ def _pub_road_table(label, individuals, mode):
             f'<td>{i["age"] if i["age"] is not None else ""}</td>'
             f'<td class="tm">{fmt_hms(i["time"])}</td></tr>')
     head = '<tr><th>Pl</th><th>Name</th><th>Age</th><th>Time</th></tr>'
-    return (f'<div class="sec"><h2>{escape(label)}</h2><table><thead>{head}</thead>'
+    # Shared column widths (meet-wide longest name) so every section lines up.
+    colgroup = ('<colgroup><col style="width:2.6rem">'
+                + (f'<col style="width:{maxname}ch">' if maxname else '<col>')
+                + '<col style="width:3rem"><col style="width:6.8rem"></colgroup>')
+    return (f'<div class="sec"><h2>{escape(label)}</h2>'
+            f'<table style="table-layout:fixed">{colgroup}<thead>{head}</thead>'
             f'<tbody>{"".join(rows)}</tbody></table></div>')
 
 
@@ -2000,9 +2020,11 @@ def _public_road(m, mode):
         status = "Live"
     else:
         status = ""
+    maxname = max([len(i["name"] or "") for _, groups in events for _, indiv in groups
+                   for i in indiv] + [4]) + 2
     ev_sections, ev_names = [], []
     for idx, (event_name, groups) in enumerate(events):
-        tables = "".join(_pub_road_table(lbl, indiv, mode) for lbl, indiv in groups if indiv)
+        tables = "".join(_pub_road_table(lbl, indiv, mode, maxname) for lbl, indiv in groups if indiv)
         if not tables:
             continue
         ev_names.append((idx, event_name))
