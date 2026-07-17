@@ -2220,7 +2220,7 @@ const STATEURL = MEET ? '/meets/'+RID+'/camera-state' : '/races/'+RID+'/state';
 // Bigger detection canvas on desktops (more pixels per tag); phones stay lean.
 const DW=/Mobi|iPhone|Android.*Mobile/.test(navigator.userAgent)?640:960;
 let SEEN=new Set(), DET=null, VID=null, CAN=null, CTX=null, RUNNING=false, LOGN=0, CAPMODE='';
-let MODE=localStorage.getItem('camM'+RID)||'line',
+let MODE=localStorage.getItem('camM'+RID)||'frame',   // default to Whole frame (most forgiving)
     ORIENT=localStorage.getItem('camO'+RID)||'h',   // 'h' horizontal line / 'v' vertical line
     LINEP=parseFloat(localStorage.getItem('camP'+RID)||'0.55'),
     DIR=parseInt(localStorage.getItem('camD'+RID)||'1',10),
