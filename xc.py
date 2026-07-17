@@ -355,24 +355,8 @@ def _road_setup_section(m, setup, races, counts, _json, rename_js):
             '<button type="submit" style="margin-top:.4rem">Save</button></form>'
             f'<div style="margin-top:.8rem"><b>Public registration link</b><br>{link_html}</div>'
             '</div>')
-        # Bibs / print / camera — separate from registration.
-        pc = db.connect()
-        nparts = pc.execute("SELECT COUNT(*) FROM participants WHERE meet_id=?", (m["id"],)).fetchone()[0]
-        pc.close()
-        pnote = (f'<span class="muted">{nparts} participant(s) registered.</span>' if nparts else
-                 '<span class="muted">No participants yet — import or register runners on the '
-                 f'<a href="/meets/{m["id"]}/participants">Participants</a> tab, then these print with bibs.</span>')
-        event_card += (
-            '<div class="card"><h2>Bibs, print &amp; camera</h2>'
-            f'<p style="margin-top:0">{pnote}</p>'
-            f'<div style="margin-top:.4rem"><b>Bibs to print</b> '
-            f'<a class="btn" href="/meets/{m["id"]}/participants/tags.pdf" target="_blank">🏁 Bib tags (camera-readable)</a> '
-            '<span class="muted">big ArUco tag + number + name, one per runner — '
-            '<b>print on matte paper</b> for reliable camera reads.</span></div>'
-            f'<div style="margin-top:.8rem"><b>Finish-line camera</b> '
-            f'<a class="btn" href="/meets/{m["id"]}/camera">📷 Whole-event camera</a> '
-            f'<span class="muted">— one camera for all races; each runner is routed to their own race.</span></div>'
-            '</div>')
+        # (Bibs / print / camera intentionally omitted here — they live on the
+        # Participants tab (print) and Meet-day tab (time + camera).)
     return event_card + default_card + events_card
 
 
