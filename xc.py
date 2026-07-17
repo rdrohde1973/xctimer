@@ -2286,7 +2286,6 @@ _CAMERA_PAGE = """
       · <span id="ccount">0</span> finishers</div>
     <div style="display:flex;gap:.4rem;flex-wrap:wrap">
       <button id="mLine" onclick="setMode('line')">🏁 Finish line</button>
-      <button id="mFrame" class="ghost" onclick="setMode('frame')">Whole frame</button>
       <button id="mChute" class="ghost" onclick="setMode('chute')">🚶 Chute scan</button>
       <button id="orbtn" class="ghost" onclick="flipOrient()">⇔ Horizontal</button>
       <button id="dirbtn" class="ghost" onclick="flipDir()">Cross ↓</button>
@@ -2322,7 +2321,11 @@ const STATEURL = MEET ? '/meets/'+RID+'/camera-state' : '/races/'+RID+'/state';
 // Bigger detection canvas on desktops (more pixels per tag); phones stay lean.
 const DW=/Mobi|iPhone|Android.*Mobile/.test(navigator.userAgent)?640:960;
 let SEEN=new Set(), DET=null, VID=null, CAN=null, CTX=null, RUNNING=false, LOGN=0, CAPMODE='';
-let MODE=localStorage.getItem('camM'+RID)||'frame',   // default to Whole frame (most forgiving)
+// Whole frame removed: default to Chute scan for tap-then-scan races, Finish line otherwise.
+const RACE_CAP='__CAPMODE__';   // this race's capture_mode ('tap'/'tapselect'/'scan'; '' = whole-event)
+const DEF_MODE=(RACE_CAP==='tap'||RACE_CAP==='tapselect')?'chute':'line';
+let _sm=localStorage.getItem('camM'+RID); if(_sm==='frame')_sm=null;   // drop stale 'frame' preference
+let MODE=_sm||DEF_MODE,
     ORIENT=localStorage.getItem('camO'+RID)||'h',   // 'h' horizontal line / 'v' vertical line
     LINEP=parseFloat(localStorage.getItem('camP'+RID)||'0.55'),
     DIR=parseInt(localStorage.getItem('camD'+RID)||'1',10),
@@ -2335,7 +2338,6 @@ function flipOrient(){ ORIENT=ORIENT==='h'?'v':'h'; DIR=1; saveCfg(); updUi(); }
 function dirArrow(){ return ORIENT==='v' ? (DIR===1?'→':'←') : (DIR===1?'↓':'↑'); }
 function updUi(){
   document.getElementById('mLine').className = MODE==='line'?'':'ghost';
-  document.getElementById('mFrame').className = MODE==='frame'?'':'ghost';
   document.getElementById('mChute').className = MODE==='chute'?'':'ghost';
   document.getElementById('mChute').style.display = MEET?'none':'';   // chute fill is per-race
   document.getElementById('dirbtn').style.display = MODE==='line'?'':'none';
@@ -2344,8 +2346,7 @@ function updUi(){
   document.getElementById('dirbtn').textContent = 'Cross '+dirArrow();
   var hint;
   if(MODE==='line') hint='Camera must be STILL (tripod). Drag the orange line onto the painted finish line — a runner records the moment their tag crosses it in the arrow ('+dirArrow()+') direction. Use ⇔/⇕ to match how runners cross the frame.';
-  else if(MODE==='chute') hint='CHUTE SCAN: a helper taps each runner at the LINE (records time + order); this camera reads tags as they walk the single-file chute and fills each open place in order. Race must be in “Tap then scan”.';
-  else hint='Records each tag the moment it is seen anywhere in frame — zoom tight on the last few meters before the line. OK handheld.';
+  else hint='CHUTE SCAN: a helper taps each runner at the LINE (records time + order); this camera reads each tag on sight and fills the next open place in order — works during the race AND after Stop. Handheld OK. Race must be in “Tap then scan”.';
   document.getElementById('chint').textContent = hint;
 }
 function toCanvas(e){ const r=CAN.getBoundingClientRect();
@@ -2498,7 +2499,7 @@ function loop(){
       const cx=(m.corners[0].x+m.corners[1].x+m.corners[2].x+m.corners[3].x)/4;
       const cy=(m.corners[0].y+m.corners[1].y+m.corners[2].y+m.corners[3].y)/4;
       const c=vert?cx:cy;                  // position on the crossing axis
-      if(MODE==='frame'||MODE==='chute'){ hit(m.id); }
+      if(MODE==='chute'){ hit(m.id); }
       else{
         const tr=TRACKS[m.id];
         if(tr && now-tr.t<1500 &&
@@ -2604,6 +2605,7 @@ def race_camera(rid):
             .replace("__MID__", str(m["id"]))
             .replace("__BACK__", back)
             .replace("__BACKLBL__", backlbl)
+            .replace("__CAPMODE__", r["capture_mode"] or "")
             .replace("__RNAME__", str(escape(r["name"]))))
     return shell(g.principal, body, active="meets", bare=phone)
 
@@ -2626,6 +2628,7 @@ def meet_camera(mid):
             .replace("__MID__", str(mid))
             .replace("__BACK__", back)
             .replace("__BACKLBL__", backlbl)
+            .replace("__CAPMODE__", "")
             .replace("__RNAME__", "All races"))
     return shell(g.principal, body, active="events", bare=phone)
 
