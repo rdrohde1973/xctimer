@@ -703,8 +703,8 @@ def xc_meet_day(mid):
     else:
         print_bar = (
             f'<div class="card"><b>Print:</b> '
-            f'<a class="btn ghost" href="/meets/{mid}/stickers.pdf?template=5160" target="_blank">Stickers 5160</a> '
-            f'<a class="btn ghost" href="/meets/{mid}/stickers.pdf?template=5163" target="_blank">Stickers 5163</a> '
+            f'<a class="btn ghost" href="/meets/{mid}/stickers.pdf" target="_blank">Stickers — QR</a> '
+            f'<a class="btn ghost" href="/meets/{mid}/stickers.pdf?code=aruco" target="_blank">Stickers — ArUco</a> '
             f'<a class="btn ghost" href="/meets/{mid}/biblist.pdf" target="_blank">Bib lists</a></div>')
     body = (f'<p class="muted"><a href="/meets">← Meets</a></p><h1>{escape(m["name"])}</h1>'
             f'{_xc_tabs(mid, "meetday", road=(m["sport"]=="road"), organizer=_is_org(m))}{tbl}{print_bar}')

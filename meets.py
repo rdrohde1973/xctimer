@@ -452,13 +452,14 @@ def meet_detail(mid):
 
     hs = (f' <a class="btn ghost" href="/meets/{mid}/heatsheets.pdf">Heat sheets</a>'
           if not is_xc else "")
-    # Track stickers carry each athlete's events, which don't fit Avery 5160 — 5163 only.
+    # All meets print Avery 5163 (2×4). XC offers a QR or camera-readable ArUco code;
+    # track labels carry event text and stay QR (no ArUco layout for them).
     if is_xc:
         sticker_btns = (
-            f'<a class="btn ghost" href="/meets/{mid}/stickers.pdf?template=5160">Stickers 5160</a> '
-            f'<a class="btn ghost" href="/meets/{mid}/stickers.pdf?template=5163">Stickers 5163</a> ')
+            f'<a class="btn ghost" href="/meets/{mid}/stickers.pdf">Stickers — QR</a> '
+            f'<a class="btn ghost" href="/meets/{mid}/stickers.pdf?code=aruco">Stickers — ArUco</a> ')
     else:
-        sticker_btns = f'<a class="btn ghost" href="/meets/{mid}/stickers.pdf?template=5163">Stickers (5163)</a> '
+        sticker_btns = f'<a class="btn ghost" href="/meets/{mid}/stickers.pdf">Stickers (5163)</a> '
     if is_org:
         print_bar = ""
     else:
@@ -702,7 +703,7 @@ def _attending_groups(mid):
     return groups
 
 
-def _sticker_groups(mid, with_events, fill_to=0, only_sid=None):
+def _sticker_groups(mid, with_events, fill_to=0, only_sid=None, code=None):
     """[(school_name, logo_path, [athlete dicts])]. For track, attach each
     athlete's events (name + heat/lane) and include only entered athletes.
     fill_to = labels per sheet: pad each school's last sheet with blank stickers
@@ -726,6 +727,8 @@ def _sticker_groups(mid, with_events, fill_to=0, only_sid=None):
         for a in ath:
             d = dict(a)
             d["bib"] = bibmap.get(a["id"])
+            if code:
+                d["code"] = code
             if with_events:
                 evs = conn.execute(
                     "SELECT e.name AS ename, en.heat, en.lane FROM entries en "
@@ -758,7 +761,10 @@ def _sticker_groups(mid, with_events, fill_to=0, only_sid=None):
         if fill_to:
             need = (fill_to - len(arr) % fill_to) % fill_to
             for _ in range(need):    # spare blank stickers on the next free meet numbers
-                arr.append({"bib": nextspare, "name": "", "grade": None, "gender": None})
+                filler = {"bib": nextspare, "name": "", "grade": None, "gender": None}
+                if code:
+                    filler["code"] = code
+                arr.append(filler)
                 nextspare += 1
         groups.append((s["name"], s["logo_path"], arr))
     conn.close()
@@ -771,12 +777,12 @@ def meet_stickers(mid):
     m = load_meet(mid)
     if not can_view_meet(m):
         abort(403)
-    template = request.args.get("template", "5160")
-    if m["sport"] == "track":     # track stickers carry events — 5160 is too small
-        template = "5163"
+    template = "5163"             # the only sticker sheet we print now
+    # ArUco codes are XC-only (track labels carry event text, no ArUco layout).
+    code = "aruco" if request.args.get("code") == "aruco" and m["sport"] != "track" else None
     groups = _sticker_groups(mid, with_events=(m["sport"] == "track"),
-                             fill_to=pdfs.per_page(template))
-    # QR encodes just the bib number (no URL).
+                             fill_to=pdfs.per_page(template), code=code)
+    # QR/ArUco encodes just the bib number (no URL).
     pdf = pdfs.meet_stickers_pdf(groups, template=template, qr_prefix="")
     return Response(pdf, mimetype="application/pdf",
                     headers={"Content-Disposition": 'inline; filename="meet-stickers.pdf"'})
@@ -817,11 +823,10 @@ def school_meet_stickers(mid, sid):
     m = load_meet(mid)
     if not can_view_meet(m):
         abort(403)
-    template = request.args.get("template", "5160")
-    if m["sport"] == "track":     # track stickers carry events — 5160 is too small
-        template = "5163"
+    template = "5163"             # the only sticker sheet we print now
+    code = "aruco" if request.args.get("code") == "aruco" and m["sport"] != "track" else None
     groups = _sticker_groups(mid, with_events=(m["sport"] == "track"),
-                             fill_to=pdfs.per_page(template), only_sid=sid)
+                             fill_to=pdfs.per_page(template), only_sid=sid, code=code)
     pdf = pdfs.meet_stickers_pdf(groups, template=template, qr_prefix="")
     return Response(pdf, mimetype="application/pdf",
                     headers={"Content-Disposition": 'inline; filename="school-stickers.pdf"'})
