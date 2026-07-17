@@ -368,6 +368,11 @@ def bibs_locked(m):
         return False
 
 
+def _day_url(m, mid):
+    """The meet-day page for this sport (track has its own)."""
+    return f"/meets/{mid}/meet-day" if m["sport"] == "track" else f"{day}"
+
+
 @bp.post("/meets/<int:mid>/renumber-bibs")
 @login_required
 def renumber_bibs_route(mid):
@@ -409,14 +414,15 @@ def walkup_route(mid):
     hand-written sticker resolves to a name. Creates a lightweight, INACTIVE athlete
     (never joins future auto-numbering) + the per-meet bib mapping. Bibs must be locked."""
     m = load_meet(mid)
+    day = _day_url(m, mid)
     if not can_setup_meet(m):
         abort(403)
     if m["sport"] not in ("xc", "track") or not bibs_locked(m):
-        return redirect(f"/meets/{mid}/xc-day?werr=locked")
+        return redirect(f"{day}?werr=locked")
     raw = (request.form.get("bib") or "").strip()
     name = (request.form.get("name") or "").strip()
     if not raw.isdigit() or int(raw) <= 0 or not name:
-        return redirect(f"/meets/{mid}/xc-day?werr=input")
+        return redirect(f"{day}?werr=input")
     bib = int(raw)
     sid_raw = (request.form.get("school_id") or "").strip()
     grade = (request.form.get("grade") or "").strip()
@@ -426,7 +432,7 @@ def walkup_route(mid):
     conn = db.connect()
     if conn.execute("SELECT 1 FROM meet_bibs WHERE meet_id=? AND bib=?", (mid, bib)).fetchone():
         conn.close()
-        return redirect(f"/meets/{mid}/xc-day?werr=taken&b={bib}")
+        return redirect(f"{day}?werr=taken&b={bib}")
     if sid_raw == "unattached":
         row = conn.execute("SELECT id FROM schools WHERE district_id=? AND name='Unattached' LIMIT 1",
                            (m["district_id"],)).fetchone()
@@ -439,7 +445,7 @@ def walkup_route(mid):
         sid = int(sid_raw)
     else:
         conn.close()
-        return redirect(f"/meets/{mid}/xc-day?werr=school")
+        return redirect(f"{day}?werr=school")
     flag = "does_xc" if m["sport"] == "xc" else "does_track"
     aid = conn.execute(
         f"INSERT INTO athletes (school_id, name, grade, gender, {flag}, active) VALUES (?,?,?,?,1,0)",
@@ -448,18 +454,19 @@ def walkup_route(mid):
                  (mid, aid, bib, bib))
     conn.commit()
     conn.close()
-    return redirect(f"/meets/{mid}/xc-day?wok={bib}")
+    return redirect(f"{day}?wok={bib}")
 
 
 @bp.post("/meets/<int:mid>/walkup/delete")
 @login_required
 def walkup_delete_route(mid):
     m = load_meet(mid)
+    day = _day_url(m, mid)
     if not can_setup_meet(m):
         abort(403)
     raw = (request.form.get("bib") or "").strip()
     if not raw.isdigit():
-        return redirect(f"/meets/{mid}/xc-day")
+        return redirect(f"{day}")
     bib = int(raw)
     conn = db.connect()
     row = conn.execute(
@@ -470,7 +477,7 @@ def walkup_delete_route(mid):
         conn.execute("DELETE FROM athletes WHERE id=?", (row["athlete_id"],))
         conn.commit()
     conn.close()
-    return redirect(f"/meets/{mid}/xc-day")
+    return redirect(f"{day}")
 
 
 @bp.post("/meets/<int:mid>/schools")
@@ -815,7 +822,7 @@ def _attending_groups(mid):
     return groups
 
 
-def _sticker_groups(mid, with_events, fill_to=0, only_sid=None, code=None):
+def _sticker_groups(mid, with_events, fill_to=0, only_sid=None, code=None, extra_blanks=0):
     """[(school_name, logo_path, [athlete dicts])]. For track, attach each
     athlete's events (name + heat/lane) and include only entered athletes.
     fill_to = labels per sheet: pad each school's last sheet with blank stickers
@@ -879,6 +886,15 @@ def _sticker_groups(mid, with_events, fill_to=0, only_sid=None, code=None):
                 arr.append(filler)
                 nextspare += 1
         groups.append((s["name"], s["logo_path"], arr))
+    if extra_blanks:                 # a final logo-less full page of numbered blank stickers
+        blanks = []
+        for _ in range(extra_blanks):
+            b = {"bib": nextspare, "name": "", "grade": None, "gender": None}
+            if code:
+                b["code"] = code
+            blanks.append(b)
+            nextspare += 1
+        groups.append(("", None, blanks))
     conn.close()
     return groups
 
@@ -892,7 +908,8 @@ def meet_stickers(mid):
     template = "5163"             # the only sticker sheet we print now
     code = "aruco" if request.args.get("code") == "aruco" else None
     groups = _sticker_groups(mid, with_events=(m["sport"] == "track"),
-                             fill_to=pdfs.per_page(template), code=code)
+                             fill_to=pdfs.per_page(template), code=code,
+                             extra_blanks=pdfs.per_page(template))   # + one logo-less blank sheet
     # QR/ArUco encodes just the bib number (no URL).
     pdf = pdfs.meet_stickers_pdf(groups, template=template, qr_prefix="")
     return Response(pdf, mimetype="application/pdf",
