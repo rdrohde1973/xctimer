@@ -25,12 +25,12 @@ from .phone import bp as phone_bp
 from .waivers import bp as waivers_bp
 from .road import bp as road_bp
 
-APP_VERSION = "1.13.0-marketing-diy"
+APP_VERSION = "1.13.1-coach-8yrs"
 
 LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width, initial-scale=1">
 <title>XCTimer — the do-it-yourself meet manager for junior high &amp; middle school XC &amp; track</title>
-<meta name="description" content="Run your own cross-country or track meet — no expensive timing company required. XCTimer is a complete do-it-yourself meet manager for junior high & middle school: rosters, live timing, field events, scoring, and live results the whole crowd can follow. Built by a coach of 7 years and a parent of three XC & track kids.">
+<meta name="description" content="Run your own cross-country or track meet — no expensive timing company required. XCTimer is a complete do-it-yourself meet manager for junior high & middle school: rosters, live timing, field events, scoring, and live results the whole crowd can follow. Built by a coach of 8 years and a parent of three XC & track kids.">
 <style>
   :root{--navy:#164271;--navy-d:#0f3157;--orange:#ea6a2d;--orange-d:#cf5a22;
         --gray:#868686;--ink:#20303f;--bg:#f5f8fc;--card:#ffffff;--line:#e3e9f1}
@@ -211,14 +211,14 @@ LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
 <section class="band"><div class="wrap">
   <h2>Built by a coach — and a cross-country &amp; track parent.</h2>
   <p class="lead">XCTimer was built by a former junior high coach who personally timed meets for
-  seven years — <b style="color:#fff">and a parent of three cross-country and track kids</b> who
+  eight years — <b style="color:#fff">and a parent of three cross-country and track kids</b> who
   spent just as many seasons in the stands. That's both sides of every meet: running it from the
   finish line, and standing in the bleachers wanting to know, right now, how your own kid just did.
   Every feature comes from that real experience — the bib stickers, the tap timer, the make/miss
   high jump grid, scanning a marked-up sheet, and the live results the whole crowd can follow.</p>
   <div class="quote">"As a coach, I wanted a tool any coach could run. As a parent, I wanted to see my kid's race the moment it happened."</div>
   <div class="stat">
-    <div><b>7 yrs</b><span>timing meets</span></div>
+    <div><b>8 yrs</b><span>timing meets</span></div>
     <div><b>3 kids</b><span>XC &amp; track athletes</span></div>
     <div><b>Both sides</b><span>coach &amp; parent</span></div>
   </div>
