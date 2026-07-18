@@ -126,9 +126,13 @@ def list_organizers():
             f'<div style="display:flex;align-items:flex-end">'
             f'<button type="submit">+ Add race director</button></div></form></div>')
 
+    def _disc(c):
+        p = c["percent_off"] if c["percent_off"] is not None else 100
+        return "Free (100%)" if p >= 100 else f"{p}% off"
     crows = "".join(
         f'<tr><td><b>{escape(c["code"])}</b></td>'
         f'<td class="muted">{escape(c["label"] or "")}</td>'
+        f'<td>{_disc(c)}</td>'
         f'<td>{c["used_count"]}{("/" + str(c["max_uses"])) if c["max_uses"] is not None else ""}</td>'
         f'<td>{"✅ active" if c["active"] else "⛔ off"}</td>'
         f'<td style="text-align:right"><form class="inline" method="post" '
@@ -136,15 +140,18 @@ def list_organizers():
         f'<button class="ghost">{"Disable" if c["active"] else "Enable"}</button></form></td></tr>'
         for c in codes)
     promo_card = (
-        '<div class="card"><h2>🎟 Comp codes</h2>'
-        '<p class="muted">100%-off codes for the $50 self-serve event fee — a host enters one on the '
-        'Go-live banner to publish their event free. Leave “max uses” blank for unlimited.</p>'
-        + (f'<table><tr><th>Code</th><th>Label</th><th>Used</th><th>Status</th><th></th></tr>{crows}</table>'
-           if codes else '<p class="muted">No codes yet.</p>')
+        '<div class="card"><h2>🎟 Promo codes</h2>'
+        '<p class="muted">Codes for the $50 self-serve event fee. <b>100% = free</b> (publishes with no '
+        'payment); a partial % sends the host to card checkout for the reduced amount. A host enters the '
+        'code on their Go-live banner. Leave “max uses” blank for unlimited.</p>'
+        + (f'<table><tr><th>Code</th><th>Label</th><th>Discount</th><th>Used</th><th>Status</th><th></th></tr>'
+           f'{crows}</table>' if codes else '<p class="muted">No codes yet.</p>')
         + '<form method="post" action="/host-codes" class="row" style="gap:.5rem;flex-wrap:wrap;margin-top:.6rem">'
           '<div><label>New code</label><input name="code" placeholder="e.g. FRIEND" required></div>'
           '<div><label>Label</label><input name="label" placeholder="who / why"></div>'
-          '<div style="max-width:110px"><label>Max uses</label><input name="max_uses" type="number" min="1" placeholder="∞"></div>'
+          '<div style="max-width:90px"><label>% off</label>'
+          '<input name="percent" type="number" min="1" max="100" value="100"></div>'
+          '<div style="max-width:100px"><label>Max uses</label><input name="max_uses" type="number" min="1" placeholder="∞"></div>'
           '<div style="display:flex;align-items:flex-end"><button type="submit">+ Add code</button></div>'
           '</form></div>')
     body = (
@@ -169,10 +176,13 @@ def add_promo_code():
     label = (request.form.get("label") or "").strip() or None
     mu = (request.form.get("max_uses") or "").strip()
     max_uses = int(mu) if mu.isdigit() and int(mu) > 0 else None
+    pu = (request.form.get("percent") or "").strip()
+    percent = min(100, max(1, int(pu))) if pu.isdigit() else 100
     if code:
         conn = db.connect()
-        conn.execute("INSERT OR IGNORE INTO promo_codes (code, label, active, max_uses, used_count, created_at) "
-                     "VALUES (?,?,1,?,0,?)", (code, label, max_uses, _iso(_now())))
+        conn.execute("INSERT OR IGNORE INTO promo_codes "
+                     "(code, label, active, max_uses, used_count, percent_off, created_at) "
+                     "VALUES (?,?,1,?,0,?,?)", (code, label, max_uses, percent, _iso(_now())))
         conn.commit()
         conn.close()
     return redirect("/organizers")
@@ -1161,7 +1171,7 @@ def host_pay_square(mid):
         abort(403)
     from . import square
     if not square.is_configured():
-        return jsonify(error="Card payments aren’t set up yet — use Venmo."), 400
+        return jsonify(error="Card payments aren’t set up yet — contact XCTimer."), 400
     base = os.environ.get("XC_PUBLIC_URL", request.host_url.rstrip("/"))
     ret = f"{base}/meets/{mid}/host-square-return"
     try:
@@ -1169,7 +1179,7 @@ def host_pay_square(mid):
                                           ret, f"xctimer_meet={mid}")
     except Exception:
         logging.getLogger("xctimer.road").exception("host_pay_square failed for meet %s", mid)
-        return jsonify(error="Couldn’t start Square checkout — try again, or use Venmo."), 502
+        return jsonify(error="Couldn’t start Square checkout — please try again."), 502
     # Return the URL for the client to navigate to. A form POST that 302s to Square is blocked by
     # our CSP (form-action 'self'); a JS location.href navigation is not, so the button uses jpost.
     return jsonify(url=url)
@@ -1189,16 +1199,18 @@ def host_square_return(mid):
     return redirect(f"/meets/{mid}?payerr=1")
 
 
-def _redeem_comp(code):
-    """Validate + consume a 100%-off comp code (atomic on max_uses). True if it waived the fee."""
+def _consume_promo(code):
+    """Atomically consume one use of an active promo code. Returns its percent_off (1-100)
+    on success, or None if the code is unknown/inactive/used up."""
     code = (code or "").strip().upper()
     if not code:
-        return False
+        return None
     conn = db.connect()
     row = conn.execute("SELECT * FROM promo_codes WHERE code=? AND active=1", (code,)).fetchone()
     if not row:
         conn.close()
-        return False
+        return None
+    pct = row["percent_off"] if row["percent_off"] is not None else 100
     if row["max_uses"] is None:
         conn.execute("UPDATE promo_codes SET used_count=used_count+1 WHERE id=?", (row["id"],))
         ok = True
@@ -1208,26 +1220,48 @@ def _redeem_comp(code):
         ok = cur.rowcount > 0
     conn.commit()
     conn.close()
-    return ok
+    return pct if ok else None
 
 
 @bp.post("/meets/<int:mid>/host-redeem")
 @login_required
 def host_redeem(mid):
-    """Apply a comp code to a self-serve event: waives the $50 and publishes (no Square)."""
+    """Apply a promo code. 100% off -> publish free (no Square). Partial % off -> a Square
+    checkout for the reduced amount. Returns JSON so the button can navigate (CSP-safe)."""
     m = load_meet(mid)
     if not can_setup_meet(m):
         abort(403)
     if host_paid(m):
-        return redirect(f"/meets/{mid}")
-    code = (request.form.get("code") or "").strip().upper()
-    if _redeem_comp(code):
+        return jsonify(paid=True)
+    code = ((request.get_json(silent=True) or {}).get("code")
+            or request.form.get("code") or request.args.get("code") or "").strip().upper()
+    pct = _consume_promo(code)
+    if pct is None:
+        return jsonify(error="That promo code isn’t valid (or it’s been used up)."), 400
+    if pct >= 100:                              # free -> publish now, skip Square
         s = _load_settings(mid)
         s["host_paid"] = True
-        s["comp_code"] = code
+        s["promo_code"] = code
         _save_settings(mid, s)
-        return redirect(f"/meets/{mid}?paid=1")
-    return redirect(f"/meets/{mid}?codeerr=1")
+        return jsonify(paid=True)
+    # Partial discount -> pay the reduced amount through Square.
+    from . import square
+    if not square.is_configured():
+        return jsonify(error="Card payments aren’t set up, so a partial discount can’t be applied."), 400
+    amount = max(50, round(HOST_FEE_CENTS * (100 - pct) / 100))   # Square min ~$0.50
+    base = os.environ.get("XC_PUBLIC_URL", request.host_url.rstrip("/"))
+    ret = f"{base}/meets/{mid}/host-square-return"
+    try:
+        url = square.create_payment_link(f"XCTimer event — {m['name']} ({pct}% off)", amount,
+                                          ret, f"xctimer_meet={mid}")
+    except Exception:
+        logging.getLogger("xctimer.road").exception("host-redeem partial checkout failed for meet %s", mid)
+        return jsonify(error="Couldn’t start the discounted checkout — try again."), 502
+    s = _load_settings(mid)
+    s["promo_code"] = code
+    s["promo_pct"] = pct
+    _save_settings(mid, s)
+    return jsonify(url=url)
 
 
 def _mark_host_paid(mid, order_id):
@@ -1280,10 +1314,7 @@ def host_banner(m):
     msg = ""
     if request.args.get("payerr"):
         msg = ('<p style="color:var(--err);font-weight:600;margin:.2rem 0">⚠ Payment didn\'t complete — '
-               'try again, or use Venmo.</p>')
-    if request.args.get("codeerr"):
-        msg += ('<p style="color:var(--err);font-weight:600;margin:.2rem 0">⚠ That comp code isn\'t '
-                'valid (or has been used up).</p>')
+               'try again.</p>')
     # Verified card payment via Square (auto-publishes on a completed order).
     sq = ""
     if square.is_configured():
@@ -1297,32 +1328,29 @@ def host_banner(m):
               f'try{{var j=await jpost("/meets/{mid}/host-pay-square",{{}});'
               f'if(j&&j.url){{location.href=j.url;return;}}throw new Error("no url");}}'
               f'catch(e){{b.disabled=false;b.textContent="💳 Pay {fee} with Square (card)";'
-              f'alert(e.message||"Checkout failed — try again or use Venmo.");}}}}</script>')
-    # Venmo (honor-system) fallback — needs the manual "I've sent it" confirmation.
-    handle = os.environ.get("XC_HOST_VENMO", "").lstrip("@")
-    vpay = ""
-    if handle:
-        vurl = _venmo_url(handle, HOST_FEE_CENTS, f"XCTimer event: {m['name']}")
-        vpay = (f'<a class="btn" href="{escape(vurl)}" target="_blank" '
-                f'style="background:#3d95ce;color:#fff;padding:.55rem 1rem;border-radius:9px;'
-                f'text-decoration:none;font-weight:700">Pay {fee} with Venmo</a>'
-                f'<form class="inline" method="post" action="/meets/{mid}/host-publish" style="display:inline" '
-                f'onsubmit="return confirm(\'Confirm you sent the {fee} via Venmo — this publishes your event.\')">'
-                f'<button class="ghost">I\'ve sent Venmo — publish</button></form>')
+              f'alert(e.message||"Checkout failed — please try again.");}}}}</script>')
     none_note = ('<span class="muted">Payment isn\'t configured yet — contact XCTimer.</span>'
-                 if not (square.is_configured() or handle) else "")
-    # Comp code (100%-off) — same-origin POST, so a normal form is fine here.
-    comp = (f'<form class="inline" method="post" action="/meets/{mid}/host-redeem" '
-            f'style="display:inline-flex;gap:.35rem;align-items:center;margin-left:.3rem">'
-            f'<input name="code" placeholder="Comp code" autocomplete="off" '
-            f'style="max-width:130px;padding:.5rem" aria-label="Comp code">'
-            f'<button class="ghost">Apply</button></form>')
+                 if not square.is_configured() else "")
+    # Promo code: 100% off publishes free; a partial % routes to Square for the reduced amount.
+    # Uses jpost + JS navigation (a form POST->square.link would be blocked by CSP form-action).
+    promo = (f'<span style="display:inline-flex;gap:.35rem;align-items:center;margin-left:.3rem">'
+             f'<input id="promocode" placeholder="Promo code" autocomplete="off" '
+             f'style="max-width:130px;padding:.5rem" aria-label="Promo code" '
+             f'onkeydown="if(event.key===\'Enter\'){{event.preventDefault();applyPromo();}}">'
+             f'<button type="button" class="ghost" id="promobtn" onclick="applyPromo()">Apply</button></span>'
+             f'<script>async function applyPromo(){{'
+             f'var i=document.getElementById("promocode"),b=document.getElementById("promobtn");'
+             f'var code=(i.value||"").trim();if(!code)return;b.disabled=true;'
+             f'try{{var j=await jpost("/meets/{mid}/host-redeem",{{code:code}});'
+             f'if(j&&j.paid){{location.href="/meets/{mid}?paid=1";return;}}'
+             f'if(j&&j.url){{location.href=j.url;return;}}throw new Error("Try again.");}}'
+             f'catch(e){{b.disabled=false;alert(e.message||"That promo code isn\\u2019t valid.");}}}}</script>')
     return (f'<div class="card" style="border:2px solid #ea6a2d">'
             f'<h2 style="margin-top:0">🚦 Go live — {fee} per event</h2>'
             f'<p style="margin:.2rem 0 .6rem">Build your event below. When you\'re ready to open '
-            f'registration and time the race, pay the {fee} event fee. Card (Square) is verified '
-            f'instantly; Venmo is on your honor. Have a comp code? Enter it to publish free.</p>{msg}'
-            f'<div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center">{sq}{vpay}{comp}{none_note}</div></div>')
+            f'registration and time the race, pay the {fee} event fee by card. Have a promo code? '
+            f'Enter it to publish free or take a discount off the fee.</p>{msg}'
+            f'<div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center">{sq}{promo}{none_note}</div></div>')
 
 
 def reap_web_events(conn, today_iso):

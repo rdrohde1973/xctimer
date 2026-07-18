@@ -481,11 +481,13 @@ def migrate(conn):
     if "run_order" not in mecols:        # track: manual running order (NULL => fall back to e.sort)
         conn.execute("ALTER TABLE meet_events ADD COLUMN run_order INTEGER")
 
-    # Comp/promo codes for the self-serve $50 event fee (100%-off; super-admin managed).
+    # Promo codes for the self-serve $50 event fee (percent_off 1-100; 100 => free; super-admin managed).
     conn.execute(
         "CREATE TABLE IF NOT EXISTS promo_codes ("
-        "id INTEGER PRIMARY KEY, code TEXT UNIQUE NOT NULL, label TEXT, "
-        "active INTEGER DEFAULT 1, max_uses INTEGER, used_count INTEGER DEFAULT 0, created_at TEXT)")
+        "id INTEGER PRIMARY KEY, code TEXT UNIQUE NOT NULL, label TEXT, active INTEGER DEFAULT 1, "
+        "max_uses INTEGER, used_count INTEGER DEFAULT 0, percent_off INTEGER DEFAULT 100, created_at TEXT)")
+    if "percent_off" not in _column_names(conn, "promo_codes"):
+        conn.execute("ALTER TABLE promo_codes ADD COLUMN percent_off INTEGER DEFAULT 100")
 
     ptcols = _column_names(conn, "points_tables")
     if "relay_multiplier" not in ptcols:
