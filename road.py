@@ -1111,17 +1111,18 @@ def host_pay_square(mid):
         abort(403)
     from . import square
     if not square.is_configured():
-        return redirect(f"/meets/{mid}?payerr=1")
+        return jsonify(error="Card payments aren’t set up yet — use Venmo."), 400
     base = os.environ.get("XC_PUBLIC_URL", request.host_url.rstrip("/"))
     ret = f"{base}/meets/{mid}/host-square-return"
     try:
         url = square.create_payment_link(f"XCTimer event — {m['name']}", HOST_FEE_CENTS,
                                           ret, f"xctimer_meet={mid}")
     except Exception:
-        # Was silently swallowed -> the page just bounced back and looked like "nothing happened".
         logging.getLogger("xctimer.road").exception("host_pay_square failed for meet %s", mid)
-        return redirect(f"/meets/{mid}?payerr=1")
-    return redirect(url)
+        return jsonify(error="Couldn’t start Square checkout — try again, or use Venmo."), 502
+    # Return the URL for the client to navigate to. A form POST that 302s to Square is blocked by
+    # our CSP (form-action 'self'); a JS location.href navigation is not, so the button uses jpost.
+    return jsonify(url=url)
 
 
 @bp.get("/meets/<int:mid>/host-square-return")
@@ -1190,9 +1191,17 @@ def host_banner(m):
     # Verified card payment via Square (auto-publishes on a completed order).
     sq = ""
     if square.is_configured():
-        sq = (f'<form class="inline" method="post" action="/meets/{mid}/host-pay-square" style="display:inline">'
-              f'<button style="background:#006aff;color:#fff;border:0;border-radius:9px;padding:.55rem 1rem;'
-              f'font-weight:700;cursor:pointer">💳 Pay {fee} with Square (card)</button></form>')
+        # NB not a <form> that POSTs+redirects: CSP form-action 'self' blocks the cross-origin
+        # redirect to square.link. jpost returns the URL and we navigate via location.href.
+        sq = (f'<button type="button" id="sqpay" onclick="paySquare()" '
+              f'style="background:#006aff;color:#fff;border:0;border-radius:9px;padding:.55rem 1rem;'
+              f'font-weight:700;cursor:pointer">💳 Pay {fee} with Square (card)</button>'
+              f'<script>async function paySquare(){{var b=document.getElementById("sqpay");'
+              f'b.disabled=true;b.textContent="Starting checkout…";'
+              f'try{{var j=await jpost("/meets/{mid}/host-pay-square",{{}});'
+              f'if(j&&j.url){{location.href=j.url;return;}}throw new Error("no url");}}'
+              f'catch(e){{b.disabled=false;b.textContent="💳 Pay {fee} with Square (card)";'
+              f'alert(e.message||"Checkout failed — try again or use Venmo.");}}}}</script>')
     # Venmo (honor-system) fallback — needs the manual "I've sent it" confirmation.
     handle = os.environ.get("XC_HOST_VENMO", "").lstrip("@")
     vpay = ""
