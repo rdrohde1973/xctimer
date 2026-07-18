@@ -1810,13 +1810,13 @@ def _live_races(mid):
         stop = _parse(r["stop_time"])
         if stop and (now - stop).total_seconds() > XLIVE_HOLD:
             continue
-        # Last 5 to cross (highest seq), returned oldest→newest so the ticker scrolls up.
+        # All finishers, oldest→newest, so the public live card can scroll through the full list.
         recent = conn.execute(
             "SELECT seq, elapsed_seconds, snap_name, snap_school FROM finishers "
-            "WHERE race_id=? ORDER BY seq DESC LIMIT 5", (r["id"],)).fetchall()
+            "WHERE race_id=? ORDER BY seq", (r["id"],)).fetchall()
         fin = [{"n": f["seq"], "elapsed": f["elapsed_seconds"],
                 "who": f["snap_name"], "school": f["snap_school"]}
-               for f in reversed(recent)]
+               for f in recent]
         heats.append({"name": r["name"] or "Race", "start_ms": _ms(_parse(r["start_time"])),
                       "stop_ms": _ms(stop) if stop else None, "ended": bool(stop),
                       "finishers": fin})
@@ -1878,7 +1878,7 @@ def _public_xc(m, mode):
 .livedot{{width:.7rem;height:.7rem;border-radius:50%;background:#2e9e5b;animation:lblink 1s infinite}}
 @keyframes lblink{{50%{{opacity:.2}}}}
 .liveclock{{font-size:2.6rem;font-weight:800;font-variant-numeric:tabular-nums;text-align:center;margin:.1rem 0;color:#12385f;letter-spacing:.5px}}
-.livescroll{{max-height:8.5rem;overflow-y:auto;border-top:1px solid #e6ebf1;margin-top:.5rem}}
+.livescroll{{max-height:19rem;overflow-y:auto;border-top:1px solid #e6ebf1;margin-top:.5rem}}
 .livescroll table{{width:100%;border-collapse:collapse}}
 .livescroll td{{padding:.3rem .4rem;border-top:1px solid #eef2f6;font-size:.92rem}}
 .livescroll .lp{{color:#2f6db5;font-weight:800;width:2rem;text-align:center}}
@@ -1920,6 +1920,10 @@ function lfmt(sec){{ if(sec==null)return''; sec=Math.max(0,sec);
 function lesc(s){{ return String(s==null?'':s).replace(/[&<>"]/g,c=>({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}}[c])); }}
 function renderLive(heats){{
   const box=document.getElementById('livebox');
+  // remember each live card's scroll spot so a re-render (new finisher) doesn't yank a reader
+  // who scrolled up; b = was pinned to the bottom (show newest).
+  const _sc=[].map.call(box.querySelectorAll('.livescroll'),function(s){{
+    return {{t:s.scrollTop, b:(s.scrollHeight-s.clientHeight-s.scrollTop)<24}};}});
   if(!heats.length){{ box.innerHTML=''; return; }}
   let h='';
   heats.forEach(function(ht){{
@@ -1937,7 +1941,8 @@ function renderLive(heats){{
     h+='<div class="livecard'+(ht.ended?' final':'')+'">'+hd+clk+scroll+'</div>';
   }});
   box.innerHTML=h;
-  document.querySelectorAll('.livescroll').forEach(function(s){{ s.scrollTop=s.scrollHeight; }});
+  [].forEach.call(box.querySelectorAll('.livescroll'),function(s,i){{
+    var p=_sc[i]; if(!p||p.b) s.scrollTop=s.scrollHeight; else s.scrollTop=p.t; }});
 }}
 function tickLive(){{
   const now=Date.now()+LOFFSET;
@@ -2071,7 +2076,7 @@ def _public_road(m, mode):
 .livedot{{width:.7rem;height:.7rem;border-radius:50%;background:#2e9e5b;animation:lblink 1s infinite}}
 @keyframes lblink{{50%{{opacity:.2}}}}
 .liveclock{{font-size:2.6rem;font-weight:800;font-variant-numeric:tabular-nums;text-align:center;margin:.1rem 0;color:#12385f;letter-spacing:.5px}}
-.livescroll{{max-height:8.5rem;overflow-y:auto;border-top:1px solid #e6ebf1;margin-top:.5rem}}
+.livescroll{{max-height:19rem;overflow-y:auto;border-top:1px solid #e6ebf1;margin-top:.5rem}}
 .livescroll table{{width:100%;border-collapse:collapse}}
 .livescroll td{{padding:.3rem .4rem;border-top:1px solid #eef2f6;font-size:.92rem}}
 .livescroll .lp{{color:#2f6db5;font-weight:800;width:2rem;text-align:center}}
@@ -2103,6 +2108,10 @@ function lfmt(sec){{ if(sec==null)return''; sec=Math.max(0,sec);
 function lesc(s){{ return String(s==null?'':s).replace(/[&<>"]/g,c=>({{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}}[c])); }}
 function renderLive(heats){{
   const box=document.getElementById('livebox');
+  // remember each live card's scroll spot so a re-render (new finisher) doesn't yank a reader
+  // who scrolled up; b = was pinned to the bottom (show newest).
+  const _sc=[].map.call(box.querySelectorAll('.livescroll'),function(s){{
+    return {{t:s.scrollTop, b:(s.scrollHeight-s.clientHeight-s.scrollTop)<24}};}});
   if(!heats.length){{ box.innerHTML=''; return; }}
   let h='';
   heats.forEach(function(ht){{
@@ -2120,7 +2129,8 @@ function renderLive(heats){{
     h+='<div class="livecard'+(ht.ended?' final':'')+'">'+hd+clk+scroll+'</div>';
   }});
   box.innerHTML=h;
-  document.querySelectorAll('.livescroll').forEach(function(s){{ s.scrollTop=s.scrollHeight; }});
+  [].forEach.call(box.querySelectorAll('.livescroll'),function(s,i){{
+    var p=_sc[i]; if(!p||p.b) s.scrollTop=s.scrollHeight; else s.scrollTop=p.t; }});
 }}
 function tickLive(){{
   const now=Date.now()+LOFFSET;
@@ -2250,6 +2260,10 @@ async function pollLive(){{
 document.addEventListener('visibilitychange',function(){{ if(!document.hidden) pollLive(); }});
 function renderLive(heats){{
   const box=document.getElementById('livebox');
+  // remember each live card's scroll spot so a re-render (new finisher) doesn't yank a reader
+  // who scrolled up; b = was pinned to the bottom (show newest).
+  const _sc=[].map.call(box.querySelectorAll('.livescroll'),function(s){{
+    return {{t:s.scrollTop, b:(s.scrollHeight-s.clientHeight-s.scrollTop)<24}};}});
   if(!heats.length){{ box.innerHTML=''; return; }}
   let h='';
   heats.forEach(function(ht){{
@@ -2270,7 +2284,8 @@ function renderLive(heats){{
       +'<div class="livescroll"><table>'+rows+'</table></div></div>';
   }});
   box.innerHTML=h;
-  document.querySelectorAll('.livescroll').forEach(function(s){{ s.scrollTop=s.scrollHeight; }});
+  [].forEach.call(box.querySelectorAll('.livescroll'),function(s,i){{
+    var p=_sc[i]; if(!p||p.b) s.scrollTop=s.scrollHeight; else s.scrollTop=p.t; }});
 }}
 function tickLive(){{
   const now=Date.now()+LOFFSET;
