@@ -151,12 +151,12 @@ def setup_section(m, setup):
     rows = []
     for r in races:
         status = "ended" if r["stop_time"] else ("running" if r["start_time"] else "not started")
-        act = (f'<a class="btn" href="/races/{r["id"]}/console">⏱ Time</a> '
-               f'<a class="btn ghost" href="/races/{r["id"]}/camera">📷 Camera</a>')
+        # Setup shows config actions only; Time/Camera live on the Race-day tab.
+        act = ""
         if setup:
             nm = _json.dumps(r["name"])
-            act += (
-                f" <button class='ghost' onclick='renameHeat({r['id']}, {escape(nm)})'>✎</button>"
+            act = (
+                f"<button class='ghost' onclick='renameHeat({r['id']}, {escape(nm)})'>✎ Rename</button>"
                 f" <form class='inline' method='post' action='/races/{r['id']}/delete' "
                 f"onsubmit=\"return confirm('Delete heat?')\"><button class='danger'>✕</button></form>")
             mopts = "".join(
@@ -250,14 +250,13 @@ def _road_setup_section(m, setup, races, counts, _json, rename_js):
                            + (str(_bracket_chips(default_brackets)) if default_brackets
                               else '<span class="muted">none set</span>'))
         nassigned = assigned_count.get(r["id"], 0)
-        act = (f'<a class="btn" href="/races/{r["id"]}/console">⏱ Time</a> '
-               f'<a class="btn ghost" href="/races/{r["id"]}/camera">📷 Camera</a>')
+        # Setup shows config actions only; Time/Camera/Reset live on the Race-day tab.
+        act = ""
         override = ""
         if setup:
             nm = _json.dumps(r["name"])
-            act += (
-                f" <button class='ghost' onclick='resetRace({r['id']})'>↺ Reset</button>"
-                f" <button class='ghost' onclick='renameHeat({r['id']}, {escape(nm)})'>✎ Rename</button>"
+            act = (
+                f"<button class='ghost' onclick='renameHeat({r['id']}, {escape(nm)})'>✎ Rename</button>"
                 f" <form class='inline' method='post' action='/races/{r['id']}/delete' "
                 f"onsubmit=\"return confirm('Delete this {'race' if org else 'event'} and its results?')\">"
                 f"<button class='danger'>✕</button></form>")
@@ -311,11 +310,7 @@ def _road_setup_section(m, setup, races, counts, _json, rename_js):
             f'{mode_sel}'
             f'<div style="display:flex;align-items:flex-end"><button type="submit">+ Add {noun_s}</button></div>'
             f'</form>')
-    reset_js = ('<script>async function resetRace(id){'
-                'if(!confirm("Reset this race? This clears its clock and ALL recorded finishers."))return;'
-                'try{await jpost("/races/"+id+"/reset",{});location.reload();}'
-                'catch(e){alert(e.message);}}</script>') if setup else ""
-    events_card = f'<div class="card"><h2>{noun}</h2>{events_html}{assign_link}{add}{rename_js}{reset_js}</div>'
+    events_card = f'<div class="card"><h2>{noun}</h2>{events_html}{assign_link}{add}{rename_js}</div>'
     if not org:
         return default_card + events_card
 
@@ -675,7 +670,7 @@ def _xc_tabs(mid, active, road=False, organizer=False):
             'padding-bottom:.5rem;flex-wrap:wrap">'
             + tab(f"/meets/{mid}", "⚙️ Setup", "setup")
             + mid_tab
-            + tab(f"/meets/{mid}/xc-day", "🏁 Meet day", "meetday")
+            + tab(f"/meets/{mid}/xc-day", "🏁 Race day", "meetday")
             + tab(f"/meets/{mid}/results", "📊 Results", "results")
             + '</div>')
 

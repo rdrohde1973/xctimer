@@ -580,7 +580,7 @@ def _track_tabs(mid, active):
             'padding-bottom:.5rem;flex-wrap:wrap">'
             + tab(f"/meets/{mid}", "⚙️ Setup", "setup")
             + tab(f"/meets/{mid}/assign", "👤 Assign athletes", "assign")
-            + tab(f"/meets/{mid}/meet-day", "🏁 Meet day", "meetday")
+            + tab(f"/meets/{mid}/meet-day", "🏁 Race day", "meetday")
             + tab(f"/meets/{mid}/track-results", "📊 Results", "results")
             + '</div>')
 
@@ -1709,7 +1709,7 @@ def event_page(meid):
     <input name="bib" type="number" inputmode="numeric" autofocus></div>
   <div style="display:flex;align-items:flex-end"><button type="submit">Add</button></div>
   <label style="display:flex;gap:.4rem;align-items:center;font-size:.9rem;margin-top:1.4rem">
-    <input type="checkbox" name="force" style="width:auto"> Meet-day sub — override event limit</label>
+    <input type="checkbox" name="force" style="width:auto"> Race-day sub — override event limit</label>
 </form>
 <p class="muted">Enter the bib to add that athlete ({div}) to this event.</p></div>"""
 
@@ -1794,7 +1794,7 @@ async function postScan(n){{
         ex = ('the best height cleared like <code>4-08</code> or <code>5&#39;2&quot;</code>' if hj
               else 'marks like <code>15-06</code>, <code>5-03</code>, or <code>5&#39;3&quot;</code>')
         field_note = f'<p class="muted">Enter <b>feet-inches</b> — {ex}.</p>'
-    body = (f'<p class="muted"><a href="/meets/{me["meet_id"]}/meet-day">← Meet day</a></p>'
+    body = (f'<p class="muted"><a href="/meets/{me["meet_id"]}/meet-day">← Race day</a></p>'
             f'<h1>{escape(ename)}</h1>{err}{field_note}{marks_form}{add}{tools}')
     return shell(g.principal, body, active="meets")
 
