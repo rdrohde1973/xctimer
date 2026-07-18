@@ -1807,6 +1807,30 @@ def add_bib(meid):
 
 
 # ------------------------------- event page -------------------------------
+_FO_CSS = """<style>
+.foblock{margin:.4rem 0 1rem}.foblock h3{margin:.5rem 0 .2rem;font-size:1rem}
+.folist{list-style:none;padding:0;margin:0}
+.foli{display:flex;align-items:center;gap:.6rem;padding:.5rem .7rem;margin:.25rem 0;border:1px solid var(--line);border-radius:9px;background:var(--panel2);cursor:grab}
+.foli .fopl{color:#ea6a2d;font-weight:800;width:1.6rem;text-align:center}
+.foli .fot{font-variant-numeric:tabular-nums;color:var(--mut);width:5rem}
+.foli .foname{flex:1}.foli .fogrip{color:var(--mut)}
+</style>"""
+_FO_JS = """<script>(function(){
+  document.querySelectorAll('.foblock').forEach(function(bl){
+    var ul=bl.querySelector('.folist'), meid=bl.dataset.meid, heat=bl.dataset.heat, d=null, _t=null;
+    function save(){clearTimeout(_t);_t=setTimeout(function(){
+      var ids=[].map.call(ul.querySelectorAll('li'),function(l){return +l.dataset.eid;});
+      jpost('/meet-events/'+meid+'/reorder-finish?heat='+heat,{order:ids}).then(function(){location.reload();});
+    },300);}
+    ul.addEventListener('dragstart',function(e){d=e.target.closest('li');if(d)d.style.opacity='.4';});
+    ul.addEventListener('dragend',function(){if(d)d.style.opacity='';d=null;save();});
+    ul.addEventListener('dragover',function(e){e.preventDefault();var t=e.target.closest('li');
+      if(!t||t===d||t.parentNode!==ul)return;var r=t.getBoundingClientRect();
+      ul.insertBefore(d,(e.clientY-r.top)/r.height>.5?t.nextSibling:t);});
+  });
+})();</script>"""
+
+
 @bp.get("/meet-events/<int:meid>")
 @login_required
 def event_page(meid):
@@ -2005,8 +2029,37 @@ async function postScan(n){{
         ex = ('the best height cleared like <code>4-08</code> or <code>5&#39;2&quot;</code>' if hj
               else 'marks like <code>15-06</code>, <code>5-03</code>, or <code>5&#39;3&quot;</code>')
         field_note = f'<p class="muted">Enter <b>feet-inches</b> — {ex}.</p>'
+    # Finish-order reorder (laned sprints/relays): fix a judgment call — times stay, runners move.
+    finish_reorder = ""
+    if record and me["laned"]:
+        byheat = {}
+        for e in entries:
+            r = res.get(e["id"])
+            if r and r["mark_seconds"] is not None and not r["dq"]:
+                byheat.setdefault(e["heat"], []).append((e, r))
+        blocks = []
+        for heat in sorted(k for k in byheat if k is not None):
+            fin = sorted(byheat[heat], key=lambda x: x[1]["mark_seconds"])
+            if len(fin) < 2:
+                continue
+            items = ""
+            for i, (e, r) in enumerate(fin):
+                nm, bib, _sch = labels[e["id"]]
+                items += (f'<li draggable="true" data-eid="{e["id"]}" class="foli">'
+                          f'<span class="fopl">{i + 1}</span>'
+                          f'<span class="fot">{fmt_time(r["mark_seconds"])}</span>'
+                          f'<span class="foname">{escape(nm)}{f" #{bib}" if bib else ""} '
+                          f'<span class="muted">· Ln {e["lane"] or "—"}</span></span>'
+                          f'<span class="fogrip">&#9776;</span></li>')
+            blocks.append(f'<div class="foblock" data-meid="{meid}" data-heat="{heat}">'
+                          f'<h3>Heat {heat}</h3><ol class="folist">{items}</ol></div>')
+        if blocks:
+            finish_reorder = ('<div class="card"><h2>Finish order — fix a judgment call</h2>'
+                              '<p class="muted">Drag a runner to their real place. The recorded '
+                              'times stay in order; only who holds each place changes.</p>'
+                              + "".join(blocks) + _FO_CSS + _FO_JS + '</div>')
     body = (f'<p class="muted"><a href="/meets/{me["meet_id"]}/meet-day">← Race day</a></p>'
-            f'<h1>{escape(ename)}</h1>{err}{field_note}{marks_form}{add}{tools}')
+            f'<h1>{escape(ename)}</h1>{err}{field_note}{marks_form}{finish_reorder}{add}{tools}')
     return shell(g.principal, body, active="meets")
 
 
@@ -3213,6 +3266,41 @@ def lane_finish(meid):
     return jsonify(ok=True, lane=lane, secs=elapsed, name=name)
 
 
+@bp.post("/meet-events/<int:meid>/reorder-finish")
+@login_required
+def reorder_finish(meid):
+    """Fix a finish-line judgment call: the recorded times stay in place order (fastest = 1st),
+    but the athletes are reassigned to them. Body {order:[entry_id,...]} = the corrected finish
+    order (1st, 2nd, …). Only recorded, non-DQ entries in this heat participate."""
+    me = load_meet_event(meid)
+    m = load_meet(me["meet_id"])
+    if not can_record_meet(m):
+        abort(403)
+    hk = _heat_key(request.args.get("heat", ""))
+    order = [int(x) for x in ((request.get_json(silent=True) or {}).get("order") or [])
+             if str(x).lstrip("-").isdigit()]
+    conn = db.connect()
+    meids = _combine_meids(conn, me)
+    qm = ",".join("?" * len(meids))
+    recs = {r["entry_id"]: r["mark_seconds"] for r in conn.execute(
+        f"SELECT r.entry_id, r.mark_seconds FROM results r JOIN entries en ON en.id=r.entry_id "
+        f"WHERE en.meet_event_id IN ({qm}) AND en.heat=? AND r.mark_seconds IS NOT NULL AND r.dq=0",
+        (*meids, hk)).fetchall()}
+    if len(recs) < 2:
+        conn.close()
+        return jsonify(ok=True, n=len(recs))
+    times = sorted(recs.values())                       # ascending = place order, fastest first
+    seq = [e for e in order if e in recs]
+    seq += [e for e in sorted(recs, key=lambda x: recs[x]) if e not in seq]   # unlisted -> current order
+    for i, eid in enumerate(seq):
+        conn.execute("UPDATE results SET mark_seconds=? WHERE entry_id=?", (times[i], eid))
+    for m2 in meids:
+        _recompute_places(conn, load_meet_event(m2))
+    conn.commit()
+    conn.close()
+    return jsonify(ok=True, n=len(seq))
+
+
 @bp.get("/meet-events/<int:meid>/lanes")
 @login_required
 def lane_timer(meid):
@@ -3255,6 +3343,12 @@ _LANE_PAGE = """
 <div id="lanes"></div>
 <button id="tapbtn" class="tapbtn" onclick="laneTap()" disabled>Pick your lane first</button>
 <div id="rec" class="rec"></div>
+<div id="foWrap" style="display:none;margin-top:1rem">
+  <h2 style="margin:.2rem 0 .1rem">Finish order</h2>
+  <p class="muted" style="font-size:.85rem;margin:.1rem 0 .5rem">Judgment call at the line? Drag a
+  runner to their real place — the <b>times stay put</b>, only the runners move.</p>
+  <ol id="foList" style="list-style:none;padding:0;margin:0"></ol>
+</div>
 <a class="btn" href="/meet-events/__MEID__/next?heat=__HEAT__" style="display:block;text-align:center;margin-top:1rem">Next heat &rarr;</a>
 <p class="muted" style="text-align:center;font-size:.8rem;margin-top:.3rem">Everyone taps this after the heat to move to the next heat together.</p>
 </div>
@@ -3286,7 +3380,32 @@ function render(){
   else{var l=LANES.find(function(x){return x.lane==MYLANE;});
     b.disabled=!started;
     b.textContent=(!started?'Waiting for start…':('TAP — Lane '+MYLANE+((l&&l.name)?(' ('+l.name+')'):'')+' crossed'));}
+  renderFinishOrder(stopped);
 }
+function renderFinishOrder(stopped){
+  var wrap=document.getElementById('foWrap');if(!wrap)return;
+  var fin=LANES.filter(function(l){return l.secs!=null;}).sort(function(a,b){return a.secs-b.secs;});
+  if(!stopped||fin.length<2||FODRAG){ if(!FODRAG) wrap.style.display='none'; return; }
+  wrap.style.display='';
+  document.getElementById('foList').innerHTML=fin.map(function(l,i){
+    return '<li draggable="true" data-eid="'+l.entry_id+'" '
+      +'style="display:flex;align-items:center;gap:.6rem;padding:.6rem .7rem;margin:.3rem 0;'
+      +'border:1px solid #33475b;border-radius:10px;background:#182633;color:#fff;cursor:grab">'
+      +'<span style="color:#ea6a2d;font-weight:800;width:1.6rem">'+(i+1)+'</span>'
+      +'<span class="t" style="width:4.2rem">'+fmt(l.secs)+'</span>'
+      +'<span style="flex:1">'+esc(l.name)+(l.bib?(' #'+l.bib):'')+' <span class="muted">· Ln '+l.lane+'</span></span>'
+      +'<span style="color:#8a97a5">&#9776;</span></li>';}).join('');
+}
+var FODRAG=false;
+(function(){var ul=document.getElementById('foList');if(!ul)return;var d=null;
+  ul.addEventListener('dragstart',function(e){d=e.target.closest('li');FODRAG=true;if(d)d.style.opacity=".4";});
+  ul.addEventListener('dragend',function(){if(d)d.style.opacity="";d=null;FODRAG=false;saveFO();});
+  ul.addEventListener('dragover',function(e){e.preventDefault();var t=e.target.closest('li');
+    if(!t||t===d||t.parentNode!==ul)return;var r=t.getBoundingClientRect();
+    ul.insertBefore(d,(e.clientY-r.top)/r.height>.5?t.nextSibling:t);});
+  function saveFO(){var ids=[].map.call(ul.querySelectorAll('li'),function(l){return +l.dataset.eid;});
+    jp('/meet-events/'+MEID+'/reorder-finish?heat='+HEAT,{order:ids}).then(function(){poll();});}
+})();
 function pick(n){MYLANE=n;render();}
 async function laneStart(){await jp('/meet-events/'+MEID+'/time/start?heat='+HEAT,{at:serverNow()});poll();}
 async function stopRace(){if(STOP||STOPPING)return;STOPPING=true;
