@@ -1014,7 +1014,7 @@ def host_create():
         "VALUES (?,?,?,?,?,0,?)",
         (web, "road", name, date, secrets.token_urlsafe(8),
          json.dumps({"host_paid": False, "owner_user_id": uid, "owner_email": email}))).lastrowid
-    conn.execute("INSERT INTO races (meet_id, name, capture_mode) VALUES (?,?,?)", (mid, "5K", "scan"))
+    conn.execute("INSERT INTO races (meet_id, name, capture_mode) VALUES (?,?,?)", (mid, "5K", "tap"))
     conn.commit()
     conn.close()
     _send_host_link(email, token)

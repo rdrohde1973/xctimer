@@ -210,6 +210,11 @@ def _road_setup_section(m, setup, races, counts, _json, rename_js):
     conn = db.connect()
     ent = conn.execute("SELECT race_id, COUNT(*) AS n FROM race_entries WHERE meet_id=? "
                        "GROUP BY race_id", (m["id"],)).fetchall()
+    # Self-serve ("do it yourself") events are locked to tap-then-scan — no capture-mode picker.
+    self_serve = False
+    if org and m["organizer_id"]:
+        row = conn.execute("SELECT slug FROM organizers WHERE id=?", (m["organizer_id"],)).fetchone()
+        self_serve = bool(row and row["slug"] == "xctimer-web")
     conn.close()
     assigned_count = {e["race_id"]: e["n"] for e in ent}
 
@@ -266,7 +271,9 @@ def _road_setup_section(m, setup, races, counts, _json, rename_js):
                 f'<span class="muted">Blank = use the default above.</span></form></details>')
         # Community events register participants (no race-entry "assigned" count).
         assigned_txt = "" if org else f" · {nassigned} assigned"
-        if setup:
+        if self_serve:
+            mode_html = ""                          # do-it-yourself: always tap-then-scan, no picker
+        elif setup:
             mopts = "".join(
                 f'<option value="{v}"{" selected" if v == r["capture_mode"] else ""}>{escape(lbl)}</option>'
                 for v, lbl in CAPTURE_MODES)
@@ -293,11 +300,15 @@ def _road_setup_section(m, setup, races, counts, _json, rename_js):
 
     add = ""
     if setup:
-        opts = "".join(f'<option value="{v}">{escape(lbl)}</option>' for v, lbl in CAPTURE_MODES)
+        # Self-serve: no mode picker — create_race defaults to tap-then-scan.
+        mode_sel = "" if self_serve else (
+            '<div style="max-width:200px"><select name="capture_mode">'
+            + "".join(f'<option value="{v}">{escape(lbl)}</option>' for v, lbl in CAPTURE_MODES)
+            + '</select></div>')
         add = (
             f'<form method="post" action="/meets/{m["id"]}/races" class="row" style="margin-top:.8rem">'
             f'<div><input name="name" placeholder="{noun_s.capitalize()} name (e.g. 5K, 10K, Fun Run)" required></div>'
-            f'<div style="max-width:200px"><select name="capture_mode">{opts}</select></div>'
+            f'{mode_sel}'
             f'<div style="display:flex;align-items:flex-end"><button type="submit">+ Add {noun_s}</button></div>'
             f'</form>')
     reset_js = ('<script>async function resetRace(id){'
