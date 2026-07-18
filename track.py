@@ -2216,22 +2216,38 @@ def _next_meid(conn, meid):
     return rows[i + 1] if i + 1 < len(rows) else None
 
 
+def _drawn_heats(conn, meids):
+    qm = ",".join("?" * len(meids))
+    return [r[0] for r in conn.execute(
+        f"SELECT DISTINCT heat FROM entries WHERE meet_event_id IN ({qm}) AND heat IS NOT NULL "
+        f"ORDER BY heat", tuple(meids)).fetchall()]
+
+
 @bp.get("/meet-events/<int:meid>/next")
 @login_required
 def next_meet_event_timer(meid):
-    """Advance a timer to the next event in the running order — so every phone moves together
-    after a heat finishes. Routes to the right timing surface (lane vs tap) at heat 1."""
+    """Advance the timer to the NEXT HEAT: the next heat of this event, or — when this event's
+    heats are done — the first heat of the next event in the running order. Everyone moves together;
+    routes to the right timing surface (lane vs tap)."""
     me = load_meet_event(meid)
     m = load_meet(me["meet_id"])
     if not can_record_meet(m):
         abort(403)
+    heat = _heat_key(request.args.get("heat", ""))
     conn = db.connect()
-    nxt = _next_meid(conn, meid)
-    conn.close()
+    laned = bool(conn.execute("SELECT laned FROM events WHERE id=?", (me["event_id"],)).fetchone()[0])
+    later = [h for h in _drawn_heats(conn, _combine_meids(conn, me)) if heat and h > heat]
+    if later:                                   # another heat in THIS event -> go to it
+        conn.close()
+        return redirect(f"/meet-events/{meid}/{'lanes' if laned else 'time'}?heat={later[0]}")
+    nxt = _next_meid(conn, meid)                # else the next event, at its first heat
     if not nxt:
-        return redirect(f"/phone/meet/{me['meet_id']}?done=1")   # end of the order -> back to picker
-    surface = "lanes" if nxt["laned"] else "time"
-    return redirect(f"/meet-events/{nxt['id']}/{surface}?heat=1")
+        conn.close()
+        return redirect(f"/phone/meet/{me['meet_id']}?done=1")
+    nh = _drawn_heats(conn, [nxt["id"]])
+    conn.close()
+    first = nh[0] if nh else 1
+    return redirect(f"/meet-events/{nxt['id']}/{'lanes' if nxt['laned'] else 'time'}?heat={first}")
 
 
 @bp.get("/meet-events/<int:meid>/time")
@@ -2271,7 +2287,7 @@ def time_console(meid):
   <table id="rows"></table>
   <div style="display:flex;gap:.6rem;margin-top:1.1rem">
     <button onclick="doneRace()" style="flex:1">✅ Done — heats</button>
-    <a class="btn" href="/meet-events/{meid}/next" style="flex:1;text-align:center">Next event →</a>
+    <a class="btn" href="/meet-events/{meid}/next?heat={hk}" style="flex:1;text-align:center">Next heat →</a>
   </div>
 </div>
 <script>
@@ -3205,8 +3221,8 @@ _LANE_PAGE = """
 <div id="lanes"></div>
 <button id="tapbtn" class="tapbtn" onclick="laneTap()" disabled>Pick your lane first</button>
 <div id="rec" class="rec"></div>
-<a class="btn" href="/meet-events/__MEID__/next" style="display:block;text-align:center;margin-top:1rem">Next event &rarr;</a>
-<p class="muted" style="text-align:center;font-size:.8rem;margin-top:.3rem">Everyone taps this after the heat to move to the next event together.</p>
+<a class="btn" href="/meet-events/__MEID__/next?heat=__HEAT__" style="display:block;text-align:center;margin-top:1rem">Next heat &rarr;</a>
+<p class="muted" style="text-align:center;font-size:.8rem;margin-top:.3rem">Everyone taps this after the heat to move to the next heat together.</p>
 </div>
 <script>
 var MEID=__MEID__, HEAT="__HEAT__", MYLANE=null, OFFSET=0, BEST_RTT=1e9, START=null, STOP=null, LANES=[];
