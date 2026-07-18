@@ -251,7 +251,8 @@ def setup_section(m, setup):
     catalog = conn.execute("SELECT * FROM events ORDER BY sort").fetchall()
     mes = conn.execute(
         "SELECT me.*, e.name AS ename, e.kind FROM meet_events me JOIN events e ON e.id=me.event_id "
-        "WHERE me.meet_id=? ORDER BY e.sort, me.gender, me.grade", (m["id"],)).fetchall()
+        "WHERE me.meet_id=? ORDER BY (me.run_order IS NULL), me.run_order, e.sort, me.gender, me.grade",
+        (m["id"],)).fetchall()
     counts = {r[0]: r[1] for r in conn.execute(
         "SELECT me.id, COUNT(en.id) FROM meet_events me LEFT JOIN entries en ON en.meet_event_id=me.id "
         "WHERE me.meet_id=? GROUP BY me.id", (m["id"],)).fetchall()}
@@ -264,11 +265,37 @@ def setup_section(m, setup):
         rm = (f'<form class="inline" method="post" action="/meet-events/{me["id"]}/delete" '
               f'onsubmit="return confirm(\'Remove event?\')"><button class="danger">✕</button></form>'
               if setup else "")
-        erows.append(f'<tr><td><b><a href="/meet-events/{me["id"]}">{escape(me["ename"])}</a></b></td>'
+        handle = ('<td class="dragh" style="cursor:grab;color:#8a97a5;width:1.4rem;text-align:center" '
+                  'title="Drag to set the running order">&#9776;</td>') if setup else ""
+        drag = ' draggable="true"' if setup else ""
+        erows.append(f'<tr data-meid="{me["id"]}"{drag}>{handle}'
+                     f'<td><b><a href="/meet-events/{me["id"]}">{escape(me["ename"])}</a></b></td>'
                      f'<td>{g_}{gr}</td><td>{counts.get(me["id"], 0)} entries</td>'
                      f'<td style="text-align:right">{rm}</td></tr>')
-    etbl = (f'<table><tr><th>Event</th><th>Division</th><th>Entries</th><th></th></tr>'
-            f'{"".join(erows)}</table>' if mes else '<p class="muted">none yet — add some below</p>')
+    hcol = "<th></th>" if setup else ""
+    order_hd = ""
+    reorder_js = ""
+    if setup and mes:
+        order_hd = ('<h3 style="margin:.2rem 0 .1rem">Event order</h3>'
+                    '<p class="muted" style="margin:.1rem 0 .6rem;font-size:.9rem">'
+                    '&#9776; Drag events into the order they&#39;ll be run. Timers advance through this '
+                    'order together (Next event &rarr;), and it drives the public progress timeline.</p>')
+        reorder_js = ('<script>(function(){var tb=document.getElementById("evorder");if(!tb)return;'
+                      'function csrf(){var m=document.cookie.match(/csrftoken=([^;]+)/);return m?decodeURIComponent(m[1]):"";}'
+                      'var drag=null;'
+                      'tb.addEventListener("dragstart",function(e){drag=e.target.closest("tr");if(drag)drag.style.opacity=".4";});'
+                      'tb.addEventListener("dragend",function(){if(drag)drag.style.opacity="";drag=null;save();});'
+                      'tb.addEventListener("dragover",function(e){e.preventDefault();var t=e.target.closest("tr");'
+                      'if(!t||t===drag||t.parentNode!==tb)return;var r=t.getBoundingClientRect();'
+                      'tb.insertBefore(drag,(e.clientY-r.top)/r.height>.5?t.nextSibling:t);});'
+                      'var _t=null;function save(){clearTimeout(_t);_t=setTimeout(function(){'
+                      'var ids=[].map.call(tb.querySelectorAll("tr"),function(r){return +r.dataset.meid;});'
+                      'fetch("' + f'/meets/{m["id"]}/events/reorder' + '",{method:"POST",'
+                      'headers:{"Content-Type":"application/json","X-CSRF-Token":csrf()},'
+                      'body:JSON.stringify({order:ids})});},400);}})();</script>')
+    etbl = (f'{order_hd}<table><thead><tr>{hcol}<th>Event</th><th>Division</th><th>Entries</th><th></th></tr></thead>'
+            f'<tbody id="evorder">{"".join(erows)}</tbody></table>{reorder_js}'
+            if mes else '<p class="muted">none yet — add some below</p>')
 
     add = ""
     if setup:
@@ -1268,11 +1295,7 @@ def meet_day_page(mid):
         status = "drawn" if drawn_counts.get(me["id"]) else ("entered" if n else "")
         hs = (f'<a class="btn ghost" href="/meet-events/{me["id"]}/heatsheet.pdf" target="_blank">'
               f'Heat sheet</a>' if n else '<span class="muted">—</span>')
-        handle = ('<td class="dragh" style="cursor:grab;color:#8a97a5;width:1.4rem;text-align:center" '
-                  'title="Drag to set the running order">&#9776;</td>') if setup else ""
-        drag = ' draggable="true"' if setup else ""
-        rows.append(f'<tr data-meid="{me["id"]}" data-gender="{me["gender"] or ""}" data-grade="{me["grade"] or 0}"{drag}>'
-                    f'{handle}'
+        rows.append(f'<tr data-order="{i}" data-gender="{me["gender"] or ""}" data-grade="{me["grade"] or 0}">'
                     f'<td><a href="/meet-events/{me["id"]}"><b>{escape(me["ename"])}</b></a> '
                     f'<span class="muted">{div(me)}</span>{_chip(cid)}</td>'
                     f'<td>{n} entries</td>'
@@ -1291,32 +1314,10 @@ def meet_day_page(mid):
              '[].forEach.call(tb.querySelectorAll("tr"),function(r){'
              'var ok=(!g||r.dataset.gender===g)&&(!gr||r.dataset.grade===gr);'
              'r.style.display=ok?"":"none";});}</script>')
-    # Drag-to-reorder (setup only): reorder rows, then persist the full id order.
-    reorder_js = ('<script>(function(){var tb=document.getElementById("evbody");if(!tb)return;'
-                  'function csrf(){var m=document.cookie.match(/csrftoken=([^;]+)/);return m?decodeURIComponent(m[1]):"";}'
-                  'var drag=null;'
-                  'tb.addEventListener("dragstart",function(e){drag=e.target.closest("tr");'
-                  'if(drag)drag.style.opacity=".4";});'
-                  'tb.addEventListener("dragend",function(){if(drag)drag.style.opacity="";drag=null;save();});'
-                  'tb.addEventListener("dragover",function(e){e.preventDefault();'
-                  'var t=e.target.closest("tr");if(!t||t===drag)return;'
-                  'var r=t.getBoundingClientRect(),after=(e.clientY-r.top)/(r.height)>.5;'
-                  'tb.insertBefore(drag, after?t.nextSibling:t);});'
-                  'var _t=null;function save(){clearTimeout(_t);_t=setTimeout(function(){'
-                  'var ids=[].map.call(tb.querySelectorAll("tr"),function(r){return +r.dataset.meid;});'
-                  'fetch("' + f'/meets/{mid}/events/reorder' + '",{method:"POST",'
-                  'headers:{"Content-Type":"application/json","X-CSRF-Token":csrf()},'
-                  'body:JSON.stringify({order:ids})});},400);}'
-                  '})();</script>') if setup else ""
-    reorder_hint = ('<p class="muted" style="margin:.1rem 0 .5rem;font-size:.85rem">'
-                    '&#9776; Drag events into the order they&#39;ll be run (set both filters to '
-                    '<b>All</b> first). Timers advance through this order together, and it drives '
-                    'the public progress timeline.</p>') if setup else ""
-    hcol = "<th></th>" if setup else ""
-    ev_tbl = (f'<div class="card"><h2>Events</h2>{filterbar}{reorder_hint}'
-              f'<table><thead><tr>{hcol}<th>Event</th><th>Entries</th><th>Status</th>'
+    ev_tbl = (f'<div class="card"><h2>Events</h2>{filterbar}'
+              f'<table><thead><tr><th>Event</th><th>Entries</th><th>Status</th>'
               f'<th style="text-align:right">Heat sheet</th></tr></thead>'
-              f'<tbody id="evbody">{"".join(rows)}</tbody></table>{ev_js}{reorder_js}</div>'
+              f'<tbody id="evbody">{"".join(rows)}</tbody></table>{ev_js}</div>'
               if mes else '<div class="card muted">No events yet.</div>')
 
     pit = (f'<div class="card"><b>🏖 Field pits:</b> '
