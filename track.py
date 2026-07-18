@@ -2203,6 +2203,11 @@ def time_start(meid):
         conn.close()
         return jsonify(error=f"This heat already has an ended race with {n} tap(s).",
                        needs_clear=True), 409
+    # Already running: keep the original start — a second Start (e.g. another phone's late
+    # gun-detect, or a double-tap) must NOT shift the shared clock.
+    if clk and clk["start_time"] and not clk["stop_time"] and not clear:
+        conn.close()
+        return jsonify(ok=True, already=True)
     if clear:
         conn.execute("DELETE FROM track_taps WHERE meet_event_id=? AND heat=?", (meid, hk))
     conn.execute("INSERT INTO track_clocks (meet_event_id, heat, start_time, stop_time) VALUES (?,?,?,NULL) "
@@ -2884,8 +2889,10 @@ _LANE_PAGE = """
 <p><a href="/phone/meet/__MID__" style="color:#9fb3c8">&lsaquo; Track Timer</a></p>
 <h1 style="margin:.2rem 0">__TITLE__</h1>
 <div id="clk" class="clk">0:00.0</div>
-<button id="startbtn" class="startbtn" onclick="laneStart()">&#128299; Start (at the gun)</button>
-<p id="startnote" class="muted" style="text-align:center;font-size:.85rem">One person taps Start at the gun. Each volunteer picks a lane below and taps when that runner crosses.</p>
+<button id="startbtn" class="startbtn" onclick="laneStart()">&#128299; Start (tap at the gun)</button>
+<button id="gunbtn" class="startbtn" style="background:#3d6fa5;margin-top:.5rem" onclick="armGun()">&#127911; Auto-start: listen for the gun</button>
+<div id="gunstatus" class="muted" style="text-align:center;font-size:.85rem;margin-top:.35rem"></div>
+<p id="startnote" class="muted" style="text-align:center;font-size:.85rem">The <b>starter's</b> phone (at the start line) starts the clock — tap Start or arm gun-listen. Each lane volunteer picks a lane below.</p>
 <h2 style="margin:1rem 0 .3rem">Pick your lane</h2>
 <div id="lanes"></div>
 <button id="tapbtn" class="tapbtn" onclick="laneTap()" disabled>Pick your lane first</button>
@@ -2893,6 +2900,7 @@ _LANE_PAGE = """
 </div>
 <script>
 var MEID=__MEID__, HEAT="__HEAT__", MYLANE=null, OFFSET=0, START=null, STOP=null, LANES=[];
+var GUNON=false, AC=null, GUNRAF=null;
 function csrf(){var m=document.cookie.match(/csrftoken=([^;]+)/);return m?decodeURIComponent(m[1]):'';}
 async function jp(url){var r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf()},body:'{}'});return r.json();}
 function fmt(s){if(s==null)return'';s=Math.max(0,s);var m=Math.floor(s/60),x=s-60*m;return m+':'+x.toFixed(1).padStart(4,'0');}
@@ -2900,6 +2908,8 @@ function esc(s){var d=document.createElement('div');d.textContent=s==null?'':s;r
 function render(){
   document.getElementById('startbtn').style.display=START?'none':'block';
   document.getElementById('startnote').style.display=START?'none':'block';
+  var gb=document.getElementById('gunbtn');if(gb)gb.style.display=START?'none':'block';
+  if(START&&GUNON)disarmGun('🔫 Started.');
   var h='';LANES.forEach(function(l){
     var sel=(l.lane==MYLANE)?' sel':'';
     var t=l.secs!=null?('<span class="t">'+fmt(l.secs)+'</span>'):'<span style="color:#7c8b9a">&mdash;</span>';
@@ -2922,6 +2932,28 @@ async function poll(){try{var s=await (await fetch('/meet-events/'+MEID+'/lane-s
   setTimeout(poll,2000);}
 function tick(){var c=document.getElementById('clk');if(!START){c.textContent='0:00.0';return;}
   var end=(STOP||(Date.now()+OFFSET));var e=(end-START)/1000;c.textContent=fmt(e);}
+async function armGun(){
+  if(GUNON){disarmGun('');return;}
+  if(START)return;
+  try{
+    var stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
+    AC=new (window.AudioContext||window.webkitAudioContext)();if(AC.state==='suspended')AC.resume();
+    var src=AC.createMediaStreamSource(stream),an=AC.createAnalyser();an.fftSize=1024;src.connect(an);
+    var buf=new Uint8Array(an.fftSize),armedAt=Date.now();GUNON=true;
+    document.getElementById('gunbtn').textContent='🎧 Listening… (tap to cancel)';
+    document.getElementById('gunstatus').textContent='🎧 Listening for the gun — keep this phone at the start line.';
+    (function loop(){
+      if(!GUNON)return;
+      an.getByteTimeDomainData(buf);
+      var peak=0;for(var i=0;i<buf.length;i++){var d=Math.abs(buf[i]-128);if(d>peak)peak=d;}
+      if(Date.now()-armedAt>500 && peak>=110){disarmGun('🔫 Gun detected — started!');laneStart();return;}
+      GUNRAF=requestAnimationFrame(loop);
+    })();
+  }catch(e){document.getElementById('gunstatus').textContent='Mic unavailable — use the Start button.';GUNON=false;}
+}
+function disarmGun(msg){GUNON=false;if(GUNRAF)cancelAnimationFrame(GUNRAF);try{if(AC)AC.close();}catch(e){}AC=null;
+  var b=document.getElementById('gunbtn');if(b)b.textContent='🎧 Auto-start: listen for the gun';
+  if(msg)document.getElementById('gunstatus').textContent=msg;}
 setInterval(tick,100);poll();
 </script>
 """
