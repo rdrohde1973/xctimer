@@ -331,7 +331,10 @@ async function rec(v){{ const el=document.getElementById('sbib'); v=(v||el.value
 // Screen wake lock: a timing phone that sleeps mid-race silently loses finishers.
 let WL=null;
 async function wlock(){{ try{{ WL=await navigator.wakeLock.request('screen'); }}catch(e){{}} }}
-document.addEventListener('visibilitychange',()=>{{ if(document.visibilityState==='visible')wlock(); }});
+// Refresh the moment the timer is shown again — coming back from the camera page (or a tab
+// switch / bfcache restore) instantly drops any just-scanned runners from the pick list.
+document.addEventListener('visibilitychange',()=>{{ if(document.visibilityState==='visible'){{ wlock(); load(); }} }});
+window.addEventListener('pageshow', ()=>{{ load(); }});
 wlock();
 setInterval(tick,60);
 setInterval(load,3000);
