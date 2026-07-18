@@ -223,22 +223,8 @@ def _road_setup_section(m, setup, races, counts, _json, rename_js):
     conn.close()
     assigned_count = {e["race_id"]: e["n"] for e in ent}
 
-    # --- meet-wide default age groups ---
-    dflt_editor = ""
-    if setup:
-        dflt_editor = (
-            f'<form method="post" action="/meets/{m["id"]}/age-groups" style="margin-top:.4rem">'
-            f'<label class="muted">One group per line or comma-separated. '
-            f'Examples: <code>10 &amp; Under, 11-14, 15-19, 20-29, 30-39, 40+</code></label>'
-            f'<textarea name="brackets" rows="2" style="width:100%;margin:.3rem 0" '
-            f'placeholder="10 &amp; Under, 11-14, 15-19, 20-29, 30+">{escape(default_text)}</textarea>'
-            f'<button type="submit">Save default age groups</button></form>')
-    default_card = (
-        f'<div class="card"><h2>Default age groups</h2>'
-        f'<p class="muted" style="margin-top:0">Applied to every event unless the event sets its own. '
-        f'Road results place athletes individually by gender × age group — each athlete needs an '
-        f'<b>Age</b> on their roster entry.</p>'
-        f'{_bracket_chips(default_brackets, "No default set yet.")}{dflt_editor}</div>')
+    # Age groups are set per event now (no meet-wide default). `default_brackets`/`default_text`
+    # remain only as a legacy fallback for events that never set their own (older meets).
 
     # --- events ---
     ev_blocks = []
@@ -248,12 +234,10 @@ def _road_setup_section(m, setup, races, counts, _json, rename_js):
             own = _json.loads(r["age_brackets"]) if ("age_brackets" in r.keys() and r["age_brackets"]) else None
         except (ValueError, TypeError):
             own = None
-        if own:
-            groups_line = ('<b>Own age groups:</b> ' + str(_bracket_chips(own)))
-        else:
-            groups_line = ('<span class="muted">Uses default: </span>'
-                           + (str(_bracket_chips(default_brackets)) if default_brackets
-                              else '<span class="muted">none set</span>'))
+        eff = own or default_brackets
+        groups_line = (str(_bracket_chips(eff)) if eff else
+                       '<span class="muted">No age groups set — add them below '
+                       '(paste from another event).</span>')
         nassigned = assigned_count.get(r["id"], 0)
         # Setup shows config actions only; Time/Camera/Reset live on the Race-day tab.
         act = ""
@@ -265,14 +249,17 @@ def _road_setup_section(m, setup, races, counts, _json, rename_js):
                 f" <form class='inline' method='post' action='/races/{r['id']}/delete' "
                 f"onsubmit=\"return confirm('Delete this {'race' if org else 'event'} and its results?')\">"
                 f"<button class='danger'>✕</button></form>")
+            own_text = _brackets_to_text(own) if own else default_text
             override = (
                 f'<details style="margin-top:.5rem"><summary class="muted" style="cursor:pointer">'
-                f'Override age groups for this event</summary>'
+                f'Set age groups for this event</summary>'
                 f'<form method="post" action="/races/{r["id"]}/age-groups" style="margin-top:.4rem">'
+                f'<label class="muted">One group per line or comma-separated — e.g. '
+                f'<code>10 &amp; Under, 11-14, 15-19, 20-29, 30+</code>. '
+                f'Copy/paste from another event to reuse.</label>'
                 f'<textarea name="brackets" rows="2" style="width:100%;margin:.3rem 0" '
-                f'placeholder="Leave blank to use the meet default">{escape(_brackets_to_text(own))}</textarea>'
-                f'<button type="submit">Save</button> '
-                f'<span class="muted">Blank = use the default above.</span></form></details>')
+                f'placeholder="10 &amp; Under, 11-14, 15-19, 20-29, 30+">{escape(own_text)}</textarea>'
+                f'<button type="submit">Save age groups</button></form></details>')
         # Community events register participants (no race-entry "assigned" count).
         assigned_txt = "" if org else f" · {nassigned} assigned"
         if self_serve:
@@ -305,7 +292,7 @@ def _road_setup_section(m, setup, races, counts, _json, rename_js):
             f'</form>')
     events_card = f'<div class="card"><h2>{noun}</h2>{events_html}{assign_link}{add}{rename_js}</div>'
     if not org:
-        return default_card + events_card
+        return events_card
 
     # Community event: branding + public registration + bib stickers.
     import os as _os
@@ -356,7 +343,7 @@ def _road_setup_section(m, setup, races, counts, _json, rename_js):
             '</div>')
         # (Bibs / print / camera intentionally omitted here — they live on the
         # Participants tab (print) and Meet-day tab (time + camera).)
-    return event_card + default_card + events_card
+    return event_card + events_card
 
 
 @bp.post("/meets/<int:mid>/age-groups")

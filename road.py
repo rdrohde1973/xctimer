@@ -1387,9 +1387,10 @@ unsure, tell them to email admin@xctimer.com.
 How XCTimer self-serve works (rely on these facts):
 - Create an event at xctimer.com/host; you get a private email link to manage it (bookmark it, or
   use "Email my link" on /host to get it again).
-- Setup tab: add your races (e.g. 5K, 10K, Fun Run); set Default age groups (e.g.
-  "10 & Under, 11-14, 15-19, 20-29, 30+"); upload your event logo; optionally set an Entry fee and
-  your Venmo so runners pay you when they register. Timing is always tap-then-scan (no mode to pick).
+- Setup tab: add your races (e.g. 5K, 10K, Fun Run); set age groups on each race (e.g.
+  "10 & Under, 11-14, 15-19, 20-29, 30+" — you can copy/paste the same groups between races);
+  upload your event logo; optionally set an Entry fee and your Venmo so runners pay you when they
+  register. Timing is always tap-then-scan (no mode to pick).
 - Go live: $50 per event. Build it free, then pay the $50 by card (Square — instant) or Venmo to
   open registration. Registration stays closed until you pay.
 - Public registration: share the registration link/QR; runners self-register (name, age, gender,
