@@ -1878,7 +1878,7 @@ def _public_xc(m, mode):
 .livedot{{width:.7rem;height:.7rem;border-radius:50%;background:#2e9e5b;animation:lblink 1s infinite}}
 @keyframes lblink{{50%{{opacity:.2}}}}
 .liveclock{{font-size:2.6rem;font-weight:800;font-variant-numeric:tabular-nums;text-align:center;margin:.1rem 0;color:#12385f;letter-spacing:.5px}}
-.livescroll{{max-height:19rem;overflow-y:auto;border-top:1px solid #e6ebf1;margin-top:.5rem}}
+.livescroll{{max-height:8.5rem;overflow-y:auto;border-top:1px solid #e6ebf1;margin-top:.5rem}}
 .livescroll table{{width:100%;border-collapse:collapse}}
 .livescroll td{{padding:.3rem .4rem;border-top:1px solid #eef2f6;font-size:.92rem}}
 .livescroll .lp{{color:#2f6db5;font-weight:800;width:2rem;text-align:center}}
@@ -2076,7 +2076,7 @@ def _public_road(m, mode):
 .livedot{{width:.7rem;height:.7rem;border-radius:50%;background:#2e9e5b;animation:lblink 1s infinite}}
 @keyframes lblink{{50%{{opacity:.2}}}}
 .liveclock{{font-size:2.6rem;font-weight:800;font-variant-numeric:tabular-nums;text-align:center;margin:.1rem 0;color:#12385f;letter-spacing:.5px}}
-.livescroll{{max-height:19rem;overflow-y:auto;border-top:1px solid #e6ebf1;margin-top:.5rem}}
+.livescroll{{max-height:8.5rem;overflow-y:auto;border-top:1px solid #e6ebf1;margin-top:.5rem}}
 .livescroll table{{width:100%;border-collapse:collapse}}
 .livescroll td{{padding:.3rem .4rem;border-top:1px solid #eef2f6;font-size:.92rem}}
 .livescroll .lp{{color:#2f6db5;font-weight:800;width:2rem;text-align:center}}
