@@ -478,6 +478,8 @@ def migrate(conn):
         conn.execute("ALTER TABLE meet_events ADD COLUMN combine_id INTEGER")
     if "bar_heights" not in mecols:      # High Jump: JSON list of bar heights (ft-in)
         conn.execute("ALTER TABLE meet_events ADD COLUMN bar_heights TEXT")
+    if "run_order" not in mecols:        # track: manual running order (NULL => fall back to e.sort)
+        conn.execute("ALTER TABLE meet_events ADD COLUMN run_order INTEGER")
 
     ptcols = _column_names(conn, "points_tables")
     if "relay_multiplier" not in ptcols:

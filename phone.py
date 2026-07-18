@@ -420,7 +420,8 @@ def _track_timer(conn, m):
     events = conn.execute(
         f"SELECT me.id, e.name AS ename, me.gender, me.grade FROM meet_events me "
         f"JOIN events e ON e.id=me.event_id WHERE me.meet_id=? AND e.name IN ({tap_q}) "
-        f"ORDER BY e.sort, me.gender, me.grade", (m["id"], *TAP_EVENTS)).fetchall()
+        f"ORDER BY (me.run_order IS NULL), me.run_order, e.sort, me.gender, me.grade",
+        (m["id"], *TAP_EVENTS)).fetchall()
     evdata, ev_opts = {}, ['<option value="">— pick event —</option>']
     for ev in events:
         heats = [r[0] for r in conn.execute(
@@ -436,7 +437,8 @@ def _track_timer(conn, m):
     lane_events = conn.execute(
         f"SELECT me.id, e.name AS ename, me.gender, me.grade FROM meet_events me "
         f"JOIN events e ON e.id=me.event_id WHERE me.meet_id=? AND e.name IN ({lane_q}) "
-        f"ORDER BY e.sort, me.gender, me.grade", (m["id"], *LANE_EVENTS)).fetchall()
+        f"ORDER BY (me.run_order IS NULL), me.run_order, e.sort, me.gender, me.grade",
+        (m["id"], *LANE_EVENTS)).fetchall()
     lanedata, lane_opts = {}, ['<option value="">— pick sprint / relay —</option>']
     for ev in lane_events:
         heats = [r[0] for r in conn.execute(

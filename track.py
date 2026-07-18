@@ -446,6 +446,31 @@ def add_meet_event(mid):
     return redirect(f"/meets/{mid}")
 
 
+@bp.post("/meets/<int:mid>/events/reorder")
+@login_required
+def reorder_meet_events(mid):
+    """Persist the running order of a track meet's events (drag-to-reorder). Body: {order:[meid,...]}.
+    Sets run_order = position for the ids that belong to this meet; ignores strays."""
+    m = load_meet(mid)
+    if not can_setup_meet(m):
+        abort(403)
+    order = (request.get_json(silent=True) or {}).get("order") or []
+    conn = db.connect()
+    valid = {r[0] for r in conn.execute("SELECT id FROM meet_events WHERE meet_id=?", (mid,)).fetchall()}
+    pos = 0
+    for meid in order:
+        try:
+            meid = int(meid)
+        except (TypeError, ValueError):
+            continue
+        if meid in valid:
+            conn.execute("UPDATE meet_events SET run_order=? WHERE id=?", (pos, meid))
+            pos += 1
+    conn.commit()
+    conn.close()
+    return jsonify(ok=True, n=pos)
+
+
 @bp.post("/meets/<int:mid>/track-settings")
 @login_required
 def track_settings(mid):
@@ -1156,7 +1181,8 @@ def meet_day_page(mid):
     conn = db.connect()
     mes = conn.execute(
         "SELECT me.*, e.name AS ename, e.kind, e.laned FROM meet_events me JOIN events e ON e.id=me.event_id "
-        "WHERE me.meet_id=? ORDER BY e.sort, me.gender, me.grade", (mid,)).fetchall()
+        "WHERE me.meet_id=? ORDER BY (me.run_order IS NULL), me.run_order, e.sort, me.gender, me.grade",
+        (mid,)).fetchall()
     counts = {r[0]: r[1] for r in conn.execute(
         "SELECT me.id, COUNT(en.id) FROM meet_events me LEFT JOIN entries en ON en.meet_event_id=me.id "
         "WHERE me.meet_id=? GROUP BY me.id", (mid,)).fetchall()}
@@ -1242,7 +1268,11 @@ def meet_day_page(mid):
         status = "drawn" if drawn_counts.get(me["id"]) else ("entered" if n else "")
         hs = (f'<a class="btn ghost" href="/meet-events/{me["id"]}/heatsheet.pdf" target="_blank">'
               f'Heat sheet</a>' if n else '<span class="muted">—</span>')
-        rows.append(f'<tr data-order="{i}" data-gender="{me["gender"] or ""}" data-grade="{me["grade"] or 0}">'
+        handle = ('<td class="dragh" style="cursor:grab;color:#8a97a5;width:1.4rem;text-align:center" '
+                  'title="Drag to set the running order">&#9776;</td>') if setup else ""
+        drag = ' draggable="true"' if setup else ""
+        rows.append(f'<tr data-meid="{me["id"]}" data-gender="{me["gender"] or ""}" data-grade="{me["grade"] or 0}"{drag}>'
+                    f'{handle}'
                     f'<td><a href="/meet-events/{me["id"]}"><b>{escape(me["ename"])}</b></a> '
                     f'<span class="muted">{div(me)}</span>{_chip(cid)}</td>'
                     f'<td>{n} entries</td>'
@@ -1261,10 +1291,32 @@ def meet_day_page(mid):
              '[].forEach.call(tb.querySelectorAll("tr"),function(r){'
              'var ok=(!g||r.dataset.gender===g)&&(!gr||r.dataset.grade===gr);'
              'r.style.display=ok?"":"none";});}</script>')
-    ev_tbl = (f'<div class="card"><h2>Events</h2>{filterbar}'
-              f'<table><thead><tr><th>Event</th><th>Entries</th><th>Status</th>'
+    # Drag-to-reorder (setup only): reorder rows, then persist the full id order.
+    reorder_js = ('<script>(function(){var tb=document.getElementById("evbody");if(!tb)return;'
+                  'function csrf(){var m=document.cookie.match(/csrftoken=([^;]+)/);return m?decodeURIComponent(m[1]):"";}'
+                  'var drag=null;'
+                  'tb.addEventListener("dragstart",function(e){drag=e.target.closest("tr");'
+                  'if(drag)drag.style.opacity=".4";});'
+                  'tb.addEventListener("dragend",function(){if(drag)drag.style.opacity="";drag=null;save();});'
+                  'tb.addEventListener("dragover",function(e){e.preventDefault();'
+                  'var t=e.target.closest("tr");if(!t||t===drag)return;'
+                  'var r=t.getBoundingClientRect(),after=(e.clientY-r.top)/(r.height)>.5;'
+                  'tb.insertBefore(drag, after?t.nextSibling:t);});'
+                  'var _t=null;function save(){clearTimeout(_t);_t=setTimeout(function(){'
+                  'var ids=[].map.call(tb.querySelectorAll("tr"),function(r){return +r.dataset.meid;});'
+                  'fetch("' + f'/meets/{mid}/events/reorder' + '",{method:"POST",'
+                  'headers:{"Content-Type":"application/json","X-CSRF-Token":csrf()},'
+                  'body:JSON.stringify({order:ids})});},400);}'
+                  '})();</script>') if setup else ""
+    reorder_hint = ('<p class="muted" style="margin:.1rem 0 .5rem;font-size:.85rem">'
+                    '&#9776; Drag events into the order they&#39;ll be run (set both filters to '
+                    '<b>All</b> first). Timers advance through this order together, and it drives '
+                    'the public progress timeline.</p>') if setup else ""
+    hcol = "<th></th>" if setup else ""
+    ev_tbl = (f'<div class="card"><h2>Events</h2>{filterbar}{reorder_hint}'
+              f'<table><thead><tr>{hcol}<th>Event</th><th>Entries</th><th>Status</th>'
               f'<th style="text-align:right">Heat sheet</th></tr></thead>'
-              f'<tbody id="evbody">{"".join(rows)}</tbody></table>{ev_js}</div>'
+              f'<tbody id="evbody">{"".join(rows)}</tbody></table>{ev_js}{reorder_js}</div>'
               if mes else '<div class="card muted">No events yet.</div>')
 
     pit = (f'<div class="card"><b>🏖 Field pits:</b> '
@@ -2057,6 +2109,38 @@ def _tap_entries(conn, meids, hk):
     return out
 
 
+def _next_meid(conn, meid):
+    """The next meet_event after `meid` in the meet's running order (run_order, then natural
+    sort). Returns a row {id, laned} or None at the end of the order."""
+    rows = conn.execute(
+        "SELECT me.id, e.laned FROM meet_events me JOIN events e ON e.id=me.event_id "
+        "WHERE me.meet_id=(SELECT meet_id FROM meet_events WHERE id=?) "
+        "ORDER BY (me.run_order IS NULL), me.run_order, e.sort, me.gender, me.grade", (meid,)).fetchall()
+    ids = [r["id"] for r in rows]
+    if meid not in ids:
+        return None
+    i = ids.index(meid)
+    return rows[i + 1] if i + 1 < len(rows) else None
+
+
+@bp.get("/meet-events/<int:meid>/next")
+@login_required
+def next_meet_event_timer(meid):
+    """Advance a timer to the next event in the running order — so every phone moves together
+    after a heat finishes. Routes to the right timing surface (lane vs tap) at heat 1."""
+    me = load_meet_event(meid)
+    m = load_meet(me["meet_id"])
+    if not can_record_meet(m):
+        abort(403)
+    conn = db.connect()
+    nxt = _next_meid(conn, meid)
+    conn.close()
+    if not nxt:
+        return redirect(f"/phone/meet/{me['meet_id']}?done=1")   # end of the order -> back to picker
+    surface = "lanes" if nxt["laned"] else "time"
+    return redirect(f"/meet-events/{nxt['id']}/{surface}?heat=1")
+
+
 @bp.get("/meet-events/<int:meid>/time")
 @login_required
 def time_console(meid):
@@ -2092,7 +2176,10 @@ def time_console(meid):
 </div>
 <div class="card"><h2>Finishers (<span id="cnt">0</span>)</h2>
   <table id="rows"></table>
-  <button onclick="doneRace()" style="margin-top:1.1rem;width:100%">✅ Done — back to heats</button>
+  <div style="display:flex;gap:.6rem;margin-top:1.1rem">
+    <button onclick="doneRace()" style="flex:1">✅ Done — heats</button>
+    <a class="btn" href="/meet-events/{meid}/next" style="flex:1;text-align:center">Next event →</a>
+  </div>
 </div>
 <script>
 const RID={meid}, HEAT={hk}, ALLOW_BIB={allow_bib};
@@ -2946,6 +3033,8 @@ _LANE_PAGE = """
 <div id="lanes"></div>
 <button id="tapbtn" class="tapbtn" onclick="laneTap()" disabled>Pick your lane first</button>
 <div id="rec" class="rec"></div>
+<a class="btn" href="/meet-events/__MEID__/next" style="display:block;text-align:center;margin-top:1rem">Next event &rarr;</a>
+<p class="muted" style="text-align:center;font-size:.8rem;margin-top:.3rem">Everyone taps this after the heat to move to the next event together.</p>
 </div>
 <script>
 var MEID=__MEID__, HEAT="__HEAT__", MYLANE=null, OFFSET=0, BEST_RTT=1e9, START=null, STOP=null, LANES=[];
