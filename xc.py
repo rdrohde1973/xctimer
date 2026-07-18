@@ -2200,7 +2200,7 @@ main{{max-width:960px;margin:0 auto;padding:1.4rem 1rem 4rem}}
 <p class="sub">🎽 Track · {escape(m['date'] or '')}</p>
 <div id="timeline" class="tlwrap" style="display:none"></div>
 <div id="livebox"></div>
-{inner}</main>
+<div id="resultsbox">{inner}</div></main>
 <footer class="pubfoot">Powered by {BRAND_HTML}</footer>
 <script>
 const TOKEN={json.dumps(token)};
@@ -2279,15 +2279,35 @@ window.renderTimeline=function(tl){{
 }};
 setInterval(tickLive,100);
 pollLive();
-// Full-page refresh keeps the static results fresh — but pause it during a live race
-// (the live panel updates itself) and never yank an active search/filter.
-setInterval(function(){{
-  if(window.__LIVE_ACTIVE) return;
+// Keep the finished-results tables fresh WITHOUT a full-page reload, so a spectator scrolling
+// through results is never yanked back to the top. Swap just the results section in place
+// (scroll position is preserved); pause during a live race and never disturb a search/filter.
+async function refreshResults(){{
+  if(window.__LIVE_ACTIVE || document.hidden) return;
   const q=document.getElementById('rsearch'), g=document.getElementById('rgender');
-  if(!document.hidden && (!q||!q.value) && (!g||!g.value)) location.reload();
-}}, 20000);
+  if((q&&q.value)||(g&&g.value)) return;
+  try{{
+    const r=await fetch('/r/'+TOKEN+'/results-inner');
+    if(!r.ok) return;
+    const html=await r.text();
+    const box=document.getElementById('resultsbox');
+    if(box && html) box.innerHTML=html;   // in-place swap — no reload, scroll stays put
+  }}catch(e){{}}
+}}
+setInterval(refreshResults, 20000);
 </script></body></html>"""
     return _public_xc(m, mode)
+
+
+@bp.get("/r/<token>/results-inner")
+def public_results_inner(token):
+    """Just the results-tables HTML fragment — the public page swaps this in place every ~20s so
+    finished events appear without a full reload (which would reset the reader's scroll)."""
+    m = _meet_by_token(token)
+    if m["sport"] != "track":
+        abort(404)
+    from . import track
+    return track.results_inner(m["id"], name_mode=_public_mask(m))
 
 
 @bp.get("/r/<token>/live")
