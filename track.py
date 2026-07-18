@@ -245,10 +245,60 @@ def _points_tables():
     return rows
 
 
+# Default running order by event TYPE (Rob's standard): distance/sprint interleave, then the rest.
+# Divisions fall Girls 7-9 then Boys 7-9 under each type. Types not listed here are appended by e.sort.
+CANON_TRACK_ORDER = ["1600m", "100m", "400m", "4x100m Relay", "200m", "4x400m Relay", "3200m",
+                     "800m", "4x800m Relay", "100m Hurdles", "110m Hurdles", "300m Hurdles"]
+
+
+def _stored_type_order(m):
+    try:
+        v = json.loads(m["settings_json"] or "{}").get("event_type_order")
+        return v if isinstance(v, list) else None
+    except (ValueError, TypeError):
+        return None
+
+
+def _meet_type_order(m, conn):
+    """Distinct event-type names present at the meet, ordered by the meet's saved order (or the
+    canonical order), with any present-but-unlisted types appended by e.sort."""
+    present = [r["name"] for r in conn.execute(
+        "SELECT DISTINCT e.name, e.sort FROM meet_events me JOIN events e ON e.id=me.event_id "
+        "WHERE me.meet_id=? ORDER BY e.sort", (m["id"],)).fetchall()]
+    base = _stored_type_order(m) or CANON_TRACK_ORDER
+    ordered = [n for n in base if n in present]
+    ordered += [n for n in present if n not in ordered]
+    return ordered
+
+
+def _apply_run_order(conn, mid, type_order):
+    """(Re)generate run_order for every event: by event-type rank, then Girls before Boys, then grade."""
+    rank = {n: i for i, n in enumerate(type_order)}
+    mes = conn.execute(
+        "SELECT me.id, e.name AS ename, e.sort AS esort, me.gender, me.grade "
+        "FROM meet_events me JOIN events e ON e.id=me.event_id WHERE me.meet_id=?", (mid,)).fetchall()
+
+    def key(me):
+        tr = rank.get(me["ename"], 1000 + (me["esort"] or 0))
+        g = {"F": 0, "M": 1}.get(me["gender"], 2)
+        return (tr, g, me["grade"] if me["grade"] is not None else 0)
+
+    for pos, me in enumerate(sorted(mes, key=key)):
+        conn.execute("UPDATE meet_events SET run_order=? WHERE id=?", (pos, me["id"]))
+
+
 def setup_section(m, setup):
     """Track setup (scoring / event limit / lanes) + events list + batch add-events."""
     conn = db.connect()
     catalog = conn.execute("SELECT * FROM events ORDER BY sort").fetchall()
+    # Seed the default running order (general event-type order) the first time, so events default
+    # to Rob's sequence rather than raw e.sort. Idempotent: only when NO event has a run_order yet.
+    cnt = conn.execute("SELECT COUNT(*) c, COUNT(run_order) ro FROM meet_events WHERE meet_id=?",
+                       (m["id"],)).fetchone()
+    if setup and cnt["c"] and cnt["ro"] == 0:
+        _apply_run_order(conn, m["id"], _meet_type_order(m, conn))
+        conn.commit()
+    typeord = _meet_type_order(m, conn)
     mes = conn.execute(
         "SELECT me.*, e.name AS ename, e.kind FROM meet_events me JOIN events e ON e.id=me.event_id "
         "WHERE me.meet_id=? ORDER BY (me.run_order IS NULL), me.run_order, e.sort, me.gender, me.grade",
@@ -273,13 +323,34 @@ def setup_section(m, setup):
                      f'<td>{g_}{gr}</td><td>{counts.get(me["id"], 0)} entries</td>'
                      f'<td style="text-align:right">{rm}</td></tr>')
     hcol = "<th></th>" if setup else ""
-    order_hd = ""
-    reorder_js = ""
+    order_hd = reorder_js = typeorder_html = typeorder_js = ""
     if setup and mes:
-        order_hd = ('<h3 style="margin:.2rem 0 .1rem">Event order</h3>'
-                    '<p class="muted" style="margin:.1rem 0 .6rem;font-size:.9rem">'
-                    '&#9776; Drag events into the order they&#39;ll be run. Timers advance through this '
-                    'order together (Next event &rarr;), and it drives the public progress timeline.</p>')
+        type_items = "".join(
+            f'<li draggable="true" data-name="{escape(n)}" '
+            f'style="list-style:none;padding:.45rem .7rem;margin:.3rem 0;border:1px solid #33475b;'
+            f'border-radius:8px;background:#182633;color:#fff;cursor:grab;display:flex;align-items:center;gap:.5rem">'
+            f'<span style="color:#8a97a5">&#9776;</span><b>{escape(n)}</b></li>' for n in typeord)
+        typeorder_html = (
+            '<h3 style="margin:.2rem 0 .1rem">Event order</h3>'
+            '<p class="muted" style="margin:.1rem 0 .5rem;font-size:.9rem">'
+            '<b>General order</b> — drag event types into the sequence they&#39;ll run. Under each type, '
+            'divisions fall Girls&nbsp;7-9 then Boys&nbsp;7-9. To fine-tune one division, drag its row in '
+            'the list below (that wins).</p>'
+            f'<ul id="typeorder" style="padding:0;margin:0 0 1.1rem;max-width:340px">{type_items}</ul>')
+        typeorder_js = ('<script>(function(){var ul=document.getElementById("typeorder");if(!ul)return;'
+                        'function csrf(){var m=document.cookie.match(/csrftoken=([^;]+)/);return m?decodeURIComponent(m[1]):"";}'
+                        'var d=null;'
+                        'ul.addEventListener("dragstart",function(e){d=e.target.closest("li");if(d)d.style.opacity=".4";});'
+                        'ul.addEventListener("dragend",function(){if(d)d.style.opacity="";d=null;save();});'
+                        'ul.addEventListener("dragover",function(e){e.preventDefault();var t=e.target.closest("li");'
+                        'if(!t||t===d||t.parentNode!==ul)return;var r=t.getBoundingClientRect();'
+                        'ul.insertBefore(d,(e.clientY-r.top)/r.height>.5?t.nextSibling:t);});'
+                        'var _t=null;function save(){clearTimeout(_t);_t=setTimeout(function(){'
+                        'var ns=[].map.call(ul.querySelectorAll("li"),function(l){return l.dataset.name;});'
+                        'fetch("' + f'/meets/{m["id"]}/events/type-order' + '",{method:"POST",'
+                        'headers:{"Content-Type":"application/json","X-CSRF-Token":csrf()},'
+                        'body:JSON.stringify({order:ns})}).then(function(){location.reload();});},500);}})();</script>')
+        order_hd = '<p class="muted" style="margin:.4rem 0 .1rem;font-weight:700">Fine-tune (drag a division)</p>'
         reorder_js = ('<script>(function(){var tb=document.getElementById("evorder");if(!tb)return;'
                       'function csrf(){var m=document.cookie.match(/csrftoken=([^;]+)/);return m?decodeURIComponent(m[1]):"";}'
                       'var drag=null;'
@@ -293,7 +364,8 @@ def setup_section(m, setup):
                       'fetch("' + f'/meets/{m["id"]}/events/reorder' + '",{method:"POST",'
                       'headers:{"Content-Type":"application/json","X-CSRF-Token":csrf()},'
                       'body:JSON.stringify({order:ids})});},400);}})();</script>')
-    etbl = (f'{order_hd}<table><thead><tr>{hcol}<th>Event</th><th>Division</th><th>Entries</th><th></th></tr></thead>'
+    etbl = (f'{typeorder_html}{typeorder_js}{order_hd}'
+            f'<table><thead><tr>{hcol}<th>Event</th><th>Division</th><th>Entries</th><th></th></tr></thead>'
             f'<tbody id="evorder">{"".join(erows)}</tbody></table>{reorder_js}'
             if mes else '<p class="muted">none yet — add some below</p>')
 
@@ -496,6 +568,26 @@ def reorder_meet_events(mid):
     conn.commit()
     conn.close()
     return jsonify(ok=True, n=pos)
+
+
+@bp.post("/meets/<int:mid>/events/type-order")
+@login_required
+def set_event_type_order(mid):
+    """Save the general running order by event TYPE and regenerate run_order for every event
+    (types in this order; divisions Girls 7-9 then Boys 7-9). Per-event drags reset — the general
+    order is the baseline, then fine-tune with the row drag below."""
+    m = load_meet(mid)
+    if not can_setup_meet(m):
+        abort(403)
+    order = [str(x) for x in ((request.get_json(silent=True) or {}).get("order") or []) if isinstance(x, str)]
+    conn = db.connect()
+    settings = json.loads(m["settings_json"] or "{}")
+    settings["event_type_order"] = order
+    conn.execute("UPDATE meets SET settings_json=? WHERE id=?", (json.dumps(settings), mid))
+    _apply_run_order(conn, mid, order)
+    conn.commit()
+    conn.close()
+    return jsonify(ok=True)
 
 
 @bp.post("/meets/<int:mid>/track-settings")
