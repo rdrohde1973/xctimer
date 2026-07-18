@@ -400,17 +400,53 @@ def setup_section(m, setup):
     return f'<div class="card"><h2>Events at this meet ({len(mes)})</h2>{etbl}{add}</div>'
 
 
-def _apply_hj_schedule(conn, mid, low_s, high_s, inc):
-    """Build the bar ladder low→high by `inc` and assign it to the meet's High Jump
-    events: girls get the lowest 10 bars, boys the top 10 (both get all when the
-    ladder is 10 bars or fewer)."""
+def _hj_ladder(low_s, high_s, inc):
+    """Bar ladder low→high by `inc` inches (formatted ft-in strings); [] when unbuildable."""
     low, high = _parse_ht(low_s), _parse_ht(high_s)
     if low is None or high is None or not inc or inc <= 0 or high < low:
-        return
+        return []
     bars, v = [], low
     while v <= high + 0.01 and len(bars) < 40:
         bars.append(_fmt_ht(v))
         v += inc
+    return bars
+
+
+def _hj_bars_for(me, m):
+    """Bar ladder for a printed HJ sheet: the division's saved bar_heights when set, else
+    derived from the meet's HJ schedule settings (default 3-06→5-06 by 2\") — so divisions
+    added AFTER 'Save meet setup' (or created on the fly) still print the full make/miss grid.
+    Girls get the lowest 10 bars, boys the top 10, matching _apply_hj_schedule."""
+    bh = me["bar_heights"] if "bar_heights" in me.keys() else None
+    if bh:
+        try:
+            bars = sorted({b for b in json.loads(bh) if _parse_ht(b) is not None}, key=_parse_ht)
+            if bars:
+                return bars
+        except (ValueError, TypeError):
+            pass
+    try:
+        s = json.loads(m["settings_json"] or "{}")
+    except (ValueError, TypeError):
+        s = {}
+    try:
+        inc = int(s.get("hj_inc") or 2)
+    except (TypeError, ValueError):
+        inc = 2
+    bars = _hj_ladder(s.get("hj_low") or "3-06", s.get("hj_high") or "5-06", inc)
+    if len(bars) > 10:
+        g = me["gender"] if "gender" in me.keys() else None
+        bars = bars[:10] if g == "F" else (bars[-10:] if g == "M" else bars)
+    return bars
+
+
+def _apply_hj_schedule(conn, mid, low_s, high_s, inc):
+    """Build the bar ladder low→high by `inc` and assign it to the meet's High Jump
+    events: girls get the lowest 10 bars, boys the top 10 (both get all when the
+    ladder is 10 bars or fewer)."""
+    bars = _hj_ladder(low_s, high_s, inc)
+    if not bars:
+        return
     girls = bars[:10] if len(bars) > 10 else bars
     boys = bars[-10:] if len(bars) > 10 else bars
     for me in conn.execute(
@@ -2495,6 +2531,11 @@ def time_reset(meid):
         (meid, hk)).fetchall()]
     for eid in eids:
         conn.execute("DELETE FROM results WHERE entry_id=?", (eid,))
+    # Laned sprints record straight into results (no taps) — a false-start reset must clear
+    # those too, or the heat comes back as "all lanes finished" and instantly re-auto-stops.
+    qm = ",".join("?" * len(meids))
+    conn.execute(f"DELETE FROM results WHERE entry_id IN "
+                 f"(SELECT id FROM entries WHERE meet_event_id IN ({qm}) AND heat=?)", (*meids, hk))
     conn.execute("DELETE FROM track_taps WHERE meet_event_id=? AND heat=?", (meid, hk))
     conn.execute("DELETE FROM track_clocks WHERE meet_event_id=? AND heat=?", (meid, hk))
     for m2 in meids:
@@ -2671,13 +2712,7 @@ def heatsheet_pdf(meid):
     div = {"M": "Boys", "F": "Girls"}.get(me["gender"], "Open")
     title = f'{m["name"]} — {me["ename"]} ({div})'
     kind = ("hj" if _is_hj(me) else "field") if me["kind"] == "field" else "track"
-    bars = None
-    if _is_hj(me) and me["bar_heights"]:
-        try:
-            bars = sorted({b for b in json.loads(me["bar_heights"]) if _parse_ht(b) is not None},
-                          key=_parse_ht)
-        except (ValueError, TypeError):
-            bars = None
+    bars = _hj_bars_for(me, m) if _is_hj(me) else None
     pdf = pdfs.heat_sheet_pdf(title, rows, laned=bool(me["laned"]),
                               token=f"XCTSHEET E{meid}", kind=kind, bars=bars)
     return Response(pdf, mimetype="application/pdf",
@@ -2708,13 +2743,7 @@ def meet_heatsheets(mid):
         div = {"M": "Boys", "F": "Girls"}.get(me["gender"], "Open")
         title = f'{me["ename"]} — {div}' + (f' {me["grade"]}' if me["grade"] else "")
         kind = ("hj" if me["ename"] == "High Jump" else "field") if me["kind"] == "field" else "track"
-        bars = None
-        if kind == "hj" and me["bar_heights"]:
-            try:
-                bars = sorted({b for b in json.loads(me["bar_heights"]) if _parse_ht(b) is not None},
-                              key=_parse_ht)
-            except (ValueError, TypeError):
-                bars = None
+        bars = _hj_bars_for(me, m) if kind == "hj" else None
         sections.append((title, rows, bool(me["laned"]), f"XCTSHEET E{me['id']}", kind, bars))
     conn.close()
     pdf = pdfs.multi_heat_sheet_pdf(sections)
@@ -3217,6 +3246,7 @@ _LANE_PAGE = """
 <div id="clk" class="clk">0:00.0</div>
 <button id="stopbtn" class="startbtn" style="background:#c0392b;display:none" onclick="confirmStop()">&#9209;&#65039; Stop the race</button>
 <div id="donebanner" class="rec" style="display:none;font-size:1.15rem">&#127937; Race complete &mdash; all lanes finished</div>
+<button id="resetbtn" class="startbtn" style="background:#6a2f2f;display:none;margin-top:.5rem" onclick="confirmReset()">&#8634; Reset race (false start)</button>
 <button id="startbtn" class="startbtn" onclick="laneStart()">&#128299; Start (tap at the gun)</button>
 <button id="gunbtn" class="startbtn" style="background:#3d6fa5;margin-top:.5rem" onclick="armGun()">&#127911; Auto-start: listen for the gun</button>
 <div id="gunstatus" class="muted" style="text-align:center;font-size:.85rem;margin-top:.35rem"></div>
@@ -3243,6 +3273,7 @@ function render(){
   var gb=document.getElementById('gunbtn');if(gb)gb.style.display=started?'none':'block';
   var sb=document.getElementById('stopbtn');if(sb)sb.style.display=(started&&!stopped)?'block':'none';
   var dn=document.getElementById('donebanner');if(dn)dn.style.display=stopped?'block':'none';
+  var rb=document.getElementById('resetbtn');if(rb)rb.style.display=started?'block':'none';
   if(started&&GUNON)disarmGun('🔫 Started.');
   var h='';LANES.forEach(function(l){
     var sel=(l.lane==MYLANE)?' sel':'';
@@ -3262,6 +3293,9 @@ async function stopRace(){if(STOP||STOPPING)return;STOPPING=true;
   try{await jp('/meet-events/'+MEID+'/time/stop?heat='+HEAT);}finally{STOPPING=false;}poll();}
 function confirmStop(){if(!START||STOP)return;
   if(confirm('End the race now? Times already tapped are kept.'))stopRace();}
+async function resetRace(){await jp('/meet-events/'+MEID+'/time/reset?heat='+HEAT);MYLANE=null;poll();}
+function confirmReset(){if(!START)return;
+  if(confirm('Reset this heat? Clears the clock AND all recorded lane times — rerun from the gun.'))resetRace();}
 async function laneTap(){if(MYLANE==null||!START)return;var at=serverNow();if(navigator.vibrate)navigator.vibrate(40);
   var j=await jp('/meet-events/'+MEID+'/lane-finish?heat='+HEAT+'&lane='+MYLANE,{at:at});
   if(j.ok){document.getElementById('rec').textContent='✓ Lane '+MYLANE+' — '+fmt(j.secs);poll();}
