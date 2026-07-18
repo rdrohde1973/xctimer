@@ -16,7 +16,7 @@ from flask import Blueprint, g, redirect, request, Response, abort
 
 from . import db
 from .meets import load_meet, can_record_meet
-from .ui import shell, HEAD_EXTRA, CSS, JS, BRAND_HTML, LOGO_APP_URL
+from .ui import shell, HEAD_EXTRA, CSS, JS, BRAND_HTML, LOGO_APP_URL, GUN_CONTROLS_HTML, GUN_JS
 
 bp = Blueprint("phone", __name__)
 
@@ -206,6 +206,7 @@ def phone_race(rid):
   <a href="/races/{rid}/camera?phone=1" class="camlink" title="Time with the camera">📷</a></div>
 <div class="tmain">
   <button id="startb" class="bigbtn start" onclick="startRace()">START</button>
+  {GUN_CONTROLS_HTML}
   <button id="tapb" class="bigbtn tap" onclick="tap()" style="display:none">FINISHER</button>
   <div id="scanbox" class="scanbox" style="display:none">
     <input id="sbib" inputmode="numeric" autocomplete="off" placeholder="scan or type bib #"
@@ -244,6 +245,7 @@ async function load(){{
 function sync(){{
   const active=STARTED&&!STOPPED, scan=MODE==='scan', sel=MODE==='tapselect';
   document.getElementById('startb').style.display = STARTED?'none':'';
+  gunReflect(STARTED);
   document.getElementById('tapb').style.display = (active&&!scan)?'':'none';
   document.getElementById('scanbox').style.display = (active&&scan)?'':'none';
   document.getElementById('pickbox').style.display = (STARTED&&sel)?'flex':'none';
@@ -323,6 +325,7 @@ wlock();
 setInterval(tick,60);
 setInterval(load,3000);
 load();
+{GUN_JS}
 </script>
 """
     return _phone_doc(r["name"], body, TIMER_CSS)

@@ -21,7 +21,7 @@ from flask import Blueprint, request, redirect, g, abort, jsonify, Response
 from . import db, ai, pdfs, demo
 from .auth import login_required
 from .tenancy import active_district_id, all_districts
-from .ui import shell
+from .ui import shell, GUN_CONTROLS_HTML, GUN_JS
 from .meets import load_meet, can_view_meet, can_setup_meet, can_record_meet
 
 bp = Blueprint("track", __name__)
@@ -2073,6 +2073,7 @@ def time_console(meid):
     <button class="ghost" onclick="resetRace()">🔄 Reset</button>
   </div>
   <div id="status" class="tc-status wait">Loading…</div>
+  {GUN_CONTROLS_HTML}
   <button id="tapbtn" onclick="tap()" disabled
     style="font-size:1.7rem;padding:1.1rem;width:100%;max-width:440px;margin:.7rem auto 0;display:block">TAP finisher</button>
 </div>
@@ -2094,6 +2095,7 @@ function syncUI(){{
   document.getElementById('btn-start').disabled = STARTED && !STOPPED;
   document.getElementById('btn-stop').disabled = !STARTED || STOPPED;
   document.getElementById('tapbtn').disabled = !STARTED || STOPPED;
+  gunReflect(STARTED);
   const st=document.getElementById('status');
   if(!STARTED){{ st.className='tc-status wait'; st.textContent='Not started.'; }}
   else if(STOPPED){{ st.className='tc-status end'; st.textContent='🏁 Race ended — assign each finisher.'; }}
@@ -2169,6 +2171,7 @@ wlock();
 setInterval(tick,75);
 setInterval(()=>{{ if(!document.hidden) load(); }},2000);
 load();
+{GUN_JS}
 </script>"""
     return shell(g.principal, body, active="phone", bare=True)
 

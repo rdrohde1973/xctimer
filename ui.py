@@ -329,6 +329,57 @@ def error_page(code, title, msg):
 </div></div></body></html>"""
 
 
+# ---------------------------------------------------------------------------
+# Shared "listen for the gun" auto-start control for the running-race timers
+# (distance track console + XC/road race timer; sprints have their own copy in
+# track._LANE_PAGE). A page drops GUN_CONTROLS_HTML next to its Start button and
+# {GUN_JS} inside its <script>, then calls gunReflect(STARTED) in its per-poll UI
+# sync. armGun() opens the mic and calls the page's existing startRace() when it
+# hears the pistol — so the STARTER's phone sets the shared clock at the true gun
+# instant and any FINISHER phone records against that same clock (share the race,
+# split the roles). Both host pages already define startRace() and a STARTED flag.
+GUN_CONTROLS_HTML = (
+    '<button id="gunbtn" type="button" onclick="armGun()" '
+    'style="display:block;width:100%;max-width:440px;margin:.5rem auto 0;padding:.8rem;'
+    'font-size:1rem;font-weight:700;background:#3d6fa5;color:#fff;border:0;border-radius:12px;'
+    'cursor:pointer">\U0001F3A7 Auto-start: listen for the gun</button>'
+    '<div id="gunstatus" style="text-align:center;font-size:.85rem;margin-top:.35rem;opacity:.85"></div>'
+    '<p id="gunnote" style="text-align:center;font-size:.8rem;opacity:.7;margin:.3rem auto 0;max-width:440px">'
+    'Arm this on the <b>starter’s</b> phone at the line. Finishers can time on another phone — '
+    'they share the same clock, so there’s no sound-travel delay.</p>'
+)
+
+GUN_JS = r"""
+var GUNON=false, _gunAC=null, _gunRAF=null;
+async function armGun(){
+  if(GUNON){disarmGun('');return;}
+  if(typeof STARTED!=='undefined' && STARTED)return;
+  var st=document.getElementById('gunstatus');
+  try{
+    var stream=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:false,noiseSuppression:false,autoGainControl:false}});
+    _gunAC=new (window.AudioContext||window.webkitAudioContext)();if(_gunAC.state==='suspended')_gunAC.resume();
+    var src=_gunAC.createMediaStreamSource(stream),an=_gunAC.createAnalyser();an.fftSize=1024;src.connect(an);
+    var buf=new Uint8Array(an.fftSize),armedAt=Date.now();GUNON=true;
+    var b=document.getElementById('gunbtn');if(b)b.textContent='🎧 Listening… (tap to cancel)';
+    if(st)st.textContent='🎧 Listening for the gun — keep this phone at the start line.';
+    (function loop(){
+      if(!GUNON)return;
+      an.getByteTimeDomainData(buf);
+      var peak=0;for(var i=0;i<buf.length;i++){var d=Math.abs(buf[i]-128);if(d>peak)peak=d;}
+      if(Date.now()-armedAt>500 && peak>=110){disarmGun('🔫 Gun detected — started!');startRace();return;}
+      _gunRAF=requestAnimationFrame(loop);
+    })();
+  }catch(e){if(st)st.textContent='Mic unavailable — use the Start button.';GUNON=false;}
+}
+function disarmGun(msg){GUNON=false;if(_gunRAF)cancelAnimationFrame(_gunRAF);try{if(_gunAC)_gunAC.close();}catch(e){}_gunAC=null;
+  var b=document.getElementById('gunbtn');if(b)b.textContent='🎧 Auto-start: listen for the gun';
+  var st=document.getElementById('gunstatus');if(st&&msg)st.textContent=msg;}
+function gunReflect(started){var b=document.getElementById('gunbtn'),n=document.getElementById('gunnote');
+  if(b)b.style.display=started?'none':'block'; if(n)n.style.display=started?'none':'block';
+  if(started&&GUNON)disarmGun('🔫 Started.');}
+"""
+
+
 def auth_page(title, sub, body, *, msg=None, err=None):
     """Standalone (no-shell) page for login / setup / reset."""
     return f"""<!doctype html><html lang=en><head><meta charset=utf-8>
