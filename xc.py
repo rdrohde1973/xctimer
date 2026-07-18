@@ -1952,9 +1952,17 @@ async function pollLive(){{
   try{{
     const r=await fetch('/r/'+LTOKEN+'/live'); const d=await r.json();
     LOFFSET=d.server_ms-Date.now();
-    window.__LIVE_ACTIVE=!!(d.heats&&d.heats.length);
-    renderLive(d.heats||[]);
-    if(window.renderTimeline)renderTimeline(d.timeline);
+    const _h=d.heats||[];
+    window.__LIVE_ACTIVE=!!_h.length;
+    // Only rebuild the board when something actually changed — otherwise the clock element gets
+    // recreated every poll and flickers to 0:00. Between changes, tickLive keeps it ticking.
+    const _sig=JSON.stringify(_h.map(function(h){{return [h.name,h.ended,h.start_ms,h.stop_ms,
+      h.finishers.map(function(f){{return (f.who||'')+'@'+f.elapsed;}})];}}));
+    if(_sig!==window.__LIVE_SIG){{ window.__LIVE_SIG=_sig; renderLive(_h); tickLive(); }}
+    if(window.renderTimeline){{
+      const _ts=d.timeline?JSON.stringify(d.timeline.events.map(function(e){{return e.status;}}).concat(d.timeline.current)):'';
+      if(_ts!==window.__TL_SIG){{ window.__TL_SIG=_ts; renderTimeline(d.timeline); }}
+    }}
   }}catch(e){{}}
   const gap = document.hidden ? 15000 : (window.__LIVE_ACTIVE ? 2500 : 8000);
   LTIMER=setTimeout(pollLive, gap);
@@ -2127,9 +2135,17 @@ async function pollLive(){{
   try{{
     const r=await fetch('/r/'+LTOKEN+'/live'); const d=await r.json();
     LOFFSET=d.server_ms-Date.now();
-    window.__LIVE_ACTIVE=!!(d.heats&&d.heats.length);
-    renderLive(d.heats||[]);
-    if(window.renderTimeline)renderTimeline(d.timeline);
+    const _h=d.heats||[];
+    window.__LIVE_ACTIVE=!!_h.length;
+    // Only rebuild the board when something actually changed — otherwise the clock element gets
+    // recreated every poll and flickers to 0:00. Between changes, tickLive keeps it ticking.
+    const _sig=JSON.stringify(_h.map(function(h){{return [h.name,h.ended,h.start_ms,h.stop_ms,
+      h.finishers.map(function(f){{return (f.who||'')+'@'+f.elapsed;}})];}}));
+    if(_sig!==window.__LIVE_SIG){{ window.__LIVE_SIG=_sig; renderLive(_h); tickLive(); }}
+    if(window.renderTimeline){{
+      const _ts=d.timeline?JSON.stringify(d.timeline.events.map(function(e){{return e.status;}}).concat(d.timeline.current)):'';
+      if(_ts!==window.__TL_SIG){{ window.__TL_SIG=_ts; renderTimeline(d.timeline); }}
+    }}
   }}catch(e){{}}
   const gap = document.hidden ? 15000 : (window.__LIVE_ACTIVE ? 2500 : 8000);
   LTIMER=setTimeout(pollLive, gap);
@@ -2215,9 +2231,17 @@ async function pollLive(){{
   try{{
     const r=await fetch('/r/'+TOKEN+'/live'); const d=await r.json();
     LOFFSET=d.server_ms-Date.now();
-    window.__LIVE_ACTIVE=!!(d.heats&&d.heats.length);
-    renderLive(d.heats||[]);
-    if(window.renderTimeline)renderTimeline(d.timeline);
+    const _h=d.heats||[];
+    window.__LIVE_ACTIVE=!!_h.length;
+    // Only rebuild the board when something actually changed — otherwise the clock element gets
+    // recreated every poll and flickers to 0:00. Between changes, tickLive keeps it ticking.
+    const _sig=JSON.stringify(_h.map(function(h){{return [h.name,h.ended,h.start_ms,h.stop_ms,
+      h.finishers.map(function(f){{return (f.who||'')+'@'+f.elapsed;}})];}}));
+    if(_sig!==window.__LIVE_SIG){{ window.__LIVE_SIG=_sig; renderLive(_h); tickLive(); }}
+    if(window.renderTimeline){{
+      const _ts=d.timeline?JSON.stringify(d.timeline.events.map(function(e){{return e.status;}}).concat(d.timeline.current)):'';
+      if(_ts!==window.__TL_SIG){{ window.__TL_SIG=_ts; renderTimeline(d.timeline); }}
+    }}
   }}catch(e){{}}
   // poll fast only while a race runs; back off when idle or the tab is hidden
   const gap = document.hidden ? 15000 : (window.__LIVE_ACTIVE ? 2500 : 8000);
@@ -2291,7 +2315,8 @@ async function refreshResults(){{
     if(!r.ok) return;
     const html=await r.text();
     const box=document.getElementById('resultsbox');
-    if(box && html) box.innerHTML=html;   // in-place swap — no reload, scroll stays put
+    // Swap only when the results actually changed — avoids a needless flash every 20s.
+    if(box && html && html!==window.__RES_SIG){{ window.__RES_SIG=html; box.innerHTML=html; }}
   }}catch(e){{}}
 }}
 setInterval(refreshResults, 20000);
