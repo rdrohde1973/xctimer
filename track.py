@@ -3172,7 +3172,8 @@ def lane_timer(meid):
     if not can_record_meet(m):
         abort(403)
     hk = _heat_key(request.args.get("heat", ""))
-    title = (me["ename"] if "ename" in me.keys() else "Race") + (f" · Heat {hk}" if hk else "")
+    ev = me["ename"] if "ename" in me.keys() else "Race"
+    title = f'{ev} · {_div_grade(me["gender"], me["grade"])}' + (f" · Heat {hk}" if hk else "")
     body = (_LANE_PAGE.replace("__MEID__", str(meid)).replace("__HEAT__", str(hk))
             .replace("__MID__", str(m["id"])).replace("__TITLE__", escape(title)))
     return shell(g.principal, body, active="phone", bare=True)
