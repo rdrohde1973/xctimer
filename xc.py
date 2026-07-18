@@ -1954,6 +1954,7 @@ async function pollLive(){{
     LOFFSET=d.server_ms-Date.now();
     window.__LIVE_ACTIVE=!!(d.heats&&d.heats.length);
     renderLive(d.heats||[]);
+    if(window.renderTimeline)renderTimeline(d.timeline);
   }}catch(e){{}}
   const gap = document.hidden ? 15000 : (window.__LIVE_ACTIVE ? 2500 : 8000);
   LTIMER=setTimeout(pollLive, gap);
@@ -2128,6 +2129,7 @@ async function pollLive(){{
     LOFFSET=d.server_ms-Date.now();
     window.__LIVE_ACTIVE=!!(d.heats&&d.heats.length);
     renderLive(d.heats||[]);
+    if(window.renderTimeline)renderTimeline(d.timeline);
   }}catch(e){{}}
   const gap = document.hidden ? 15000 : (window.__LIVE_ACTIVE ? 2500 : 8000);
   LTIMER=setTimeout(pollLive, gap);
@@ -2180,10 +2182,23 @@ main{{max-width:960px;margin:0 auto;padding:1.4rem 1rem 4rem}}
 .livescroll{{max-height:300px;overflow-y:auto;border-top:1px solid var(--line)}}
 .livescroll table{{width:100%}}
 .livescroll td{{padding:.35rem .4rem}}
+.tlwrap{{border:1px solid var(--line);border-radius:12px;padding:1.5rem .6rem .5rem;margin:0 0 1.1rem;overflow-x:auto}}
+.tlwrap h3{{margin:.1rem .4rem .2rem;font-size:.95rem}}
+.tl{{position:relative;display:flex;gap:.15rem;min-width:min-content;padding:1.5rem .6rem .3rem}}
+.tl::before{{content:"";position:absolute;left:.6rem;right:.6rem;top:calc(1.5rem + 6px);height:3px;background:#d3dae2}}
+.tlitem{{position:relative;z-index:1;flex:0 0 auto;width:46px;display:flex;flex-direction:column;align-items:center}}
+.tldot{{width:15px;height:15px;border-radius:50%;background:#c3ccd6;border:2px solid #fff;box-shadow:0 0 0 1px #c3ccd6}}
+.tldot.done{{background:#2e9e5b;box-shadow:0 0 0 1px #2e9e5b}}
+.tldot.running{{background:#e8622a;box-shadow:0 0 0 4px rgba(232,98,42,.25);animation:lblink 1s infinite}}
+.tllabel{{position:absolute;top:-1.35rem;white-space:nowrap;font-size:.72rem;font-weight:800;color:#e8622a}}
+.tlcap{{font-size:.62rem;color:#8a97a5;margin-top:.25rem;max-width:46px;text-align:center;line-height:1.1;overflow:hidden}}
+.tllegend{{font-size:.72rem;color:#8a97a5;padding:.1rem .6rem .2rem;display:flex;gap:.9rem;flex-wrap:wrap}}
+.tllegend b{{font-weight:700}}
 </style></head><body>
 <div class="pubhdr">{_host_logo_tag(m)}</div>
 <main><h1>{escape(m['name'])}</h1>
 <p class="sub">🎽 Track · {escape(m['date'] or '')}</p>
+<div id="timeline" class="tlwrap" style="display:none"></div>
 <div id="livebox"></div>
 {inner}</main>
 <footer class="pubfoot">Powered by {BRAND_HTML}</footer>
@@ -2202,6 +2217,7 @@ async function pollLive(){{
     LOFFSET=d.server_ms-Date.now();
     window.__LIVE_ACTIVE=!!(d.heats&&d.heats.length);
     renderLive(d.heats||[]);
+    if(window.renderTimeline)renderTimeline(d.timeline);
   }}catch(e){{}}
   // poll fast only while a race runs; back off when idle or the tab is hidden
   const gap = document.hidden ? 15000 : (window.__LIVE_ACTIVE ? 2500 : 8000);
@@ -2240,6 +2256,27 @@ function tickLive(){{
     if(st) c.textContent=lfmt(((sp||now)-st)/1000);
   }});
 }}
+window.renderTimeline=function(tl){{
+  const box=document.getElementById('timeline');
+  if(!box) return;
+  if(!tl||!tl.events||!tl.events.length){{ box.style.display='none'; return; }}
+  box.style.display='';
+  const st={{done:' \\u2014 done', running:' \\u2014 running now', upcoming:' \\u2014 upcoming'}};
+  let h='<h3>Meet progress</h3><div class="tl">';
+  tl.events.forEach(function(ev,i){{
+    const cur=(i===tl.current);
+    const lab=cur?('<div class="tllabel">\\u25bc '+lesc(ev.name)+' '+lesc(ev.div)+'</div>'):'';
+    const cap=lesc(ev.name.replace(/m$/,''))+'<br>'+lesc(ev.div);
+    h+='<div class="tlitem" title="'+lesc(ev.name)+' '+lesc(ev.div)+(st[ev.status]||'')+'">'
+      +lab+'<div class="tldot '+ev.status+(cur?' cur':'')+'"></div><div class="tlcap">'+cap+'</div></div>';
+  }});
+  h+='</div><div class="tllegend"><span><b style="color:#2e9e5b">\\u25cf</b> done</span>'
+    +'<span><b style="color:#e8622a">\\u25cf</b> running</span>'
+    +'<span><b style="color:#c3ccd6">\\u25cf</b> upcoming</span></div>';
+  box.innerHTML=h;
+  const c=box.querySelector('.tldot.cur');
+  if(c&&c.scrollIntoView){{ try{{ c.scrollIntoView({{inline:'center',block:'nearest'}}); }}catch(e){{}} }}
+}};
 setInterval(tickLive,100);
 pollLive();
 // Full-page refresh keeps the static results fresh — but pause it during a live race

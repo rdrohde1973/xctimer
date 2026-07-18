@@ -2806,11 +2806,52 @@ def public_live(mid, name_mode=None):
     nowm = time.monotonic()
     hit = _LIVE_CACHE.get(key)
     if hit and hit[0] > nowm:
-        heats = hit[1]
+        heats, tl = hit[1], hit[2]
     else:
         heats = _live_heats(mid, name_mode)
-        _LIVE_CACHE[key] = (nowm + _LIVE_TTL, heats)
-    return {"server_ms": _t_ms(_t_now()), "heats": heats}
+        tl = _timeline(mid)
+        _LIVE_CACHE[key] = (nowm + _LIVE_TTL, heats, tl)
+    return {"server_ms": _t_ms(_t_now()), "heats": heats, "timeline": tl}
+
+
+def _timeline(mid):
+    """Running-event progress for the public page: each track/relay event in run order with a
+    status (done / running / upcoming) + the index of the current one. Field events (concurrent,
+    no clock) are omitted — the timeline tracks the sequential running order parents follow."""
+    conn = db.connect()
+    evs = conn.execute(
+        "SELECT me.id AS meid, e.name AS ename, me.gender, me.grade FROM meet_events me "
+        "JOIN events e ON e.id=me.event_id WHERE me.meet_id=? AND e.kind IN ('track','relay') "
+        "ORDER BY (me.run_order IS NULL), me.run_order, e.sort, me.gender, me.grade", (mid,)).fetchall()
+    running, stopped = set(), set()
+    for c in conn.execute(
+            "SELECT tc.meet_event_id AS meid, tc.start_time, tc.stop_time FROM track_clocks tc "
+            "JOIN meet_events me ON me.id=tc.meet_event_id WHERE me.meet_id=?", (mid,)).fetchall():
+        if c["start_time"] and not c["stop_time"]:
+            running.add(c["meid"])
+        elif c["start_time"] and c["stop_time"]:
+            stopped.add(c["meid"])
+    has_res = {r[0] for r in conn.execute(
+        "SELECT DISTINCT en.meet_event_id FROM results r JOIN entries en ON en.id=r.entry_id "
+        "JOIN meet_events me ON me.id=en.meet_event_id "
+        "WHERE me.meet_id=? AND r.mark_seconds IS NOT NULL", (mid,)).fetchall()}
+    conn.close()
+    out, cur = [], None
+    for i, ev in enumerate(evs):
+        meid = ev["meid"]
+        if meid in running:
+            st = "running"
+        elif meid in has_res or meid in stopped:
+            st = "done"
+        else:
+            st = "upcoming"
+        if st == "running" and cur is None:
+            cur = i
+        out.append({"name": ev["ename"], "div": _div_grade(ev["gender"], ev["grade"]), "status": st})
+    if cur is None:   # nobody running -> point at the first upcoming, else the last event
+        cur = next((i for i, o in enumerate(out) if o["status"] == "upcoming"),
+                   (len(out) - 1 if out else -1))
+    return {"events": out, "current": cur}
 
 
 def _live_heats(mid, name_mode=None):
@@ -2818,8 +2859,9 @@ def _live_heats(mid, name_mode=None):
     (kept on the board briefly so spectators can read the final result)."""
     conn = db.connect()
     rows = conn.execute(
-        "SELECT tc.meet_event_id AS meid, tc.heat AS heat, tc.start_time, tc.stop_time "
+        "SELECT tc.meet_event_id AS meid, tc.heat AS heat, tc.start_time, tc.stop_time, e.laned "
         "FROM track_clocks tc JOIN meet_events me ON me.id=tc.meet_event_id "
+        "JOIN events e ON e.id=me.event_id "
         "WHERE me.meet_id=? AND tc.start_time IS NOT NULL "
         "ORDER BY tc.start_time", (mid,)).fetchall()
     now = _t_now()
@@ -2831,17 +2873,29 @@ def _live_heats(mid, name_mode=None):
         me = load_meet_event(r["meid"])
         label = _div_grade(me["gender"], me["grade"])
         name = f'{me["ename"]} · {label}' + (f' · Heat {r["heat"]}' if r["heat"] else "")
-        taps = conn.execute("SELECT * FROM track_taps WHERE meet_event_id=? AND heat=? ORDER BY seq",
-                            (r["meid"], r["heat"])).fetchall()
         fin = []
-        for i, t in enumerate(taps):
-            who = school = None
-            if t["entry_id"]:
-                e = conn.execute("SELECT * FROM entries WHERE id=?", (t["entry_id"],)).fetchone()
-                if e:
-                    nm, _bib, sch = _entry_label(conn, e)
-                    who, school = demo.public_ident(nm, _bib, name_mode), sch
-            fin.append({"n": i + 1, "elapsed": t["elapsed_seconds"], "who": who, "school": school})
+        if r["laned"]:
+            # Laned sprints/relays record straight into results (mark_seconds) by lane — no taps.
+            res = conn.execute(
+                "SELECT r.mark_seconds, r.snap_name, r.snap_bib, r.snap_school "
+                "FROM results r JOIN entries en ON en.id=r.entry_id "
+                "WHERE en.meet_event_id=? AND en.heat=? AND r.mark_seconds IS NOT NULL "
+                "ORDER BY r.mark_seconds", (r["meid"], r["heat"])).fetchall()
+            for i, rr in enumerate(res):
+                who = demo.public_ident(rr["snap_name"], rr["snap_bib"], name_mode)
+                fin.append({"n": i + 1, "elapsed": rr["mark_seconds"], "who": who,
+                            "school": rr["snap_school"]})
+        else:
+            taps = conn.execute("SELECT * FROM track_taps WHERE meet_event_id=? AND heat=? ORDER BY seq",
+                                (r["meid"], r["heat"])).fetchall()
+            for i, t in enumerate(taps):
+                who = school = None
+                if t["entry_id"]:
+                    e = conn.execute("SELECT * FROM entries WHERE id=?", (t["entry_id"],)).fetchone()
+                    if e:
+                        nm, _bib, sch = _entry_label(conn, e)
+                        who, school = demo.public_ident(nm, _bib, name_mode), sch
+                fin.append({"n": i + 1, "elapsed": t["elapsed_seconds"], "who": who, "school": school})
         heats.append({"name": name, "start_ms": _t_ms(_t_parse(r["start_time"])),
                       "stop_ms": _t_ms(stop) if stop else None, "ended": bool(stop),
                       "finishers": fin})
