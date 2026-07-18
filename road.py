@@ -1206,11 +1206,12 @@ def reap_web_events(conn, today_iso):
 
 
 # ============================ self-serve setup assistant (Claude) ============================
-_HOST_HELP_SYS = """You are the friendly setup assistant for XCTimer's self-serve "fun run" events.
-Help the organizer set up and run their community race (a 5K/10K/fun run). Keep answers short,
-concrete, and specific to XCTimer. Only answer questions about using XCTimer to plan, build, and
-run their event — for anything unrelated, politely steer back. Never invent features; if unsure,
-tell them to email admin@xctimer.com.
+_HOST_HELP_SYS = """You are "the Ref" — a friendly, straight-talking race official who helps
+organizers set up and run their community race (a 5K/10K/fun run) on XCTimer. Talk like a helpful
+official: clear, encouraging, plain-spoken, a little playful. Keep answers short, concrete, and
+specific to XCTimer. Only answer questions about using XCTimer to plan, build, and run their event
+— for anything unrelated, politely blow the whistle and steer back. Never invent features; if
+unsure, tell them to email admin@xctimer.com.
 
 How XCTimer self-serve works (rely on these facts):
 - Create an event at xctimer.com/host; you get a private email link to manage it (bookmark it, or
@@ -1257,27 +1258,33 @@ def host_chat():
 
 
 def host_chat_widget():
-    """Floating 'Setup help' chat, injected by ui.shell for self-serve event owners only."""
+    """Floating 'Ask the Ref' chat (referee-styled), injected by ui.shell for event owners only."""
     return """
 <div id="hcbtn" onclick="hcToggle()" style="position:fixed;right:18px;bottom:18px;z-index:9998;
-  background:#ea6a2d;color:#fff;border-radius:999px;padding:.7rem 1.1rem;font-weight:700;cursor:pointer;
-  box-shadow:0 4px 16px rgba(0,0,0,.3)">&#128172; Setup help</div>
-<div id="hcpanel" style="display:none;position:fixed;right:18px;bottom:74px;z-index:9998;
+  display:flex;align-items:center;gap:.5rem;background:#141414;color:#fff;border:2px solid #fff;
+  border-radius:999px;padding:.5rem .95rem .5rem .5rem;font-weight:800;cursor:pointer;
+  box-shadow:0 4px 16px rgba(0,0,0,.35)">
+  <span style="width:1.6rem;height:1.6rem;border-radius:50%;border:2px solid #fff;flex-shrink:0;
+    background:repeating-linear-gradient(90deg,#111 0 6px,#fff 6px 12px)"></span>Ask the Ref</div>
+<div id="hcpanel" style="display:none;position:fixed;right:18px;bottom:78px;z-index:9998;
   width:min(370px,92vw);height:min(480px,72vh);background:#fff;color:#20303f;border-radius:14px;
-  box-shadow:0 8px 30px rgba(0,0,0,.4);flex-direction:column;overflow:hidden">
-  <div style="background:#164271;color:#fff;padding:.6rem .9rem;font-weight:700;display:flex;
-    justify-content:space-between;align-items:center">Setup assistant
+  box-shadow:0 8px 30px rgba(0,0,0,.45);flex-direction:column;overflow:hidden;border:2px solid #141414">
+  <div style="height:9px;background:repeating-linear-gradient(90deg,#111 0 6px,#fff 6px 12px)"></div>
+  <div style="background:#141414;color:#fff;padding:.55rem .9rem;font-weight:800;display:flex;
+    justify-content:space-between;align-items:center">
+    <span>&#129370; The Ref</span>
     <span onclick="hcToggle()" style="cursor:pointer">&#10005;</span></div>
-  <div id="hclog" style="flex:1;overflow-y:auto;padding:.7rem;font-size:.9rem">
-    <div style="background:#eef3f9;border-radius:10px;padding:.5rem .7rem;margin:.3rem 0">
-      Hi! Ask me anything about setting up or running your fun run &mdash; bibs, registration, timing, results&hellip;</div>
+  <div id="hclog" style="flex:1;overflow-y:auto;padding:.7rem;font-size:.9rem;background:#fafafa">
+    <div style="background:#eef1f4;border-left:3px solid #141414;border-radius:8px;padding:.5rem .7rem;margin:.3rem 0">
+      &#129370; I&#39;m the Ref. Ask me anything about setting up or running your race &mdash;
+      bibs, registration, timing, going live, results&hellip;</div>
   </div>
   <div style="display:flex;gap:.4rem;padding:.6rem;border-top:1px solid #e3e9f1">
-    <input id="hcin" placeholder="Type your question&hellip;"
+    <input id="hcin" placeholder="Ask the Ref&hellip;"
       style="flex:1;padding:.5rem;border:1px solid #cdd7e2;border-radius:8px;font:inherit"
       onkeydown="if(event.key==='Enter')hcSend()">
-    <button onclick="hcSend()" style="background:#ea6a2d;color:#fff;border:0;border-radius:8px;
-      padding:.5rem .8rem;font-weight:700;cursor:pointer">Send</button>
+    <button onclick="hcSend()" style="background:#141414;color:#fff;border:0;border-radius:8px;
+      padding:.5rem .9rem;font-weight:800;cursor:pointer">Send</button>
   </div>
 </div>
 <script>
@@ -1287,11 +1294,12 @@ function hcToggle(){var p=document.getElementById('hcpanel');
   if(p.style.display==='flex')document.getElementById('hcin').focus();}
 function hcCsrf(){var m=document.cookie.match(/csrftoken=([^;]+)/);return m?decodeURIComponent(m[1]):'';}
 function hcAdd(role,text){var l=document.getElementById('hclog');var d=document.createElement('div');
-  d.style.cssText='border-radius:10px;padding:.5rem .7rem;margin:.3rem 0;white-space:pre-wrap;'
-    +(role==='user'?'background:#ea6a2d;color:#fff;margin-left:2rem':'background:#eef3f9;margin-right:1rem');
+  d.style.cssText='border-radius:8px;padding:.5rem .7rem;margin:.3rem 0;white-space:pre-wrap;'
+    +(role==='user'?'background:#141414;color:#fff;margin-left:2rem'
+                   :'background:#eef1f4;border-left:3px solid #141414;margin-right:1rem');
   d.textContent=text;l.appendChild(d);l.scrollTop=l.scrollHeight;return d;}
 async function hcSend(){var i=document.getElementById('hcin');var q=i.value.trim();if(!q)return;
-  i.value='';hcAdd('user',q);var t=hcAdd('bot','…');
+  i.value='';hcAdd('user',q);var t=hcAdd('bot','\u2026');
   try{var r=await fetch('/host/chat',{method:'POST',
       headers:{'Content-Type':'application/json','X-CSRF-Token':hcCsrf()},
       body:JSON.stringify({message:q,history:HCHIST})});
