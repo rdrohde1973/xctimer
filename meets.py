@@ -551,6 +551,38 @@ def timer_qr_png(mid):
     return Response(buf.getvalue(), mimetype="image/png")
 
 
+def ensure_timer_token(mid):
+    """Return the meet's no-login timer token, lazily creating one if absent
+    (so the Meet-day QR just appears — no 'Generate' step)."""
+    conn = db.connect()
+    row = conn.execute("SELECT timer_token FROM meets WHERE id=?", (mid,)).fetchone()
+    tok = row["timer_token"] if row else None
+    if not tok:
+        tok = secrets.token_urlsafe(10)
+        conn.execute("UPDATE meets SET timer_token=?, timer_token_expires=NULL WHERE id=?", (tok, mid))
+        conn.commit()
+    conn.close()
+    return tok
+
+
+def timer_qr_card(m):
+    """The 'No-login timer QR' card for the Meet-day page. Auto-generates the token;
+    the Rotate (revoke) button shows only for setup users."""
+    mid = m["id"]
+    tok = ensure_timer_token(mid)
+    base = os.environ.get("XC_PUBLIC_URL", request.host_url.rstrip("/"))
+    rotate = ""
+    if can_setup_meet(m):
+        rotate = (f'<form method="post" action="/meets/{mid}/timer-qr">'
+                  f'<button class="ghost" type="submit" style="margin-top:.6rem">Rotate timer QR</button></form>')
+    return (f'<div class="card"><h2>No-login timer QR</h2>'
+            f'<p class="muted">Share this QR/link with helpers — it opens the phone timing app for '
+            f'<b>this meet only</b>, no login, anytime. Rotate to revoke.</p>'
+            f'<p><a href="{base}/t/{tok}">{base}/t/{tok}</a></p>'
+            f'<img src="/meets/{mid}/timer-qr.png" width="160" height="160" '
+            f'style="background:#fff;padding:8px;border-radius:8px">{rotate}</div>')
+
+
 # ------------------------------- detail (setup shell) -------------------------------
 @bp.get("/meets/<int:mid>")
 @login_required
@@ -662,16 +694,7 @@ def meet_detail(mid):
             summary += _sport.settings_fields(m, False)
         setup_card = f'<div class="card"><h2>Schools at this meet</h2>{pills}{summary}</div>'
 
-    qr_block = ""
-    if m["timer_token"]:
-        qr_block = (f'<p><a href="{base}/t/{m["timer_token"]}">{base}/t/{m["timer_token"]}</a></p>'
-                    f'<img src="/meets/{mid}/timer-qr.png" width="160" height="160" '
-                    f'style="background:#fff;padding:8px;border-radius:8px">')
-    if setup:
-        qr_block += (f'<form method="post" action="/meets/{mid}/timer-qr">'
-                     f'<button class="ghost" type="submit" style="margin-top:.6rem">'
-                     f'{"Rotate" if m["timer_token"] else "Generate"} timer QR</button></form>')
-
+    # (No-login timer QR moved to the Meet-day page; it auto-generates there.)
     section = _sport.setup_section(m, setup)
     tabs = (_sport._xc_tabs(mid, "setup", road=(m["sport"] == "road"), organizer=is_org) if is_xc
             else _sport._track_tabs(mid, "setup"))
@@ -719,10 +742,6 @@ def meet_detail(mid):
 {tabs}
 {print_bar}
 {mid_block}
-<div class="card"><h2>No-login timer QR</h2>
-<p class="muted">Share this QR/link with helpers — it opens the phone timing app for
-<b>this meet only</b>, no login, anytime. Rotate to revoke.</p>
-{qr_block}</div>
 """
     return shell(g.principal, body, active=("events" if is_org else "meets"),
                  active_district=active_district_id(), districts=_districts_for_switcher())

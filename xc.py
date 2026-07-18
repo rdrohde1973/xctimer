@@ -776,9 +776,10 @@ def xc_meet_day(mid):
             f'<a class="btn ghost" href="/meets/{mid}/biblist.pdf" target="_blank">Bib lists</a>'
             f'<br><span class="muted" style="font-size:.85rem">Use Avery 5163 (2"×4") sticker sheets.</span></div>')
     walkup = "" if _is_org(m) else _walkup_card(m, mid)
+    from .meets import timer_qr_card
     body = (f'<p class="muted"><a href="/meets">← Meets</a></p><h1>{escape(m["name"])}</h1>'
             f'{_xc_tabs(mid, "meetday", road=(m["sport"]=="road"), organizer=_is_org(m))}'
-            f'{tbl}{print_bar}{walkup}')
+            f'{tbl}{print_bar}{walkup}{timer_qr_card(m)}')
     return shell(g.principal, body, active="meets")
 
 

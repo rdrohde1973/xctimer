@@ -1247,9 +1247,11 @@ def meet_day_page(mid):
            f'into their own division automatically.</span></div>'
            if can_record_meet(m) else "")
     from .xc import _walkup_card
+    from .meets import timer_qr_card
     walkup = _walkup_card(m, mid)
     body = (f'<p class="muted"><a href="/meets">← Meets</a></p><h1>{escape(m["name"])}</h1>'
-            f'{_track_tabs(mid, "meetday")}{pit}{draw}{packet}{ev_tbl}{combine}{walkup}')
+            f'{_track_tabs(mid, "meetday")}{pit}{draw}{packet}{ev_tbl}{combine}{walkup}'
+            f'{timer_qr_card(m)}')
     return shell(g.principal, body, active="meets")
 
 
