@@ -2224,8 +2224,8 @@ main{{max-width:960px;margin:0 auto;padding:1.4rem 1rem 4rem}}
 <div class="pubhdr">{_host_logo_tag(m)}</div>
 <main><h1>{escape(m['name'])}</h1>
 <p class="sub">🎽 Track · {escape(m['date'] or '')}</p>
-<div id="timeline" class="tlwrap" style="display:none"></div>
 <div id="livebox"></div>
+<div id="timeline" class="tlwrap" style="display:none"></div>
 <div id="resultsbox">{inner}</div></main>
 <footer class="pubfoot">Powered by {BRAND_HTML}</footer>
 <script>
