@@ -959,10 +959,12 @@ def pit_console(mid):
     conn = db.connect()
     evs = conn.execute(
         "SELECT DISTINCT e.id, e.name FROM events e JOIN meet_events me ON me.event_id=e.id "
-        "WHERE me.meet_id=? AND e.kind='field' AND e.name!='High Jump' ORDER BY e.sort",
+        "WHERE me.meet_id=? AND e.kind='field' ORDER BY e.sort",
         (mid,)).fetchall()
     conn.close()
-    opts = "".join(f'<option value="{e["id"]}">{escape(e["name"])}</option>' for e in evs)
+    opts = "".join(
+        f'<option value="{e["id"]}" data-hj="{1 if e["name"] == "High Jump" else 0}">'
+        f'{escape(e["name"])}</option>' for e in evs)
     if not opts:
         opts = '<option value="">— no field events at this meet —</option>'
     body = f"""
@@ -975,28 +977,38 @@ apostrophe works too); <b>F</b> = foul.
 <b>On a phone?</b> Use the 🏖 Pit tab in the Track Timer app for a touch-friendly version.</p>
 <div class="card">
   <div class="row" style="flex-wrap:wrap;gap:.6rem">
-    <div style="max-width:200px"><label>Event</label><select id="pev">{opts}</select></div>
+    <div style="max-width:200px"><label>Event</label><select id="pev" onchange="pitMode()">{opts}</select></div>
     <div style="max-width:120px"><label>Bib</label>
       <input id="pbib" inputmode="numeric" autocomplete="off"
         onkeydown="if(event.key==='Enter')document.getElementById('pa0').focus()"></div>
-    <div style="max-width:110px"><label>Att 1</label><input id="pa0"></div>
-    <div style="max-width:110px"><label>Att 2</label><input id="pa1"></div>
-    <div style="max-width:110px"><label>Att 3</label><input id="pa2"
+    <div id="d0" style="max-width:130px"><label id="l0">Att 1</label><input id="pa0"></div>
+    <div id="d1" style="max-width:110px"><label>Att 2</label><input id="pa1"></div>
+    <div id="d2" style="max-width:110px"><label>Att 3</label><input id="pa2"
       onkeydown="if(event.key==='Enter')pitPost()"></div>
     <div style="display:flex;align-items:flex-end"><button onclick="pitPost()">✔ Record</button></div>
   </div>
+  <p id="hjnote" class="muted" style="margin:.4rem 0 0;display:none">High Jump records the
+  <b>best height cleared</b> only — keep the bar-by-bar make/miss on your paper heat sheet.</p>
   <div id="pmsg" style="margin-top:.5rem"></div>
 </div>
 <div class="card"><h2>Recorded this session</h2><table id="plog">
   <tr><th>Bib</th><th>Athlete</th><th>Event</th><th>Division</th><th>Attempts</th><th>Best</th></tr></table></div>
 <script>
+function pitIsHJ(){{var o=document.getElementById('pev').selectedOptions[0];return !!(o&&o.dataset.hj==='1');}}
+function pitMode(){{var hj=pitIsHJ();
+  document.getElementById('d1').style.display=hj?'none':'';
+  document.getElementById('d2').style.display=hj?'none':'';
+  document.getElementById('l0').textContent=hj?'Best height':'Att 1';
+  document.getElementById('hjnote').style.display=hj?'':'none';}}
 async function pitPost(){{
   const ev=document.getElementById('pev').value, bib=document.getElementById('pbib').value.trim();
-  const atts=[0,1,2].map(k=>document.getElementById('pa'+k).value.trim());
+  const hj=pitIsHJ();
+  const atts = hj ? [document.getElementById('pa0').value.trim()]
+                  : [0,1,2].map(k=>document.getElementById('pa'+k).value.trim());
   const box=document.getElementById('pmsg');
   if(!ev){{box.innerHTML='<p class="msg err">No field events at this meet.</p>';return;}}
   if(!bib){{box.innerHTML='<p class="msg err">Enter a bib.</p>';return;}}
-  if(!atts.some(a=>a)){{box.innerHTML='<p class="msg err">Enter at least one attempt.</p>';return;}}
+  if(!atts.some(a=>a)){{box.innerHTML='<p class="msg err">'+(hj?'Enter the best height cleared.':'Enter at least one attempt.')+'</p>';return;}}
   try{{
     const j=await jpost('/meets/{mid}/pit/post',{{event_id:ev,bib:bib,attempts:atts}});
     box.innerHTML='<p class="msg ok">✔ '+esc(j.name)+' — <b>'+esc(j.event)+'</b> — '+esc(j.division)+' — best '+esc(j.best||'—')+'</p>';
@@ -1007,6 +1019,7 @@ async function pitPost(){{
     document.getElementById('pbib').focus();
   }}catch(e){{ box.innerHTML='<p class="msg err">'+esc(e.message)+'</p>'; }}
 }}
+pitMode();
 </script>"""
     return shell(g.principal, body, active="meets")
 
