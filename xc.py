@@ -1008,19 +1008,33 @@ def race_state(rid):
 def race_start(rid):
     r, m = _race_or_403(rid, can_record_meet)
     conn = db.connect()
+    clear = bool((request.get_json(silent=True) or {}).get("clear"))
+    # Already running: a road race can have ~3 timing phones (and other helpers), any of
+    # which may have armed the gun. A second START — a late gun-detect on another phone,
+    # or a stray tap — must NOT shift the shared clock out from under the finishers.
+    if r["start_time"] and not r["stop_time"] and not clear:
+        conn.close()
+        return jsonify(ok=True, already=True)
     # Restarting an ended race with finishers recorded is a data-loss trap: their
     # elapsed times belong to the old clock. Require an explicit clear (confirmed
     # client-side) before we hand out a fresh start time.
     if r["start_time"] and r["stop_time"]:
         n = conn.execute("SELECT COUNT(*) FROM finishers WHERE race_id=?", (rid,)).fetchone()[0]
-        clear = bool((request.get_json(silent=True) or {}).get("clear"))
         if n and not clear:
             conn.close()
             return jsonify(error=f"Race ended with {n} finisher(s). Restarting clears them — "
                                  "confirm the restart (or use Reset).", needs_clear=True), 409
         if n:
             conn.execute("DELETE FROM finishers WHERE race_id=?", (rid,))
-    conn.execute("UPDATE races SET start_time=?, stop_time=NULL WHERE id=?", (_iso(_now()), rid))
+    # First-start-wins: an intentional restart (clear, or restarting a stopped race)
+    # overwrites; a plain first start only sets the clock if it's still unset, so two
+    # near-simultaneous gun-detects can't clobber each other (SQLite serializes writes —
+    # the loser's WHERE matches nothing).
+    if clear or (r["start_time"] and r["stop_time"]):
+        conn.execute("UPDATE races SET start_time=?, stop_time=NULL WHERE id=?", (_iso(_now()), rid))
+    else:
+        conn.execute("UPDATE races SET start_time=?, stop_time=NULL WHERE id=? AND start_time IS NULL",
+                     (_iso(_now()), rid))
     conn.commit()
     conn.close()
     return jsonify(ok=True)

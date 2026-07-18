@@ -306,6 +306,7 @@ function render(){{
   list.innerHTML=h;
 }}
 async function startRace(){{
+  if(STARTED&&!STOPPED)return;   // already running (another phone/the gun started it) — don't re-post
   const body={{}};
   if(STOPPED&&FIN.length){{ if(!confirm('Race ended with '+FIN.length+' finisher(s). Restarting CLEARS them. Continue?'))return; body.clear=true; }}
   try{{ await jpost('/races/'+RID+'/start',body); }}catch(e){{ alert(e.message); }} load(); }}

@@ -2226,9 +2226,20 @@ def time_start(meid):
         return jsonify(ok=True, already=True)
     if clear:
         conn.execute("DELETE FROM track_taps WHERE meet_event_id=? AND heat=?", (meid, hk))
-    conn.execute("INSERT INTO track_clocks (meet_event_id, heat, start_time, stop_time) VALUES (?,?,?,NULL) "
-                 "ON CONFLICT(meet_event_id, heat) DO UPDATE SET start_time=excluded.start_time, stop_time=NULL",
-                 (meid, hk, _t_iso(_t_now())))
+    # First-start-wins: up to 9 phones (8 lanes + starter) may arm the gun and fire ~together.
+    # A restart (clear, or restarting a stopped heat) overwrites intentionally; a plain first
+    # start only sets the clock when it's still unset, so a concurrent starter can't clobber it
+    # (the DO UPDATE's WHERE guards the row; SQLite serializes the two writes).
+    restart = bool(clear or (clk and clk["start_time"] and clk["stop_time"]))
+    if restart:
+        conn.execute("INSERT INTO track_clocks (meet_event_id, heat, start_time, stop_time) VALUES (?,?,?,NULL) "
+                     "ON CONFLICT(meet_event_id, heat) DO UPDATE SET start_time=excluded.start_time, stop_time=NULL",
+                     (meid, hk, _t_iso(_t_now())))
+    else:
+        conn.execute("INSERT INTO track_clocks (meet_event_id, heat, start_time, stop_time) VALUES (?,?,?,NULL) "
+                     "ON CONFLICT(meet_event_id, heat) DO UPDATE SET start_time=excluded.start_time, stop_time=NULL "
+                     "WHERE track_clocks.start_time IS NULL",
+                     (meid, hk, _t_iso(_t_now())))
     conn.commit()
     conn.close()
     return jsonify(ok=True)
