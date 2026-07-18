@@ -295,8 +295,7 @@ function renderElig(){{
 async function pick(bib){{
   const open=openSlots();
   if(!open.length){{ buzz([60,60,60]); alert('Tap the finisher first, then select who it was.'); return; }}
-  try{{ const j=await jpost('/finishers/'+open[0].id+'/bib',{{bib:bib}}); buzz(35);
-    if(j&&j.warn){{ buzz([60,60,60]); alert('⚠ '+j.warn); }} }}
+  try{{ await jpost('/finishers/'+open[0].id+'/bib',{{bib:bib}}); buzz(35); }}   // no popup on unregistered
   catch(e){{ alert(e.message); }}
   await load();
 }}
@@ -346,8 +345,9 @@ async function camHit(id){{
   try{{
     const j=await jpost('/races/'+RID+'/finish',{{bib:id,mode:'chute'}});
     if(j&&j.duplicate){{ msg.textContent='#'+id+' already recorded'; }}
-    else{{ buzz(35); msg.innerHTML='📷 <b>#'+id+'</b>'+(j&&j.name?(' '+esc(j.name)):'')+' ✓'+(j&&j.remaining!=null?(' · '+j.remaining+' open'):'');
-      if(j&&j.warn){{ buzz([60,60,60]); alert('⚠ '+j.warn); }} }}
+    else{{ buzz(35); msg.innerHTML='📷 <b>#'+id+'</b>'+(j&&j.name?(' '+esc(j.name)):'')+' ✓'
+      +(j&&j.warn?' <span style="color:var(--warn,#f0b429)">(not registered)</span>':'')
+      +(j&&j.remaining!=null?(' · '+j.remaining+' open'):''); }}   // record + move on, no popup
     await load();
   }}catch(e){{ CAMSEEN.delete(id); msg.textContent='#'+id+' ✕ '+(e&&e.message?e.message:'error'); }}
 }}
@@ -381,7 +381,7 @@ async function tap(){{ buzz(35); const at=nowms(); try{{ await jpost('/races/'+R
 async function undo(){{ buzz([20,40,20]); try{{ await jpost('/races/'+RID+'/untap',{{}}); }}catch(e){{ alert(e.message); }} load(); }}
 async function rec(v){{ const el=document.getElementById('sbib'); v=(v||el.value).toString().trim(); if(!v)return;
   try{{ const j=await jpost('/races/'+RID+'/finish',{{bib:v}}); el.value='';
-    if(!(j&&j.duplicate)){{ buzz(35); if(j&&j.warn){{ buzz([60,60,60]); alert('⚠ '+j.warn); }} }} }}
+    if(!(j&&j.duplicate)) buzz(35); }}   // unregistered bibs record silently — no popup
   catch(e){{ buzz([60,60,60]); alert(e.message); }} load(); }}
 // Screen wake lock: a timing phone that sleeps mid-race silently loses finishers.
 let WL=null;
