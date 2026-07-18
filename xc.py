@@ -954,10 +954,13 @@ def race_eligible(rid):
                 (p["club"] or "")) if x)
             out.append({"bib": p["bib"], "name": p["name"], "meta": meta})
     else:
+        # Per-MEET bibs (meet_bibs), not the vestigial athletes.bib — newly rostered athletes
+        # have no permanent bib, so the old join returned nothing for them (and stale numbers
+        # for others). Must match _snap_for_bib/_athlete_for_bib, which resolve via meet_bibs.
         rows = conn.execute(
-            "SELECT a.bib, a.name, a.grade, s.name AS sname FROM athletes a "
-            "JOIN schools s ON s.id=a.school_id JOIN meet_schools ms ON ms.school_id=a.school_id "
-            "WHERE ms.meet_id=? AND a.bib IS NOT NULL AND a.active=1 ORDER BY a.name", (m["id"],)).fetchall()
+            "SELECT mb.bib, a.name, a.grade, s.name AS sname FROM meet_bibs mb "
+            "JOIN athletes a ON a.id=mb.athlete_id JOIN schools s ON s.id=a.school_id "
+            "WHERE mb.meet_id=? AND a.active=1 ORDER BY a.name", (m["id"],)).fetchall()
         for a in rows:
             if a["bib"] in used:
                 continue

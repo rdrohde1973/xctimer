@@ -25,7 +25,7 @@ from .phone import bp as phone_bp
 from .waivers import bp as waivers_bp
 from .road import bp as road_bp
 
-APP_VERSION = "1.39.0-next-heat"
+APP_VERSION = "1.19.0-meet-tracker"
 
 LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width, initial-scale=1">
@@ -207,6 +207,73 @@ LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
         <tr><td class="pl">4</td><td class="mut">… crossing</td><td class="tm"></td></tr>
       </table>
     </div>
+  </div>
+</div></section>
+
+<style>
+#tracker{background:#f5f8fc}
+.trkwrap{max-width:860px;margin:1.7rem auto 0;background:#0e1d30;border-radius:18px;
+         padding:1.3rem 1.3rem 1.5rem;box-shadow:0 24px 60px rgba(15,49,87,.28);
+         border:1px solid #1c3149;color:#dce7f2;text-align:left}
+.trk-live{display:flex;align-items:center;gap:.5rem;color:#ea6a2d;font-weight:800;font-size:.95rem}
+.trk-live .dot{width:.7rem;height:.7rem;border-radius:50%;background:#2e9e5b;animation:trkp 1.1s infinite}
+@keyframes trkp{50%{opacity:.25}}
+.trk-clk{font-size:2.6rem;font-weight:800;text-align:center;color:#fff;
+         font-variant-numeric:tabular-nums;letter-spacing:1px;margin:.35rem 0 .1rem}
+.trk-wait{text-align:center;color:#7f93a8;font-size:.9rem;border-top:1px solid #1c3149;
+          margin-top:.6rem;padding-top:.6rem}
+.trk-strip{display:flex;gap:0;overflow-x:auto;margin:1.1rem 0 .2rem;padding-bottom:.5rem}
+.trk-ev{flex:0 0 auto;width:74px;text-align:center;position:relative}
+.trk-ev::before{content:"";position:absolute;top:9px;left:-50%;width:100%;height:2px;background:#26405b}
+.trk-ev:first-child::before{display:none}
+.trk-ev i{display:block;width:20px;height:20px;border-radius:50%;margin:0 auto .35rem;
+          background:#3a536e;border:3px solid #0e1d30;position:relative;z-index:1}
+.trk-ev.done i{background:#2e9e5b}
+.trk-ev.run i{background:#ea6a2d;box-shadow:0 0 0 4px rgba(234,106,45,.25)}
+.trk-ev span{font-size:.62rem;line-height:1.15;color:#9fb2c6;display:block}
+.trk-ev.run span{color:#ea6a2d;font-weight:700}
+.trk-tt{font-weight:800;color:#fff;font-size:.95rem;display:flex;align-items:center;gap:.4rem;margin-top:.5rem}
+.trk-tbl{width:100%;border-collapse:collapse;margin-top:.6rem;font-size:.92rem}
+.trk-tbl th{text-align:left;color:#7f93a8;font-size:.7rem;letter-spacing:.08em;
+            text-transform:uppercase;padding:.3rem .2rem}
+.trk-tbl th.pts,.trk-tbl td.pts{text-align:right}
+.trk-tbl td{padding:.5rem .2rem;border-top:1px solid #1c3149}
+.trk-tbl .rk{color:#ea6a2d;font-weight:800;width:2rem}
+.trk-tbl .pts{font-weight:800;color:#fff;font-variant-numeric:tabular-nums}
+</style>
+<section id="tracker"><div class="wrap" style="text-align:center">
+  <div class="pill">📡 Live meet tracker</div>
+  <h2>The whole meet on one page — race by race.</h2>
+  <p class="lead" style="margin-left:auto;margin-right:auto">Every event marches across a live progress
+  bar — finished, running, up next — with team standings that climb as points land. Families
+  see exactly where the meet is and who’s winning, all from one shared link.</p>
+  <div class="trkwrap">
+    <div class="trk-live"><span class="dot"></span> LIVE · 400m Girls 9th Grade · Heat 1</div>
+    <div class="trk-clk">0:04:12.8</div>
+    <div class="trk-wait">Waiting for the first finisher…</div>
+    <div class="trk-strip">
+      <div class="trk-ev done"><i></i><span>1600 Boys 9th</span></div>
+      <div class="trk-ev done"><i></i><span>100 Girls 7th</span></div>
+      <div class="trk-ev done"><i></i><span>100 Girls 8th</span></div>
+      <div class="trk-ev done"><i></i><span>100 Girls 9th</span></div>
+      <div class="trk-ev done"><i></i><span>100 Boys 7th</span></div>
+      <div class="trk-ev done"><i></i><span>100 Boys 8th</span></div>
+      <div class="trk-ev done"><i></i><span>400 Girls 7th</span></div>
+      <div class="trk-ev done"><i></i><span>400 Girls 8th</span></div>
+      <div class="trk-ev run"><i></i><span>400 Girls 9th</span></div>
+      <div class="trk-ev"><i></i><span>400 Boys 7th</span></div>
+      <div class="trk-ev"><i></i><span>400 Boys 8th</span></div>
+      <div class="trk-ev"><i></i><span>4x100 Girls 7th</span></div>
+      <div class="trk-ev"><i></i><span>4x100 Boys 9th</span></div>
+    </div>
+    <div class="trk-tt">🏆 Overall — team scores</div>
+    <table class="trk-tbl">
+      <tr><th class="rk">#</th><th>School</th><th class="pts">Points</th></tr>
+      <tr><td class="rk">1</td><td>Riverside</td><td class="pts">154</td></tr>
+      <tr><td class="rk">2</td><td>Oakmont</td><td class="pts">148</td></tr>
+      <tr><td class="rk">3</td><td>Summit Ridge</td><td class="pts">121</td></tr>
+      <tr><td class="rk">4</td><td>Pinecrest</td><td class="pts">96</td></tr>
+    </table>
   </div>
 </div></section>
 
