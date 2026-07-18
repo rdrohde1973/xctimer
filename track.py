@@ -2796,6 +2796,8 @@ def _fmt_pts(x):
 _LIVE_CACHE = {}       # (mid, name_mode) -> (expires_monotonic, heats_list)
 _LIVE_TTL = 1.0        # recompute the DB snapshot at most once/sec no matter the crowd
 LIVE_HOLD = 30.0       # keep an ended heat on the public board this many seconds
+STALE_LIVE = 3600.0    # a "running" clock older than this was never stopped -> treat as abandoned,
+#                        drop it from the live board (no real heat runs an hour)
 
 
 def public_live(mid, name_mode=None):
@@ -2823,12 +2825,17 @@ def _timeline(mid):
         "SELECT me.id AS meid, e.name AS ename, me.gender, me.grade FROM meet_events me "
         "JOIN events e ON e.id=me.event_id WHERE me.meet_id=? AND e.kind IN ('track','relay') "
         "ORDER BY (me.run_order IS NULL), me.run_order, e.sort, me.gender, me.grade", (mid,)).fetchall()
+    now = _t_now()
     running, stopped = set(), set()
     for c in conn.execute(
             "SELECT tc.meet_event_id AS meid, tc.start_time, tc.stop_time FROM track_clocks tc "
             "JOIN meet_events me ON me.id=tc.meet_event_id WHERE me.meet_id=?", (mid,)).fetchall():
         if c["start_time"] and not c["stop_time"]:
-            running.add(c["meid"])
+            st = _t_parse(c["start_time"])
+            if st and (now - st).total_seconds() > STALE_LIVE:
+                stopped.add(c["meid"])       # abandoned clock -> treat as done, never "running"
+            else:
+                running.add(c["meid"])
         elif c["start_time"] and c["stop_time"]:
             stopped.add(c["meid"])
     has_res = {r[0] for r in conn.execute(
@@ -2870,6 +2877,9 @@ def _live_heats(mid, name_mode=None):
         stop = _t_parse(r["stop_time"])
         if stop and (now - stop).total_seconds() > LIVE_HOLD:
             continue                       # ended more than 30s ago -> off the board
+        start = _t_parse(r["start_time"])
+        if not stop and start and (now - start).total_seconds() > STALE_LIVE:
+            continue                       # never stopped (abandoned) -> not really live
         me = load_meet_event(r["meid"])
         label = _div_grade(me["gender"], me["grade"])
         name = f'{me["ename"]} · {label}' + (f' · Heat {r["heat"]}' if r["heat"] else "")
