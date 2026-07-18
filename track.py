@@ -2771,3 +2771,157 @@ def track_workbook(mid, name_mode=None):
     buf = _io.BytesIO()
     wb.save(buf)
     return buf.getvalue()
+
+
+# ================= lane timing (one volunteer per lane for laned sprints/relays) =================
+def _lane_rows(conn, meids, hk):
+    """[{entry_id, lane, name, bib}] for a heat's laned entries, in lane order."""
+    qm = ",".join("?" * len(meids))
+    rows = conn.execute(
+        f"SELECT * FROM entries WHERE meet_event_id IN ({qm}) AND heat=? AND lane IS NOT NULL "
+        f"ORDER BY lane", (*meids, hk)).fetchall()
+    out = []
+    for e in rows:
+        name, bib, school = _entry_label(conn, e)
+        out.append({"entry_id": e["id"], "lane": e["lane"], "name": name or f"Lane {e['lane']}", "bib": bib})
+    return out
+
+
+@bp.get("/meet-events/<int:meid>/lane-state")
+@login_required
+def lane_state(meid):
+    me = load_meet_event(meid)
+    m = load_meet(me["meet_id"])
+    if not can_record_meet(m):
+        abort(403)
+    hk = _heat_key(request.args.get("heat", ""))
+    conn = db.connect()
+    meids = _combine_meids(conn, me)
+    clk = conn.execute("SELECT * FROM track_clocks WHERE meet_event_id=? AND heat=?", (meid, hk)).fetchone()
+    lanes = _lane_rows(conn, meids, hk)
+    ids = [l["entry_id"] for l in lanes]
+    recs = {}
+    if ids:
+        q = ",".join("?" * len(ids))
+        for r in conn.execute(f"SELECT entry_id, mark_seconds FROM results WHERE entry_id IN ({q})", tuple(ids)):
+            recs[r["entry_id"]] = r["mark_seconds"]
+    conn.close()
+    start = _t_parse(clk["start_time"]) if clk else None
+    stop = _t_parse(clk["stop_time"]) if clk else None
+    for l in lanes:
+        l["secs"] = recs.get(l["entry_id"])
+    return jsonify(server_ms=_t_ms(_t_now()), start_ms=_t_ms(start) if start else None,
+                   stop_ms=_t_ms(stop) if stop else None, started=bool(start), stopped=bool(stop),
+                   lanes=lanes)
+
+
+@bp.post("/meet-events/<int:meid>/lane-finish")
+@login_required
+def lane_finish(meid):
+    """Record a lane's runner as finished at (now - shared start). Identity comes from the
+    lane assignment, so no bib read — one volunteer per lane taps once."""
+    me = load_meet_event(meid)
+    m = load_meet(me["meet_id"])
+    if not can_record_meet(m):
+        abort(403)
+    hk = _heat_key(request.args.get("heat", ""))
+    try:
+        lane = int(request.args.get("lane", ""))
+    except (TypeError, ValueError):
+        return jsonify(error="Bad lane"), 400
+    conn = db.connect()
+    meids = _combine_meids(conn, me)
+    qm = ",".join("?" * len(meids))
+    e = conn.execute(f"SELECT * FROM entries WHERE meet_event_id IN ({qm}) AND heat=? AND lane=? LIMIT 1",
+                     (*meids, hk, lane)).fetchone()
+    clk = conn.execute("SELECT * FROM track_clocks WHERE meet_event_id=? AND heat=?", (meid, hk)).fetchone()
+    start = _t_parse(clk["start_time"]) if clk else None
+    if not e:
+        conn.close()
+        return jsonify(error=f"No runner in lane {lane}."), 400
+    if not start:
+        conn.close()
+        return jsonify(error="Race hasn't started — the starter taps Start at the gun."), 400
+    elapsed = (_t_now() - start).total_seconds()
+    name, bib, school = _entry_label(conn, e)
+    conn.execute("DELETE FROM results WHERE entry_id=?", (e["id"],))
+    conn.execute("INSERT INTO results (entry_id, mark_seconds, dq, snap_name, snap_bib, snap_school) "
+                 "VALUES (?,?,0,?,?,?)", (e["id"], elapsed, name, bib, school))
+    for m2 in meids:
+        _recompute_places(conn, load_meet_event(m2))
+    conn.commit()
+    conn.close()
+    return jsonify(ok=True, lane=lane, secs=elapsed, name=name)
+
+
+@bp.get("/meet-events/<int:meid>/lanes")
+@login_required
+def lane_timer(meid):
+    me = load_meet_event(meid)
+    m = load_meet(me["meet_id"])
+    if not can_record_meet(m):
+        abort(403)
+    hk = _heat_key(request.args.get("heat", ""))
+    title = (me["ename"] if "ename" in me.keys() else "Race") + (f" · Heat {hk}" if hk else "")
+    body = (_LANE_PAGE.replace("__MEID__", str(meid)).replace("__HEAT__", str(hk))
+            .replace("__MID__", str(m["id"])).replace("__TITLE__", escape(title)))
+    return shell(g.principal, body, active="phone", bare=True)
+
+
+_LANE_PAGE = """
+<style>
+.lanewrap{max-width:520px;margin:0 auto}
+.clk{font-size:2.4rem;font-weight:800;text-align:center;font-variant-numeric:tabular-nums;margin:.3rem 0}
+.startbtn{width:100%;padding:1rem;font-size:1.2rem;font-weight:800;background:#28a745;color:#fff;border:0;border-radius:12px;cursor:pointer}
+.lanebtn{display:flex;justify-content:space-between;align-items:center;width:100%;padding:.7rem .9rem;margin:.3rem 0;border:2px solid #33475b;border-radius:10px;background:#182633;color:#fff;font-size:1rem;cursor:pointer;text-align:left}
+.lanebtn.sel{border-color:#ea6a2d;background:#2a2018}
+.lanebtn .t{color:#28c76f;font-weight:800;font-variant-numeric:tabular-nums}
+.tapbtn{width:100%;padding:1.7rem 1rem;font-size:1.5rem;font-weight:800;background:#ea6a2d;color:#fff;border:0;border-radius:16px;cursor:pointer;margin-top:.6rem}
+.tapbtn:disabled{opacity:.4}
+.rec{color:#28c76f;font-weight:800;text-align:center;margin-top:.5rem;min-height:1.4rem}
+</style>
+<div class="lanewrap">
+<p><a href="/phone/meet/__MID__" style="color:#9fb3c8">&lsaquo; Track Timer</a></p>
+<h1 style="margin:.2rem 0">__TITLE__</h1>
+<div id="clk" class="clk">0:00.0</div>
+<button id="startbtn" class="startbtn" onclick="laneStart()">&#128299; Start (at the gun)</button>
+<p id="startnote" class="muted" style="text-align:center;font-size:.85rem">One person taps Start at the gun. Each volunteer picks a lane below and taps when that runner crosses.</p>
+<h2 style="margin:1rem 0 .3rem">Pick your lane</h2>
+<div id="lanes"></div>
+<button id="tapbtn" class="tapbtn" onclick="laneTap()" disabled>Pick your lane first</button>
+<div id="rec" class="rec"></div>
+</div>
+<script>
+var MEID=__MEID__, HEAT="__HEAT__", MYLANE=null, OFFSET=0, START=null, STOP=null, LANES=[];
+function csrf(){var m=document.cookie.match(/csrftoken=([^;]+)/);return m?decodeURIComponent(m[1]):'';}
+async function jp(url){var r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf()},body:'{}'});return r.json();}
+function fmt(s){if(s==null)return'';s=Math.max(0,s);var m=Math.floor(s/60),x=s-60*m;return m+':'+x.toFixed(1).padStart(4,'0');}
+function esc(s){var d=document.createElement('div');d.textContent=s==null?'':s;return d.innerHTML;}
+function render(){
+  document.getElementById('startbtn').style.display=START?'none':'block';
+  document.getElementById('startnote').style.display=START?'none':'block';
+  var h='';LANES.forEach(function(l){
+    var sel=(l.lane==MYLANE)?' sel':'';
+    var t=l.secs!=null?('<span class="t">'+fmt(l.secs)+'</span>'):'<span style="color:#7c8b9a">&mdash;</span>';
+    h+='<button class="lanebtn'+sel+'" onclick="pick('+l.lane+')"><span><b>Lane '+l.lane+'</b> &middot; '+esc(l.name)+(l.bib?(' #'+l.bib):'')+'</span>'+t+'</button>';});
+  document.getElementById('lanes').innerHTML=h||'<p class="muted">No lanes assigned for this heat.</p>';
+  var b=document.getElementById('tapbtn');
+  if(MYLANE==null){b.disabled=true;b.textContent='Pick your lane first';}
+  else{var l=LANES.find(function(x){return x.lane==MYLANE;});
+    b.disabled=!START;
+    b.textContent=(!START?'Waiting for start…':('TAP — Lane '+MYLANE+((l&&l.name)?(' ('+l.name+')'):'')+' crossed'));}
+}
+function pick(n){MYLANE=n;render();}
+async function laneStart(){await jp('/meet-events/'+MEID+'/time/start?heat='+HEAT);poll();}
+async function laneTap(){if(MYLANE==null||!START)return;if(navigator.vibrate)navigator.vibrate(40);
+  var j=await jp('/meet-events/'+MEID+'/lane-finish?heat='+HEAT+'&lane='+MYLANE);
+  if(j.ok){document.getElementById('rec').textContent='✓ Lane '+MYLANE+' — '+fmt(j.secs);poll();}
+  else{document.getElementById('rec').textContent='⚠ '+(j.error||'error');}}
+async function poll(){try{var s=await (await fetch('/meet-events/'+MEID+'/lane-state?heat='+HEAT)).json();
+  OFFSET=s.server_ms-Date.now();START=s.start_ms;STOP=s.stop_ms;LANES=s.lanes||[];render();}catch(e){}
+  setTimeout(poll,2000);}
+function tick(){var c=document.getElementById('clk');if(!START){c.textContent='0:00.0';return;}
+  var end=(STOP||(Date.now()+OFFSET));var e=(end-START)/1000;c.textContent=fmt(e);}
+setInterval(tick,100);poll();
+</script>
+"""

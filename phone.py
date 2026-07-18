@@ -23,6 +23,7 @@ bp = Blueprint("phone", __name__)
 # Events timed by tapping finishers at the line (distance + 4x400). Sprints and
 # field events are recorded from sheets/lane entry, not the phone tap timer.
 TAP_EVENTS = ("800m", "1600m", "3200m", "4x400m Relay")
+LANE_EVENTS = ("100m", "200m", "400m", "4x100m Relay")   # laned -> one volunteer per lane
 
 
 def _phone_url():
@@ -361,6 +362,22 @@ def _track_timer(conn, m):
         label = f"{gr}{gword + ' ' if gword else ''}{ev['ename']}".strip()
         evdata[str(ev["id"])] = {"label": label, "heats": heats}
         ev_opts.append(f'<option value="{ev["id"]}">{escape(label)}</option>')
+    # Laned sprints/relays -> lane-timing (one volunteer per lane).
+    lane_q = ",".join("?" * len(LANE_EVENTS))
+    lane_events = conn.execute(
+        f"SELECT me.id, e.name AS ename, me.gender, me.grade FROM meet_events me "
+        f"JOIN events e ON e.id=me.event_id WHERE me.meet_id=? AND e.name IN ({lane_q}) "
+        f"ORDER BY e.sort, me.gender, me.grade", (m["id"], *LANE_EVENTS)).fetchall()
+    lanedata, lane_opts = {}, ['<option value="">— pick sprint / relay —</option>']
+    for ev in lane_events:
+        heats = [r[0] for r in conn.execute(
+            "SELECT DISTINCT heat FROM entries WHERE meet_event_id=? AND heat IS NOT NULL "
+            "ORDER BY heat", (ev["id"],)).fetchall()]
+        gword = {"M": "Boys", "F": "Girls"}.get(ev["gender"], "")
+        gr = f"{ev['grade']}th Grade " if ev["grade"] else ""
+        label = f"{gr}{gword + ' ' if gword else ''}{ev['ename']}".strip()
+        lanedata[str(ev["id"])] = {"label": label, "heats": heats}
+        lane_opts.append(f'<option value="{ev["id"]}">{escape(label)}</option>')
     # Meet switcher (track meets the user can time) — hidden for a no-login QR
     # session, which is already locked to this one meet.
     scoped = bool(getattr(getattr(g, "principal", None), "meet_scope", None))
@@ -401,6 +418,14 @@ def _track_timer(conn, m):
   <label>Heat / section</label>
   <select id="tht" onchange="upd()"></select>
   <button id="startbtn" onclick="startRace()" disabled style="width:100%;margin-top:1rem;padding:.8rem">Open race timer →</button>
+  <hr style="border:0;border-top:1px solid var(--line);margin:1.2rem 0">
+  <h2 style="margin:.2rem 0">🏁 Sprints &amp; relays</h2>
+  <p class="sub">100m / 200m / 400m / 4×100m run in lanes — one volunteer per lane, each taps when their lane crosses.</p>
+  <label>Event</label>
+  <select id="laneev" onchange="fillLaneHeats()">{''.join(lane_opts)}</select>
+  <label>Heat / section</label>
+  <select id="laneht" onchange="laneUpd()"></select>
+  <button id="lanebtn" onclick="openLane()" disabled style="width:100%;margin-top:1rem;padding:.8rem">Open lane timer →</button>
 </div>
 
 <div class="card" id="tab-scan" style="display:none">
@@ -446,6 +471,7 @@ def _track_timer(conn, m):
 </style>
 <script>
 const EV={json.dumps(evdata)};
+const LANEV={json.dumps(lanedata)};
 let SCAN_MEID=null;
 function segTab(t){{
   ['time','scan','pit'].forEach(function(k){{
@@ -517,6 +543,23 @@ function upd(){{
 function startRace(){{
   const ev=document.getElementById('tev').value, ht=document.getElementById('tht').value;
   if(ev&&ht) location.href='/meet-events/'+ev+'/time?heat='+ht;
+}}
+function fillLaneHeats(){{
+  const ev=document.getElementById('laneev').value, ht=document.getElementById('laneht');
+  ht.innerHTML='';
+  const d=LANEV[ev];
+  if(!d){{ht.innerHTML='<option value="">— pick an event first —</option>';laneUpd();return;}}
+  if(!d.heats.length){{ht.innerHTML='<option value="">no heats — draw them first</option>';laneUpd();return;}}
+  d.heats.forEach(function(h){{ht.innerHTML+='<option value="'+h+'">Heat '+h+'</option>';}});
+  laneUpd();
+}}
+function laneUpd(){{
+  const ev=document.getElementById('laneev').value, ht=document.getElementById('laneht').value;
+  document.getElementById('lanebtn').disabled = !(ev && ht);
+}}
+function openLane(){{
+  const ev=document.getElementById('laneev').value, ht=document.getElementById('laneht').value;
+  if(ev&&ht) location.href='/meet-events/'+ev+'/lanes?heat='+ht;
 }}
 async function doScan(){{
   const f=document.getElementById('scanf').files[0];
