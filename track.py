@@ -1263,6 +1263,10 @@ def pit_post(mid):
         meid = conn.execute("INSERT INTO meet_events (meet_id, event_id, gender, grade) "
                             "VALUES (?,?,?,?)",
                             (mid, event_id, a["gender"] or "", a["grade"])).lastrowid
+        # Commit the on-the-fly division NOW: _recompute_places below calls load_meet_event,
+        # which opens a NEW connection that can't see this uncommitted row (WAL) -> 404 and
+        # the whole mark rolled back. Only bites the first mark of a division not set up.
+        conn.commit()
     en = conn.execute("SELECT id FROM entries WHERE meet_event_id=? AND runner_id=?",
                       (meid, a["id"])).fetchone()
     eid = en["id"] if en else conn.execute(
