@@ -385,11 +385,13 @@ def participants(mid):
     msg = request.args.get("msg", "")
     msg_html = f'<div class="card" style="border-color:var(--ok)">{escape(msg)}</div>' if msg else ""
     from .meets import road_sticker_controls
+    ss = is_web_event(m)
+    tag_note = ('Camera-readable ArUco tags — event logo + number + name, one per runner. '
+                if ss else 'Event logo + number + name, one per runner. ')
     print_bar = (
         f'<div class="card" style="display:flex;gap:.6rem;align-items:center;flex-wrap:wrap">'
-        f'<b>🏁 Print bibs</b> {road_sticker_controls(mid)} '
-        '<span class="muted">Event logo + number + name, one per runner. '
-        'Use Avery 5163 (2"×4") sticker sheets.</span></div>')
+        f'<b>🏁 Print bibs</b> {road_sticker_controls(mid, self_serve=ss)} '
+        f'<span class="muted">{tag_note}Use Avery 5163 (2"×4") sticker sheets.</span></div>')
     body = (
         f'<p class="muted"><a href="/meets/{mid}">← {escape(m["name"])}</a></p>'
         f'<h1>{escape(m["name"])} — Participants</h1>'
@@ -642,7 +644,8 @@ def event_settings(mid):
 def participant_stickers(mid):
     m = _event_or_403(mid, can_view_meet)
     template = "5163"          # same Avery sheet as Track / XC
-    code = "aruco" if request.args.get("code") == "aruco" else None   # else QR
+    # Self-serve events are ArUco-only (camera tap-then-scan) — never emit QR bibs for them.
+    code = "aruco" if (request.args.get("code") == "aruco" or is_web_event(m)) else None
     try:
         spares = int(request.args.get("spares", "0"))
     except (TypeError, ValueError):
@@ -912,6 +915,22 @@ def host_paid(m):
         return bool(json.loads(m["settings_json"] or "{}").get("host_paid"))
     except (ValueError, TypeError):
         return False
+
+
+def is_web_event(m):
+    """True for a self-serve 'run your own event' meet (owned by the XCTimer Web org).
+    Self-serve races time by tap-then-scan with camera-readable ArUco tags — no QR bibs."""
+    try:
+        oid = m["organizer_id"]
+    except (KeyError, IndexError, TypeError):
+        return False
+    if not oid:
+        return False
+    conn = db.connect()
+    try:
+        return oid == _web_org_id(conn)
+    finally:
+        conn.close()
 
 
 def _owner_uid(row):
@@ -1224,7 +1243,7 @@ How XCTimer self-serve works (rely on these facts):
 - Public registration: share the registration link/QR; runners self-register (name, age, gender,
   city, club) and pick their race — no account needed.
 - Participants tab: import a CSV, add runners by hand, or let them self-register. Print bibs here on
-  Avery 5163 (2"x4") sticker sheets — QR or camera-readable ArUco — with your logo, plus a few blank
+  Avery 5163 (2"x4") sticker sheets — camera-readable ArUco tags — with your logo, plus a few blank
   spares for walk-ups.
 - Race day tab: the Phone Timer App — share its QR/link with helpers to open the timing app for your
   event, no login. Timing is tap-then-scan: a helper taps each runner as they cross the finish line

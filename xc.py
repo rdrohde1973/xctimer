@@ -758,10 +758,13 @@ def xc_meet_day(mid):
            f'<th>Status</th><th>Finishers</th><th></th></tr>{"".join(rows)}</table></div>'
            if races else f'<div class="card muted">No {noun.lower()} yet — add them on the Setup tab.</div>')
     if _is_org(m):
-        # Community events: Avery 5163 stickers (QR/ArUco) with the event logo, + spares.
+        # Community events: Avery 5163 stickers with the event logo, + spares.
+        # Self-serve web events time by tap-then-scan (camera reads ArUco) → ArUco tags only.
         from .meets import road_sticker_controls
+        from .road import is_web_event
+        ss = is_web_event(m)
         print_bar = (
-            f'<div class="card"><b>Print:</b> {road_sticker_controls(mid)} '
+            f'<div class="card"><b>Print:</b> {road_sticker_controls(mid, self_serve=ss)} '
             '<span class="muted">Event logo on each. Use Avery 5163 (2"×4") sticker sheets.</span></div>')
     else:
         print_bar = (
