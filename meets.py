@@ -320,7 +320,7 @@ def create_meet():
         # Auto-create the two standard heats (like the reference XC app).
         for hn in ("Boys", "Girls"):
             conn.execute("INSERT INTO races (meet_id, name, capture_mode) VALUES (?,?,?)",
-                         (mid, hn, "tap"))
+                         (mid, hn, "tapselect"))   # unified default: tap -> scan or select
     elif sport == "road":
         # Road: individual placing by gender × age group, no team scoring.
         # Events (5K, 10K, …) are added by the organizer in setup — each is its own race.

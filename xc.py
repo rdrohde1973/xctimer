@@ -114,8 +114,9 @@ def _snap_for_bib(conn, m, bib):
 
 CAPTURE_MODES = [("scan", "Scan at finish"),
                  ("tap", "Tap then scan"),
-                 ("tapselect", "Tap then select")]
+                 ("tapselect", "Tap → scan or select")]
 CAPTURE_VALUES = {v for v, _ in CAPTURE_MODES}
+CAPTURE_LABELS = dict(CAPTURE_MODES)
 
 
 def _is_org(m):
@@ -172,15 +173,9 @@ def setup_section(m, setup):
                 f"<button class='ghost' onclick='renameHeat({r['id']}, {escape(nm)})'>✎ Rename</button>"
                 f" <form class='inline' method='post' action='/races/{r['id']}/delete' "
                 f"onsubmit=\"return confirm('Delete heat?')\"><button class='danger'>✕</button></form>")
-            mopts = "".join(
-                f'<option value="{v}"{" selected" if v == r["capture_mode"] else ""}>{escape(lbl)}</option>'
-                for v, lbl in CAPTURE_MODES)
-            mode_html = (
-                f'<form class="inline" method="post" action="/races/{r["id"]}/rename" '
-                f'style="margin:0"><select name="capture_mode" onchange="this.form.submit()" '
-                f'title="Timing mode" style="padding:.15rem .3rem;font-size:.85rem">{mopts}</select></form>')
+            mode_html = f'<span class="muted">{escape(CAPTURE_LABELS.get(r["capture_mode"], r["capture_mode"]))}</span>'
         else:
-            mode_html = f'<span class="muted">{escape(r["capture_mode"])}</span>'
+            mode_html = f'<span class="muted">{escape(CAPTURE_LABELS.get(r["capture_mode"], r["capture_mode"]))}</span>'
         rows.append(
             f'<tr><td><b>{escape(r["name"])}</b></td><td>{mode_html}</td>'
             f'<td>{status}</td><td>{counts.get(r["id"], 0)}</td>'
@@ -197,13 +192,10 @@ def setup_section(m, setup):
             f'<label style="display:flex;gap:.5rem;align-items:center">'
             f'<input type="checkbox" name="team_scoring" style="width:auto" {chk} onchange="this.form.submit()"> '
             f'<b>Team scoring</b> <span class="muted">— adds team scores (top 5 per school) to results</span></label></form>')
-        opts = "".join(
-            f'<option value="{v}"{" selected" if v == "tap" else ""}>{escape(lbl)}</option>'
-            for v, lbl in CAPTURE_MODES)
+        # One unified capture mode now (tap -> scan or select), so no picker at creation.
         add = (
             f'<form method="post" action="/meets/{m["id"]}/races" class="row" style="margin-top:.8rem">'
             f'<div><input name="name" placeholder="Heat name (e.g. Girls)"></div>'
-            f'<div style="max-width:200px"><select name="capture_mode">{opts}</select></div>'
             f'<div style="display:flex;align-items:flex-end"><button type="submit">+ Add heat</button></div>'
             f'</form>{rename_js}')
     return f'<div class="card"><h2>Heats</h2>{ts_toggle}{tbl}{add}</div>'
@@ -284,18 +276,9 @@ def _road_setup_section(m, setup, races, counts, _json, rename_js):
         # Community events register participants (no race-entry "assigned" count).
         assigned_txt = "" if org else f" · {nassigned} assigned"
         if self_serve:
-            mode_html = ""                          # do-it-yourself: always tap-then-scan, no picker
-        elif setup:
-            mopts = "".join(
-                f'<option value="{v}"{" selected" if v == r["capture_mode"] else ""}>{escape(lbl)}</option>'
-                for v, lbl in CAPTURE_MODES)
-            mode_html = (
-                f'<form class="inline" method="post" action="/races/{r["id"]}/rename" '
-                f'style="margin:0"><select name="capture_mode" onchange="this.form.submit()" '
-                f'title="Timing mode" '
-                f'style="padding:.15rem .3rem;font-size:.85rem">{mopts}</select></form>')
+            mode_html = ""                          # do-it-yourself: unified mode, nothing to pick
         else:
-            mode_html = f'<span class="muted">{escape(r["capture_mode"])}</span>'
+            mode_html = f'<span class="muted">{escape(CAPTURE_LABELS.get(r["capture_mode"], r["capture_mode"]))}</span>'
         ev_blocks.append(
             f'<div class="card" style="padding:.8rem 1rem">'
             f'<div style="display:flex;justify-content:space-between;align-items:center;gap:.6rem;flex-wrap:wrap">'
@@ -312,11 +295,8 @@ def _road_setup_section(m, setup, races, counts, _json, rename_js):
 
     add = ""
     if setup:
-        # Self-serve: no mode picker — create_race defaults to tap-then-scan.
-        mode_sel = "" if self_serve else (
-            '<div style="max-width:200px"><select name="capture_mode">'
-            + "".join(f'<option value="{v}">{escape(lbl)}</option>' for v, lbl in CAPTURE_MODES)
-            + '</select></div>')
+        # One unified capture mode now (tap -> scan or select) — no picker at creation.
+        mode_sel = ""
         add = (
             f'<form method="post" action="/meets/{m["id"]}/races" class="row" style="margin-top:.8rem">'
             f'<div><input name="name" placeholder="{noun_s.capitalize()} name (e.g. 5K, 10K, Fun Run)" required></div>'
@@ -626,7 +606,7 @@ def create_race(mid):
         abort(403)
     name = (request.form.get("name") or "").strip() or "Heat"
     mode = request.form.get("capture_mode")
-    mode = mode if mode in CAPTURE_VALUES else "tap"
+    mode = mode if mode in CAPTURE_VALUES else "tapselect"   # unified default: tap -> scan or select
     conn = db.connect()
     conn.execute("INSERT INTO races (meet_id, name, capture_mode) VALUES (?,?,?)",
                  (mid, name, mode))

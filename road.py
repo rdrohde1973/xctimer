@@ -276,9 +276,9 @@ def create_event():
         race_name = "Fun Run"
     else:
         race_name = "Race 1"
-    # Community road races are camera/scan-first — each read records a new finisher.
+    # Unified capture: tap -> scan or select (fill open slots by camera scan or the picker).
     conn.execute("INSERT INTO races (meet_id, name, capture_mode) VALUES (?,?,?)",
-                 (mid, race_name, "scan"))
+                 (mid, race_name, "tapselect"))
     conn.commit()
     conn.close()
     return redirect(f"/meets/{mid}")
@@ -1033,7 +1033,7 @@ def host_create():
         "VALUES (?,?,?,?,?,0,?)",
         (web, "road", name, date, secrets.token_urlsafe(8),
          json.dumps({"host_paid": False, "owner_user_id": uid, "owner_email": email}))).lastrowid
-    conn.execute("INSERT INTO races (meet_id, name, capture_mode) VALUES (?,?,?)", (mid, "5K", "tap"))
+    conn.execute("INSERT INTO races (meet_id, name, capture_mode) VALUES (?,?,?)", (mid, "5K", "tapselect"))
     conn.commit()
     conn.close()
     _send_host_link(email, token)
