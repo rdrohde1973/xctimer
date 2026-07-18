@@ -1017,12 +1017,22 @@ def host_create():
                           '<a href="/host">← Back</a></div>'), 400
     conn = db.connect()
     web = _web_org_id(conn)
-    if conn.execute("SELECT 1 FROM users WHERE email=? AND organizer_id=?", (email, web)).fetchone():
+    # users.email is globally unique, so we must check ALL accounts — not just web-org hosts —
+    # before inserting, or an email that already belongs to a coach/admin 500s on the constraint.
+    existing = conn.execute("SELECT id, organizer_id FROM users WHERE email=?", (email,)).fetchone()
+    if existing and existing["organizer_id"] == web:
         conn.close()
-        _email_existing_host(email)   # already have an event -> just resend the link
+        _email_existing_host(email)   # returning host -> just resend the link
         return _host_page("Check your email",
                           f'<div class="card"><h1>Check your email</h1><p>You already have an event under '
                           f'<b>{escape(email)}</b> — we re-sent your private link.</p></div>')
+    if existing:
+        conn.close()
+        return _host_page("Email already in use",
+                          f'<div class="card"><h1>That email is already registered</h1>'
+                          f'<p><b>{escape(email)}</b> already has an XCTimer login, so we can’t create a '
+                          f'separate community-event sign-in for it. Please <a href="/host">go back</a> and use '
+                          f'a different email to host your event.</p></div>'), 400
     token = secrets.token_urlsafe(32)
     uid = conn.execute(
         "INSERT INTO users (organizer_id, email, name, role, setup_token, token_expires) "
