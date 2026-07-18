@@ -92,6 +92,7 @@ def list_organizers():
     counts = {r[0]: r[1] for r in conn.execute(
         "SELECT organizer_id, COUNT(*) FROM meets WHERE organizer_id IS NOT NULL "
         "GROUP BY organizer_id").fetchall()}
+    codes = conn.execute("SELECT * FROM promo_codes ORDER BY active DESC, code").fetchall()
     conn.close()
     dir_by_org = {}
     for u in dirs:
@@ -125,6 +126,27 @@ def list_organizers():
             f'<div style="display:flex;align-items:flex-end">'
             f'<button type="submit">+ Add race director</button></div></form></div>')
 
+    crows = "".join(
+        f'<tr><td><b>{escape(c["code"])}</b></td>'
+        f'<td class="muted">{escape(c["label"] or "")}</td>'
+        f'<td>{c["used_count"]}{("/" + str(c["max_uses"])) if c["max_uses"] is not None else ""}</td>'
+        f'<td>{"✅ active" if c["active"] else "⛔ off"}</td>'
+        f'<td style="text-align:right"><form class="inline" method="post" '
+        f'action="/host-codes/{c["id"]}/toggle" style="margin:0">'
+        f'<button class="ghost">{"Disable" if c["active"] else "Enable"}</button></form></td></tr>'
+        for c in codes)
+    promo_card = (
+        '<div class="card"><h2>🎟 Comp codes</h2>'
+        '<p class="muted">100%-off codes for the $50 self-serve event fee — a host enters one on the '
+        'Go-live banner to publish their event free. Leave “max uses” blank for unlimited.</p>'
+        + (f'<table><tr><th>Code</th><th>Label</th><th>Used</th><th>Status</th><th></th></tr>{crows}</table>'
+           if codes else '<p class="muted">No codes yet.</p>')
+        + '<form method="post" action="/host-codes" class="row" style="gap:.5rem;flex-wrap:wrap;margin-top:.6rem">'
+          '<div><label>New code</label><input name="code" placeholder="e.g. FRIEND" required></div>'
+          '<div><label>Label</label><input name="label" placeholder="who / why"></div>'
+          '<div style="max-width:110px"><label>Max uses</label><input name="max_uses" type="number" min="1" placeholder="∞"></div>'
+          '<div style="display:flex;align-items:flex-end"><button type="submit">+ Add code</button></div>'
+          '</form></div>')
     body = (
         '<h1>Organizers</h1>'
         '<p class="muted">Community race organizers. Each runs its own road events '
@@ -134,8 +156,36 @@ def list_organizers():
         '<div><label>Name</label><input name="name" placeholder="e.g. Bear Lake Events" required></div>'
         '<div style="display:flex;align-items:flex-end"><button type="submit">Create</button></div>'
         '</form></div>'
+        + promo_card
         + ("".join(cards) or '<div class="card muted">No organizers yet.</div>'))
     return shell(g.principal, body, active="organizers")
+
+
+@bp.post("/host-codes")
+@role_required("super_admin")
+def add_promo_code():
+    from .auth import _iso, _now
+    code = (request.form.get("code") or "").strip().upper()
+    label = (request.form.get("label") or "").strip() or None
+    mu = (request.form.get("max_uses") or "").strip()
+    max_uses = int(mu) if mu.isdigit() and int(mu) > 0 else None
+    if code:
+        conn = db.connect()
+        conn.execute("INSERT OR IGNORE INTO promo_codes (code, label, active, max_uses, used_count, created_at) "
+                     "VALUES (?,?,1,?,0,?)", (code, label, max_uses, _iso(_now())))
+        conn.commit()
+        conn.close()
+    return redirect("/organizers")
+
+
+@bp.post("/host-codes/<int:cid>/toggle")
+@role_required("super_admin")
+def toggle_promo_code(cid):
+    conn = db.connect()
+    conn.execute("UPDATE promo_codes SET active=1-active WHERE id=?", (cid,))
+    conn.commit()
+    conn.close()
+    return redirect("/organizers")
 
 
 @bp.post("/organizers")
@@ -1139,6 +1189,47 @@ def host_square_return(mid):
     return redirect(f"/meets/{mid}?payerr=1")
 
 
+def _redeem_comp(code):
+    """Validate + consume a 100%-off comp code (atomic on max_uses). True if it waived the fee."""
+    code = (code or "").strip().upper()
+    if not code:
+        return False
+    conn = db.connect()
+    row = conn.execute("SELECT * FROM promo_codes WHERE code=? AND active=1", (code,)).fetchone()
+    if not row:
+        conn.close()
+        return False
+    if row["max_uses"] is None:
+        conn.execute("UPDATE promo_codes SET used_count=used_count+1 WHERE id=?", (row["id"],))
+        ok = True
+    else:
+        cur = conn.execute("UPDATE promo_codes SET used_count=used_count+1 "
+                           "WHERE id=? AND used_count<max_uses", (row["id"],))
+        ok = cur.rowcount > 0
+    conn.commit()
+    conn.close()
+    return ok
+
+
+@bp.post("/meets/<int:mid>/host-redeem")
+@login_required
+def host_redeem(mid):
+    """Apply a comp code to a self-serve event: waives the $50 and publishes (no Square)."""
+    m = load_meet(mid)
+    if not can_setup_meet(m):
+        abort(403)
+    if host_paid(m):
+        return redirect(f"/meets/{mid}")
+    code = (request.form.get("code") or "").strip().upper()
+    if _redeem_comp(code):
+        s = _load_settings(mid)
+        s["host_paid"] = True
+        s["comp_code"] = code
+        _save_settings(mid, s)
+        return redirect(f"/meets/{mid}?paid=1")
+    return redirect(f"/meets/{mid}?codeerr=1")
+
+
 def _mark_host_paid(mid, order_id):
     s = _load_settings(mid)
     if not s.get("host_paid"):
@@ -1186,8 +1277,13 @@ def host_banner(m):
         return ('<div class="card" style="border-color:#2e8b57"><b style="color:#2e8b57">✅ '
                 'Published.</b> <span class="muted">Registration can be opened in the settings below.</span></div>')
     from . import square
-    msg = ('<p style="color:var(--err);font-weight:600;margin:.2rem 0">⚠ Payment didn\'t complete — '
-           'try again, or use Venmo.</p>') if request.args.get("payerr") else ""
+    msg = ""
+    if request.args.get("payerr"):
+        msg = ('<p style="color:var(--err);font-weight:600;margin:.2rem 0">⚠ Payment didn\'t complete — '
+               'try again, or use Venmo.</p>')
+    if request.args.get("codeerr"):
+        msg += ('<p style="color:var(--err);font-weight:600;margin:.2rem 0">⚠ That comp code isn\'t '
+                'valid (or has been used up).</p>')
     # Verified card payment via Square (auto-publishes on a completed order).
     sq = ""
     if square.is_configured():
@@ -1215,12 +1311,18 @@ def host_banner(m):
                 f'<button class="ghost">I\'ve sent Venmo — publish</button></form>')
     none_note = ('<span class="muted">Payment isn\'t configured yet — contact XCTimer.</span>'
                  if not (square.is_configured() or handle) else "")
+    # Comp code (100%-off) — same-origin POST, so a normal form is fine here.
+    comp = (f'<form class="inline" method="post" action="/meets/{mid}/host-redeem" '
+            f'style="display:inline-flex;gap:.35rem;align-items:center;margin-left:.3rem">'
+            f'<input name="code" placeholder="Comp code" autocomplete="off" '
+            f'style="max-width:130px;padding:.5rem" aria-label="Comp code">'
+            f'<button class="ghost">Apply</button></form>')
     return (f'<div class="card" style="border:2px solid #ea6a2d">'
             f'<h2 style="margin-top:0">🚦 Go live — {fee} per event</h2>'
             f'<p style="margin:.2rem 0 .6rem">Build your event below. When you\'re ready to open '
             f'registration and time the race, pay the {fee} event fee. Card (Square) is verified '
-            f'instantly; Venmo is on your honor.</p>{msg}'
-            f'<div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center">{sq}{vpay}{none_note}</div></div>')
+            f'instantly; Venmo is on your honor. Have a comp code? Enter it to publish free.</p>{msg}'
+            f'<div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center">{sq}{vpay}{comp}{none_note}</div></div>')
 
 
 def reap_web_events(conn, today_iso):
