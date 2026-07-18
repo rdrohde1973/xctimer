@@ -277,9 +277,25 @@ def shell(principal, body, *, active="", active_district=None, districts=None,
     logout = ('<form class="inline" method="post" action="/logout">'
               '<button class="ghost" type="submit">Sign out</button></form>')
 
-    # Self-serve event owners get a floating "Setup help" chat (Claude); nobody else does.
+    # "Ask the Ref" chat: always for the self-serve event owner; also for admins when they're
+    # viewing a self-serve (XCTimer Web) event page — so it's not hidden from super admins.
     chat = ""
-    if getattr(principal, "owns_meet", None):
+    show_ref = bool(getattr(principal, "owns_meet", None))
+    if not show_ref and role in ("super_admin", "district_admin"):
+        try:
+            import re as _re
+            from flask import request as _rq
+            mm = _re.match(r"/meets/(\d+)", _rq.path or "")
+            if mm:
+                from . import db as _db
+                c = _db.connect()
+                row = c.execute("SELECT 1 FROM meets me JOIN organizers o ON o.id=me.organizer_id "
+                                "WHERE me.id=? AND o.slug='xctimer-web'", (int(mm.group(1)),)).fetchone()
+                c.close()
+                show_ref = bool(row)
+        except Exception:
+            pass
+    if show_ref:
         from .road import host_chat_widget
         chat = host_chat_widget()
 
