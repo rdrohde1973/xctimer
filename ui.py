@@ -277,6 +277,12 @@ def shell(principal, body, *, active="", active_district=None, districts=None,
     logout = ('<form class="inline" method="post" action="/logout">'
               '<button class="ghost" type="submit">Sign out</button></form>')
 
+    # Self-serve event owners get a floating "Setup help" chat (Claude); nobody else does.
+    chat = ""
+    if getattr(principal, "owns_meet", None):
+        from .road import host_chat_widget
+        chat = host_chat_widget()
+
     head = title or BRAND
     return f"""<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width, initial-scale=1">
@@ -288,6 +294,7 @@ def shell(principal, body, *, active="", active_district=None, districts=None,
   {switch}{who}{logout}
 </header>
 <main>{_flashes(msg, err)}{body}</main>
+{chat}
 <script>{JS}</script>
 </body></html>"""
 

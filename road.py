@@ -12,7 +12,7 @@ import secrets
 from datetime import timedelta
 
 from markupsafe import escape
-from flask import Blueprint, request, redirect, g, abort, Response, make_response
+from flask import Blueprint, request, redirect, g, abort, Response, make_response, jsonify
 
 from . import db
 from .auth import login_required, role_required, create_user, send_setup_email
@@ -1203,3 +1203,100 @@ def reap_web_events(conn, today_iso):
         n += 1
     conn.commit()
     return n
+
+
+# ============================ self-serve setup assistant (Claude) ============================
+_HOST_HELP_SYS = """You are the friendly setup assistant for XCTimer's self-serve "fun run" events.
+Help the organizer set up and run their community race (a 5K/10K/fun run). Keep answers short,
+concrete, and specific to XCTimer. Only answer questions about using XCTimer to plan, build, and
+run their event — for anything unrelated, politely steer back. Never invent features; if unsure,
+tell them to email admin@xctimer.com.
+
+How XCTimer self-serve works (rely on these facts):
+- Create an event at xctimer.com/host; you get a private email link to manage it (bookmark it, or
+  use "Email my link" on /host to get it again).
+- Setup tab: add your races (e.g. 5K, 10K, Fun Run); set Default age groups (e.g.
+  "10 & Under, 11-14, 15-19, 20-29, 30+"); upload your event logo; optionally set an Entry fee and
+  your Venmo so runners pay you when they register. Timing is always tap-then-scan (no mode to pick).
+- Go live: $50 per event. Build it free, then pay the $50 by card (Square — instant) or Venmo to
+  open registration. Registration stays closed until you pay.
+- Public registration: share the registration link/QR; runners self-register (name, age, gender,
+  city, club) and pick their race — no account needed.
+- Participants tab: import a CSV, add runners by hand, or let them self-register. Print bibs here on
+  Avery 5163 (2"x4") sticker sheets — QR or camera-readable ArUco — with your logo, plus a few blank
+  spares for walk-ups.
+- Race day tab: the Phone Timer App — share its QR/link with helpers to open the timing app for your
+  event, no login. Timing is tap-then-scan: a helper taps each runner as they cross the finish line
+  (captures time + order), then you scan or type each runner's bib to attach names — this works even
+  after you stop the clock. There's also a finish-line camera that reads the ArUco bib tags.
+- Results: live, by gender x age group; share the public results link/QR with the crowd.
+- Your event auto-deletes 30 days after the event date.
+
+Be encouraging and practical. Prefer step-by-step answers a first-time race director can follow."""
+
+
+@bp.post("/host/chat")
+@login_required
+def host_chat():
+    """Setup-assistant chat for self-serve event owners (uses the Anthropic key)."""
+    p = g.principal
+    if getattr(p, "owns_meet", None) is None and not p.is_super:
+        abort(403)
+    data = request.get_json(silent=True) or {}
+    msg = (data.get("message") or "").strip()[:1000]
+    history = data.get("history") if isinstance(data.get("history"), list) else []
+    if not msg:
+        return jsonify(reply="Ask me anything about setting up or running your event!")
+    from . import ai
+    try:
+        reply = ai.claude_chat(_HOST_HELP_SYS, msg, history=history, max_tokens=700)
+    except Exception:
+        return jsonify(reply="Sorry — the assistant is unavailable right now. "
+                             "Email admin@xctimer.com and we'll help."), 200
+    return jsonify(reply=reply or "(no answer)")
+
+
+def host_chat_widget():
+    """Floating 'Setup help' chat, injected by ui.shell for self-serve event owners only."""
+    return """
+<div id="hcbtn" onclick="hcToggle()" style="position:fixed;right:18px;bottom:18px;z-index:9998;
+  background:#ea6a2d;color:#fff;border-radius:999px;padding:.7rem 1.1rem;font-weight:700;cursor:pointer;
+  box-shadow:0 4px 16px rgba(0,0,0,.3)">&#128172; Setup help</div>
+<div id="hcpanel" style="display:none;position:fixed;right:18px;bottom:74px;z-index:9998;
+  width:min(370px,92vw);height:min(480px,72vh);background:#fff;color:#20303f;border-radius:14px;
+  box-shadow:0 8px 30px rgba(0,0,0,.4);flex-direction:column;overflow:hidden">
+  <div style="background:#164271;color:#fff;padding:.6rem .9rem;font-weight:700;display:flex;
+    justify-content:space-between;align-items:center">Setup assistant
+    <span onclick="hcToggle()" style="cursor:pointer">&#10005;</span></div>
+  <div id="hclog" style="flex:1;overflow-y:auto;padding:.7rem;font-size:.9rem">
+    <div style="background:#eef3f9;border-radius:10px;padding:.5rem .7rem;margin:.3rem 0">
+      Hi! Ask me anything about setting up or running your fun run &mdash; bibs, registration, timing, results&hellip;</div>
+  </div>
+  <div style="display:flex;gap:.4rem;padding:.6rem;border-top:1px solid #e3e9f1">
+    <input id="hcin" placeholder="Type your question&hellip;"
+      style="flex:1;padding:.5rem;border:1px solid #cdd7e2;border-radius:8px;font:inherit"
+      onkeydown="if(event.key==='Enter')hcSend()">
+    <button onclick="hcSend()" style="background:#ea6a2d;color:#fff;border:0;border-radius:8px;
+      padding:.5rem .8rem;font-weight:700;cursor:pointer">Send</button>
+  </div>
+</div>
+<script>
+var HCHIST=[];
+function hcToggle(){var p=document.getElementById('hcpanel');
+  p.style.display=(p.style.display==='none'||!p.style.display)?'flex':'none';
+  if(p.style.display==='flex')document.getElementById('hcin').focus();}
+function hcCsrf(){var m=document.cookie.match(/csrftoken=([^;]+)/);return m?decodeURIComponent(m[1]):'';}
+function hcAdd(role,text){var l=document.getElementById('hclog');var d=document.createElement('div');
+  d.style.cssText='border-radius:10px;padding:.5rem .7rem;margin:.3rem 0;white-space:pre-wrap;'
+    +(role==='user'?'background:#ea6a2d;color:#fff;margin-left:2rem':'background:#eef3f9;margin-right:1rem');
+  d.textContent=text;l.appendChild(d);l.scrollTop=l.scrollHeight;return d;}
+async function hcSend(){var i=document.getElementById('hcin');var q=i.value.trim();if(!q)return;
+  i.value='';hcAdd('user',q);var t=hcAdd('bot','…');
+  try{var r=await fetch('/host/chat',{method:'POST',
+      headers:{'Content-Type':'application/json','X-CSRF-Token':hcCsrf()},
+      body:JSON.stringify({message:q,history:HCHIST})});
+    var j=await r.json();t.textContent=j.reply||'(no reply)';
+    HCHIST.push({role:'user',content:q});HCHIST.push({role:'assistant',content:j.reply||''});
+    if(HCHIST.length>16)HCHIST=HCHIST.slice(-16);}
+  catch(e){t.textContent='Sorry, something went wrong. Try again.';}}
+</script>"""

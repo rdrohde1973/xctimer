@@ -566,18 +566,19 @@ def ensure_timer_token(mid):
 
 
 def timer_qr_card(m):
-    """The 'No-login timer QR' card for the Meet-day page. Auto-generates the token;
-    the Rotate (revoke) button shows only for setup users."""
+    """The 'Phone Timer App' share card for the Race-day page. Auto-generates the token;
+    the reset/revoke button shows only for setup users."""
     mid = m["id"]
     tok = ensure_timer_token(mid)
     base = os.environ.get("XC_PUBLIC_URL", request.host_url.rstrip("/"))
     rotate = ""
     if can_setup_meet(m):
         rotate = (f'<form method="post" action="/meets/{mid}/timer-qr">'
-                  f'<button class="ghost" type="submit" style="margin-top:.6rem">Rotate timer QR</button></form>')
-    return (f'<div class="card"><h2>No-login timer QR</h2>'
-            f'<p class="muted">Share this QR/link with helpers — it opens the phone timing app for '
-            f'<b>this meet only</b>, no login, anytime. Rotate to revoke.</p>'
+                  f'<button class="ghost" type="submit" style="margin-top:.6rem" '
+                  f'title="Revoke this link and make a new one">🔄 New link</button></form>')
+    return (f'<div class="card"><h2>📱 Phone Timer App</h2>'
+            f'<p class="muted">Share this QR or link with your timing helpers — it opens the phone '
+            f'timing app for <b>this event</b>, no login needed, anytime. Tap <b>New link</b> to revoke it.</p>'
             f'<p><a href="{base}/t/{tok}">{base}/t/{tok}</a></p>'
             f'<img src="/meets/{mid}/timer-qr.png" width="160" height="160" '
             f'style="background:#fff;padding:8px;border-radius:8px">{rotate}</div>')
