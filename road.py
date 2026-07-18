@@ -6,6 +6,7 @@ engine, minus schools, rosters, and PII.
 import csv
 import io
 import json
+import logging
 import os
 import re
 import secrets
@@ -1117,6 +1118,8 @@ def host_pay_square(mid):
         url = square.create_payment_link(f"XCTimer event — {m['name']}", HOST_FEE_CENTS,
                                           ret, f"xctimer_meet={mid}")
     except Exception:
+        # Was silently swallowed -> the page just bounced back and looked like "nothing happened".
+        logging.getLogger("xctimer.road").exception("host_pay_square failed for meet %s", mid)
         return redirect(f"/meets/{mid}?payerr=1")
     return redirect(url)
 
