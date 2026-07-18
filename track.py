@@ -2889,6 +2889,8 @@ _LANE_PAGE = """
 <p><a href="/phone/meet/__MID__" style="color:#9fb3c8">&lsaquo; Track Timer</a></p>
 <h1 style="margin:.2rem 0">__TITLE__</h1>
 <div id="clk" class="clk">0:00.0</div>
+<button id="stopbtn" class="startbtn" style="background:#c0392b;display:none" onclick="confirmStop()">&#9209;&#65039; Stop the race</button>
+<div id="donebanner" class="rec" style="display:none;font-size:1.15rem">&#127937; Race complete &mdash; all lanes finished</div>
 <button id="startbtn" class="startbtn" onclick="laneStart()">&#128299; Start (tap at the gun)</button>
 <button id="gunbtn" class="startbtn" style="background:#3d6fa5;margin-top:.5rem" onclick="armGun()">&#127911; Auto-start: listen for the gun</button>
 <div id="gunstatus" class="muted" style="text-align:center;font-size:.85rem;margin-top:.35rem"></div>
@@ -2900,35 +2902,45 @@ _LANE_PAGE = """
 </div>
 <script>
 var MEID=__MEID__, HEAT="__HEAT__", MYLANE=null, OFFSET=0, START=null, STOP=null, LANES=[];
-var GUNON=false, AC=null, GUNRAF=null;
+var GUNON=false, AC=null, GUNRAF=null, STOPPING=false;
 function csrf(){var m=document.cookie.match(/csrftoken=([^;]+)/);return m?decodeURIComponent(m[1]):'';}
 async function jp(url){var r=await fetch(url,{method:'POST',headers:{'Content-Type':'application/json','X-CSRF-Token':csrf()},body:'{}'});return r.json();}
 function fmt(s){if(s==null)return'';s=Math.max(0,s);var m=Math.floor(s/60),x=s-60*m;return m+':'+x.toFixed(1).padStart(4,'0');}
 function esc(s){var d=document.createElement('div');d.textContent=s==null?'':s;return d.innerHTML;}
 function render(){
-  document.getElementById('startbtn').style.display=START?'none':'block';
-  document.getElementById('startnote').style.display=START?'none':'block';
-  var gb=document.getElementById('gunbtn');if(gb)gb.style.display=START?'none':'block';
-  if(START&&GUNON)disarmGun('🔫 Started.');
+  var started=!!START, stopped=!!STOP;
+  document.getElementById('startbtn').style.display=started?'none':'block';
+  document.getElementById('startnote').style.display=started?'none':'block';
+  var gb=document.getElementById('gunbtn');if(gb)gb.style.display=started?'none':'block';
+  var sb=document.getElementById('stopbtn');if(sb)sb.style.display=(started&&!stopped)?'block':'none';
+  var dn=document.getElementById('donebanner');if(dn)dn.style.display=stopped?'block':'none';
+  if(started&&GUNON)disarmGun('🔫 Started.');
   var h='';LANES.forEach(function(l){
     var sel=(l.lane==MYLANE)?' sel':'';
     var t=l.secs!=null?('<span class="t">'+fmt(l.secs)+'</span>'):'<span style="color:#7c8b9a">&mdash;</span>';
     h+='<button class="lanebtn'+sel+'" onclick="pick('+l.lane+')"><span><b>Lane '+l.lane+'</b> &middot; '+esc(l.name)+(l.bib?(' #'+l.bib):'')+'</span>'+t+'</button>';});
   document.getElementById('lanes').innerHTML=h||'<p class="muted">No lanes assigned for this heat.</p>';
   var b=document.getElementById('tapbtn');
-  if(MYLANE==null){b.disabled=true;b.textContent='Pick your lane first';}
+  if(stopped){b.disabled=true;b.textContent='🏁 Race ended';}
+  else if(MYLANE==null){b.disabled=true;b.textContent='Pick your lane first';}
   else{var l=LANES.find(function(x){return x.lane==MYLANE;});
-    b.disabled=!START;
-    b.textContent=(!START?'Waiting for start…':('TAP — Lane '+MYLANE+((l&&l.name)?(' ('+l.name+')'):'')+' crossed'));}
+    b.disabled=!started;
+    b.textContent=(!started?'Waiting for start…':('TAP — Lane '+MYLANE+((l&&l.name)?(' ('+l.name+')'):'')+' crossed'));}
 }
 function pick(n){MYLANE=n;render();}
 async function laneStart(){await jp('/meet-events/'+MEID+'/time/start?heat='+HEAT);poll();}
+async function stopRace(){if(STOP||STOPPING)return;STOPPING=true;
+  try{await jp('/meet-events/'+MEID+'/time/stop?heat='+HEAT);}finally{STOPPING=false;}poll();}
+function confirmStop(){if(!START||STOP)return;
+  if(confirm('End the race now? Times already tapped are kept.'))stopRace();}
 async function laneTap(){if(MYLANE==null||!START)return;if(navigator.vibrate)navigator.vibrate(40);
   var j=await jp('/meet-events/'+MEID+'/lane-finish?heat='+HEAT+'&lane='+MYLANE);
   if(j.ok){document.getElementById('rec').textContent='✓ Lane '+MYLANE+' — '+fmt(j.secs);poll();}
   else{document.getElementById('rec').textContent='⚠ '+(j.error||'error');}}
 async function poll(){try{var s=await (await fetch('/meet-events/'+MEID+'/lane-state?heat='+HEAT)).json();
-  OFFSET=s.server_ms-Date.now();START=s.start_ms;STOP=s.stop_ms;LANES=s.lanes||[];render();}catch(e){}
+  OFFSET=s.server_ms-Date.now();START=s.start_ms;STOP=s.stop_ms;LANES=s.lanes||[];render();
+  if(START&&!STOP&&!STOPPING&&LANES.length&&LANES.every(function(l){return l.secs!=null;}))stopRace();
+  }catch(e){}
   setTimeout(poll,2000);}
 function tick(){var c=document.getElementById('clk');if(!START){c.textContent='0:00.0';return;}
   var end=(STOP||(Date.now()+OFFSET));var e=(end-START)/1000;c.textContent=fmt(e);}
