@@ -164,11 +164,15 @@ body.phone{margin:0;display:flex;flex-direction:column;overflow:hidden;backgroun
 .frow .fw{flex:1;text-align:right;font-weight:600}
 .banner{background:rgba(240,98,91,.15);color:var(--err);text-align:center;padding:.7rem;
   border-radius:10px;margin-bottom:.6rem;font-weight:600}
-.ctrls{display:flex;gap:.6rem;padding:.7rem;padding-bottom:calc(.7rem + env(safe-area-inset-bottom));background:#08111d}
-.ctl{flex:1;border:0;border-radius:14px;font-size:1.15rem;font-weight:700;padding:1rem;color:#fff;cursor:pointer}
+.ctrls{position:fixed;left:0;right:0;bottom:0;z-index:20;display:flex;gap:.6rem;padding:.7rem;
+  padding-bottom:calc(.7rem + env(safe-area-inset-bottom));background:#08111d;box-shadow:0 -2px 12px rgba(0,0,0,.45)}
+.ctl{flex:1;border:0;border-radius:14px;font-size:1.1rem;font-weight:700;padding:1rem .4rem;color:#fff;cursor:pointer}
 .ctl.undo{background:#4a4a4a}
 .ctl.stop{background:#c0392b}
+.ctl.reset{background:#6a2f2f}
 .ctl:disabled{opacity:.4}
+/* clear the fixed controls bar so the last runner/finisher isn't hidden behind it */
+.tmain{padding-bottom:6rem}
 #pickbox{display:none;flex-direction:column;gap:.4rem;margin-bottom:.6rem}
 #pickbox input{font-size:1.1rem;padding:.6rem;text-align:center}
 #pickbox .ph{font-size:.72rem;letter-spacing:.12em;color:#9aa;text-transform:uppercase;text-align:center}
@@ -197,8 +201,6 @@ def phone_race(rid):
     if not can_record_meet(m):
         abort(403)
     body = f"""
-<script src="/static/vendor/cv.js"></script>
-<script src="/static/vendor/aruco.js"></script>
 <div class="tbar">
   <div class="tcount"><span id="count">0</span><small>FINISHERS</small></div>
   <div id="clock" class="tclock">0:00:00</div>
@@ -216,14 +218,7 @@ def phone_race(rid):
     <button class="bigbtn tap" onclick="rec()">RECORD</button>
   </div>
   <div id="pickbox">
-    <div class="ph" id="pickhint">Tap a finisher above, then scan their bib tag or pick the name</div>
-    <button id="scanToggle" onclick="toggleScan()"
-      style="width:100%;padding:.7rem;margin:.2rem 0 .5rem;font-weight:700;border:0;border-radius:12px;background:#3d6fa5;color:#fff;cursor:pointer">📷 Scan bib tags</button>
-    <div id="camwrap" style="display:none;position:relative;margin-bottom:.5rem">
-      <video id="cv" playsinline muted style="width:100%;border-radius:12px;background:#000;display:block"></video>
-      <canvas id="cc" style="position:absolute;left:0;top:0;width:100%;height:100%;pointer-events:none"></canvas>
-    </div>
-    <div id="cammsg" class="ph" style="min-height:1.1rem"></div>
+    <div class="ph" id="pickhint">Tap a finisher above, then pick who it was (or 📷 to scan bibs)</div>
     <input id="psearch" autocomplete="off" placeholder="search name…" oninput="renderElig()">
     <div id="plist" class="plist"></div>
   </div>
@@ -235,6 +230,7 @@ def phone_race(rid):
 <div id="ctrls" class="ctrls" style="display:none">
   <button class="ctl undo" onclick="undo()">↶ UNDO</button>
   <button class="ctl stop" onclick="stopRace()">■ STOP</button>
+  <button class="ctl reset" onclick="resetRace()">↺ RESET</button>
 </div>
 <script>
 const RID={rid};
@@ -259,7 +255,6 @@ function sync(){{
   const active=STARTED&&!STOPPED, scan=MODE==='scan', sel=(MODE==='tapselect'||MODE==='tap');
   document.getElementById('startb').style.display = STARTED?'none':'';
   gunReflect(STARTED);
-  if(!active && CAMON) stopScan();   // race ended / not running -> release the camera
   document.getElementById('tapb').style.display = (active&&!scan)?'':'none';
   document.getElementById('scanbox').style.display = (active&&scan)?'':'none';
   document.getElementById('pickbox').style.display = (STARTED&&sel)?'flex':'none';
@@ -299,58 +294,6 @@ async function pick(bib){{
   catch(e){{ alert(e.message); }}
   await load();
 }}
-// ---- inline bib-tag scanner: fills the next open (tapped) slot, alongside the picker ----
-let CAMON=false, VS=null, DET=null, CCTX=null, DCAN=null, DCTX=null, CAMSEEN=new Set(), CAMRAF=null;
-function toggleScan(){{ CAMON?stopScan():startScan(); }}
-async function startScan(){{
-  const msg=document.getElementById('cammsg');
-  if(typeof AR==='undefined'){{ msg.textContent='Scanner not loaded — reload the page.'; return; }}
-  try{{ VS=await navigator.mediaDevices.getUserMedia({{audio:false,video:{{facingMode:'environment',width:{{ideal:640}}}}}}); }}
-  catch(e){{ msg.textContent='Camera unavailable — pick from the list instead.'; return; }}
-  const v=document.getElementById('cv'); v.srcObject=VS; try{{ await v.play(); }}catch(e){{}}
-  CAMON=true;
-  document.getElementById('camwrap').style.display='';
-  document.getElementById('scanToggle').textContent='📷 Stop scanning';
-  DET=DET||new AR.Detector();
-  CCTX=document.getElementById('cc').getContext('2d');
-  DCAN=document.createElement('canvas'); DCTX=DCAN.getContext('2d',{{willReadFrequently:true}});
-  scanLoop();
-}}
-function stopScan(){{ CAMON=false; if(CAMRAF)clearTimeout(CAMRAF);
-  if(VS){{ VS.getTracks().forEach(function(t){{t.stop();}}); VS=null; }}
-  const w=document.getElementById('camwrap'); if(w)w.style.display='none';
-  const b=document.getElementById('scanToggle'); if(b)b.textContent='📷 Scan bib tags'; }}
-function scanLoop(){{
-  if(!CAMON)return;
-  const v=document.getElementById('cv');
-  if(v&&v.videoWidth){{
-    const w=v.videoWidth,h=v.videoHeight;
-    DCAN.width=w; DCAN.height=h; DCTX.drawImage(v,0,0,w,h);
-    let ms=[]; try{{ ms=DET.detect(DCTX.getImageData(0,0,w,h)); }}catch(e){{}}
-    const cc=document.getElementById('cc'); cc.width=w; cc.height=h; CCTX.clearRect(0,0,w,h);
-    ms.forEach(function(m){{
-      CCTX.strokeStyle='#28c76f'; CCTX.lineWidth=4; CCTX.beginPath();
-      m.corners.forEach(function(p,i){{ i?CCTX.lineTo(p.x,p.y):CCTX.moveTo(p.x,p.y); }});
-      CCTX.closePath(); CCTX.stroke();
-      CCTX.fillStyle='#28c76f'; CCTX.font='bold 22px sans-serif'; CCTX.fillText('#'+m.id,m.corners[0].x,m.corners[0].y-8);
-      camHit(m.id);
-    }});
-  }}
-  CAMRAF=setTimeout(scanLoop,100);
-}}
-async function camHit(id){{
-  if(!STARTED||CAMSEEN.has(id))return;
-  CAMSEEN.add(id);
-  const msg=document.getElementById('cammsg');
-  try{{
-    const j=await jpost('/races/'+RID+'/finish',{{bib:id,mode:'chute'}});
-    if(j&&j.duplicate){{ msg.textContent='#'+id+' already recorded'; }}
-    else{{ buzz(35); msg.innerHTML='📷 <b>#'+id+'</b>'+(j&&j.name?(' '+esc(j.name)):'')+' ✓'
-      +(j&&j.warn?' <span style="color:var(--warn,#f0b429)">(not registered)</span>':'')
-      +(j&&j.remaining!=null?(' · '+j.remaining+' open'):''); }}   // record + move on, no popup
-    await load();
-  }}catch(e){{ CAMSEEN.delete(id); msg.textContent='#'+id+' ✕ '+(e&&e.message?e.message:'error'); }}
-}}
 function tick(){{
   const c=document.getElementById('clock');
   if(!START){{ c.textContent='0:00:00.000'; return; }}
@@ -376,6 +319,8 @@ async function startRace(){{
   if(STOPPED&&FIN.length){{ if(!confirm('Race ended with '+FIN.length+' finisher(s). Restarting CLEARS them. Continue?'))return; body.clear=true; }}
   try{{ await jpost('/races/'+RID+'/start',body); }}catch(e){{ alert(e.message); }} load(); }}
 async function stopRace(){{ if(!confirm('Stop the race clock?'))return; await jpost('/races/'+RID+'/stop',{{}}); load(); }}
+async function resetRace(){{ if(!confirm('Reset clears the clock AND every finisher for this race. Continue?'))return;
+  try{{ await jpost('/races/'+RID+'/reset',{{}}); }}catch(e){{ alert(e.message); }} load(); }}
 function buzz(ms){{ try{{ navigator.vibrate && navigator.vibrate(ms); }}catch(e){{}} }}
 async function tap(){{ buzz(35); const at=nowms(); try{{ await jpost('/races/'+RID+'/tap',{{at:at}}); }}catch(e){{}} load(); }}
 async function undo(){{ buzz([20,40,20]); try{{ await jpost('/races/'+RID+'/untap',{{}}); }}catch(e){{ alert(e.message); }} load(); }}
