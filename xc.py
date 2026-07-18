@@ -38,6 +38,19 @@ def _parse(s):
     return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
 
 
+def _event_dt(at_ms, now=None):
+    """A client-supplied event time (epoch ms, already in server-clock terms via the phone's
+    measured offset) -> datetime. Falls back to server now() when absent, unparseable, or more
+    than 15 s off (an unsynced/bad device clock). Records the instant the gun fired / a runner
+    crossed the line, NOT when the POST reached the server — so cellular lag can't skew times."""
+    now = now or _now()
+    try:
+        dt = datetime.fromtimestamp(float(at_ms) / 1000.0, tz=timezone.utc)
+    except (TypeError, ValueError, OverflowError, OSError):
+        return now
+    return now if abs((dt - now).total_seconds()) > 15 else dt
+
+
 def _ms(dt):
     return int(dt.timestamp() * 1000)
 
@@ -1008,7 +1021,9 @@ def race_state(rid):
 def race_start(rid):
     r, m = _race_or_403(rid, can_record_meet)
     conn = db.connect()
-    clear = bool((request.get_json(silent=True) or {}).get("clear"))
+    body = request.get_json(silent=True) or {}
+    clear = bool(body.get("clear"))
+    start_iso = _iso(_event_dt(body.get("at")))   # gun instant from the starter's phone
     # Already running: a road race can have ~3 timing phones (and other helpers), any of
     # which may have armed the gun. A second START — a late gun-detect on another phone,
     # or a stray tap — must NOT shift the shared clock out from under the finishers.
@@ -1031,10 +1046,10 @@ def race_start(rid):
     # near-simultaneous gun-detects can't clobber each other (SQLite serializes writes —
     # the loser's WHERE matches nothing).
     if clear or (r["start_time"] and r["stop_time"]):
-        conn.execute("UPDATE races SET start_time=?, stop_time=NULL WHERE id=?", (_iso(_now()), rid))
+        conn.execute("UPDATE races SET start_time=?, stop_time=NULL WHERE id=?", (start_iso, rid))
     else:
         conn.execute("UPDATE races SET start_time=?, stop_time=NULL WHERE id=? AND start_time IS NULL",
-                     (_iso(_now()), rid))
+                     (start_iso, rid))
     conn.commit()
     conn.close()
     return jsonify(ok=True)
@@ -1154,7 +1169,8 @@ def race_tap(rid):
         return jsonify(error="Race not started"), 400
     if r["stop_time"]:
         return jsonify(error="Race has ended — Reset to run again"), 400
-    elapsed = (_now() - start).total_seconds()
+    at = (request.get_json(silent=True) or {}).get("at")
+    elapsed = max(0.0, (_event_dt(at) - start).total_seconds())
     conn = db.connect()
     # seq computed in-statement so two near-simultaneous taps can't get the same number.
     cur = conn.execute(

@@ -229,15 +229,18 @@ def phone_race(rid):
 </div>
 <script>
 const RID={rid};
-let OFFSET=0, START=null, STOPMS=null, STOPPED=false, STARTED=false, MODE='tap', FIN=[];
+let OFFSET=0, BEST_RTT=1e9, START=null, STOPMS=null, STOPPED=false, STARTED=false, MODE='tap', FIN=[];
 function nowms(){{ return Date.now()+OFFSET; }}
 function fmt(sec){{ if(sec==null)return''; sec=Math.max(0,sec);
   const h=Math.floor(sec/3600), m=Math.floor((sec%3600)/60), s=sec-3600*h-60*m;
   return h+':'+String(m).padStart(2,'0')+':'+s.toFixed(3).padStart(6,'0'); }}
 let ELIG=[];
 async function load(){{
+  const t0=Date.now();
   const s=await jget('/races/'+RID+'/state');
-  OFFSET=s.server_ms-Date.now(); START=s.start_ms; STOPMS=s.stop_ms;
+  const t1=Date.now(), rtt=t1-t0;
+  if(rtt<BEST_RTT){{ BEST_RTT=rtt; OFFSET=Math.round(s.server_ms+rtt/2-t1); }}  // keep the lowest-latency sample
+  START=s.start_ms; STOPMS=s.stop_ms;
   STOPPED=s.stopped; STARTED=s.started; MODE=s.capture_mode; FIN=s.finishers;
   sync(); render();
   if(MODE==='tapselect' && STARTED) loadElig();
@@ -307,12 +310,12 @@ function render(){{
 }}
 async function startRace(){{
   if(STARTED&&!STOPPED)return;   // already running (another phone/the gun started it) — don't re-post
-  const body={{}};
+  const body={{at:nowms()}};     // stamp the gun instant on THIS phone, immune to POST lag
   if(STOPPED&&FIN.length){{ if(!confirm('Race ended with '+FIN.length+' finisher(s). Restarting CLEARS them. Continue?'))return; body.clear=true; }}
   try{{ await jpost('/races/'+RID+'/start',body); }}catch(e){{ alert(e.message); }} load(); }}
 async function stopRace(){{ if(!confirm('Stop the race clock?'))return; await jpost('/races/'+RID+'/stop',{{}}); load(); }}
 function buzz(ms){{ try{{ navigator.vibrate && navigator.vibrate(ms); }}catch(e){{}} }}
-async function tap(){{ buzz(35); try{{ await jpost('/races/'+RID+'/tap',{{}}); }}catch(e){{}} load(); }}
+async function tap(){{ buzz(35); const at=nowms(); try{{ await jpost('/races/'+RID+'/tap',{{at:at}}); }}catch(e){{}} load(); }}
 async function undo(){{ buzz([20,40,20]); try{{ await jpost('/races/'+RID+'/untap',{{}}); }}catch(e){{ alert(e.message); }} load(); }}
 async function rec(v){{ const el=document.getElementById('sbib'); v=(v||el.value).toString().trim(); if(!v)return;
   try{{ const j=await jpost('/races/'+RID+'/finish',{{bib:v}}); el.value='';
