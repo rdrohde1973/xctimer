@@ -2289,9 +2289,10 @@ window.renderTimeline=function(tl){{
   let h='<h3>Meet progress</h3><div class="tl">';
   tl.events.forEach(function(ev,i){{
     const cur=(i===tl.current);
-    const lab=cur?('<div class="tllabel">\\u25bc '+lesc(ev.name)+' '+lesc(ev.div)+'</div>'):'';
-    const cap=lesc(ev.name.replace(/m$/,''))+'<br>'+lesc(ev.div);
-    h+='<div class="tlitem" title="'+lesc(ev.name)+' '+lesc(ev.div)+(st[ev.status]||'')+'">'
+    const link=ev.combined?'\\ud83d\\udd17 ':'';
+    const lab=cur?('<div class="tllabel">\\u25bc '+link+lesc(ev.name)+' '+lesc(ev.div)+'</div>'):'';
+    const cap=link+lesc(ev.name.replace(/m$/,''))+'<br>'+lesc(ev.div);
+    h+='<div class="tlitem" title="'+link+lesc(ev.name)+' '+lesc(ev.div)+(ev.combined?' (combined)':'')+(st[ev.status]||'')+'">'
       +lab+'<div class="tldot '+ev.status+(cur?' cur':'')+'"></div><div class="tlcap">'+cap+'</div></div>';
   }});
   h+='</div><div class="tllegend"><span><b style="color:#2e9e5b">\\u25cf</b> done</span>'

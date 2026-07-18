@@ -2822,7 +2822,7 @@ def _timeline(mid):
     no clock) are omitted — the timeline tracks the sequential running order parents follow."""
     conn = db.connect()
     evs = conn.execute(
-        "SELECT me.id AS meid, e.name AS ename, me.gender, me.grade FROM meet_events me "
+        "SELECT me.id AS meid, e.name AS ename, me.gender, me.grade, me.combine_id FROM meet_events me "
         "JOIN events e ON e.id=me.event_id WHERE me.meet_id=? AND e.kind IN ('track','relay') "
         "ORDER BY (me.run_order IS NULL), me.run_order, e.sort, me.gender, me.grade", (mid,)).fetchall()
     now = _t_now()
@@ -2843,18 +2843,32 @@ def _timeline(mid):
         "JOIN meet_events me ON me.id=en.meet_event_id "
         "WHERE me.meet_id=? AND r.mark_seconds IS NOT NULL", (mid,)).fetchall()}
     conn.close()
+    # Combined events (shared combine_id) run together as ONE physical race -> one timeline dot.
+    groups, gidx = [], {}
+    for ev in evs:
+        cid = ev["combine_id"] if "combine_id" in ev.keys() else None
+        if cid is not None and cid in gidx:
+            groups[gidx[cid]].append(ev)
+        else:
+            if cid is not None:
+                gidx[cid] = len(groups)
+            groups.append([ev])
     out, cur = [], None
-    for i, ev in enumerate(evs):
-        meid = ev["meid"]
-        if meid in running:
+    for i, members in enumerate(groups):
+        meids = [m["meid"] for m in members]
+        if any(x in running for x in meids):
             st = "running"
-        elif meid in has_res or meid in stopped:
+        elif any((x in has_res or x in stopped) for x in meids):
             st = "done"
         else:
             st = "upcoming"
         if st == "running" and cur is None:
             cur = i
-        out.append({"name": ev["ename"], "div": _div_grade(ev["gender"], ev["grade"]), "status": st})
+        enames = {m["ename"] for m in members}
+        name = members[0]["ename"] if len(enames) == 1 else "Combined"
+        divs = [_div_grade(m["gender"], m["grade"]) for m in members]
+        div = " + ".join(divs) if len(divs) <= 2 else f"{divs[0]} +{len(divs) - 1} more"
+        out.append({"name": name, "div": div, "status": st, "combined": len(members) > 1})
     if cur is None:   # nobody running -> point at the first upcoming, else the last event
         cur = next((i for i, o in enumerate(out) if o["status"] == "upcoming"),
                    (len(out) - 1 if out else -1))
