@@ -87,7 +87,7 @@ def list_organizers():
     conn = db.connect()
     orgs = conn.execute("SELECT * FROM organizers ORDER BY name").fetchall()
     dirs = conn.execute(
-        "SELECT id, email, name, role, organizer_id, setup_token FROM users "
+        "SELECT id, email, name, role, organizer_id, setup_token, last_login FROM users "
         "WHERE role='race_director' ORDER BY email").fetchall()
     counts = {r[0]: r[1] for r in conn.execute(
         "SELECT organizer_id, COUNT(*) FROM meets WHERE organizer_id IS NOT NULL "
@@ -103,7 +103,7 @@ def list_organizers():
         dl = "".join(
             f'<li>{escape(u["name"] or u["email"])} '
             f'<span class="muted">{escape(u["email"])}'
-            f'{" · invite pending" if u["setup_token"] else ""}</span></li>'
+            f'{" · invite pending" if not u["last_login"] else ""}</span></li>'
             for u in dir_by_org.get(o["id"], [])) or '<li class="muted">No race directors yet.</li>'
         cards.append(
             f'<div class="card"><div style="display:flex;justify-content:space-between;'
@@ -1124,7 +1124,7 @@ def host_resend():
 
 @bp.get("/host/go/<token>")
 def host_go(token):
-    from .auth import create_session, SESSION_COOKIE, _now, _parse
+    from .auth import create_session, SESSION_COOKIE, _now, _parse, _iso
     conn = db.connect()
     web = _web_org_id(conn)
     u = conn.execute("SELECT * FROM users WHERE setup_token=? AND organizer_id=?", (token, web)).fetchone()
@@ -1140,10 +1140,15 @@ def host_go(token):
                           '<div class="card"><h1>Link expired</h1>'
                           '<p><a href="/host">Email a fresh link</a>.</p></div>'), 410
     rows = conn.execute("SELECT id, settings_json FROM meets WHERE organizer_id=?", (web,)).fetchall()
-    conn.close()
     m = next((r for r in rows if _owner_uid(r) == u["id"]), None)
     if not m:
+        conn.close()
         return _host_page("No event", '<div class="card">No event found for this link.</div>'), 404
+    # The magic link IS how a self-serve host signs in (they never set a password), so
+    # record the sign-in — otherwise they'd read as "invite pending" forever.
+    conn.execute("UPDATE users SET last_login=? WHERE id=?", (_iso(_now()), u["id"]))
+    conn.commit()
+    conn.close()
     tok = create_session(u["id"], kind="event_owner", meet_id=m["id"], ttl_days=60)
     resp = make_response(redirect(f"/meets/{m['id']}"))
     resp.set_cookie(SESSION_COOKIE, tok, httponly=True, samesite="Lax",

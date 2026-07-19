@@ -415,6 +415,18 @@ def migrate(conn):
     if "organizer_id" not in ucols:   # race_director users are scoped to one organizer
         conn.execute("ALTER TABLE users ADD COLUMN organizer_id INTEGER")
 
+    # One-time backfill: self-serve race directors sign in via their magic link, which
+    # historically didn't stamp last_login — so already-active hosts read as "invite
+    # pending" forever. A session row under their user id proves they logged in (no-login
+    # meet-timer sessions have user_id NULL), so give them a last_login. Idempotent — only
+    # fills NULLs, and only for directors that actually have a session.
+    conn.execute(
+        "UPDATE users SET last_login = COALESCE("
+        "  (SELECT MAX(s.created_at) FROM sessions s WHERE s.user_id = users.id), "
+        "  strftime('%Y-%m-%dT%H:%M:%S+00:00','now')) "
+        "WHERE role='race_director' AND last_login IS NULL "
+        "AND EXISTS (SELECT 1 FROM sessions s WHERE s.user_id = users.id)")
+
     # Community road events live in `meets` owned by an organizer (no district).
     # That requires meets.district_id to be nullable + an organizer_id column —
     # relax the original NOT NULL via a one-time, idempotent table rebuild.
