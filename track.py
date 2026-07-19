@@ -1814,19 +1814,26 @@ _FO_CSS = """<style>
 .foli .fopl{color:#ea6a2d;font-weight:800;width:1.6rem;text-align:center}
 .foli .fot{font-variant-numeric:tabular-nums;color:var(--mut);width:5rem}
 .foli .foname{flex:1}
-.foli .fomv{display:flex;gap:.3rem}
-.foli .fomv button{background:var(--panel,#243447);color:var(--fg,#fff);border:1px solid var(--line);border-radius:7px;width:2rem;height:2rem;font-size:1rem;cursor:pointer}
+.foli .fomv{display:flex;gap:.3rem;flex-wrap:wrap;justify-content:flex-end}
+.foli .fomv button{background:var(--panel,#243447);color:var(--fg,#fff);border:1px solid var(--line);border-radius:7px;min-width:2rem;height:2rem;padding:0 .5rem;font-size:.95rem;cursor:pointer}
 .foli .fomv button:disabled{opacity:.3;cursor:default}
+.foli .fodq{color:#e06a5b}
+.foli.fodqrow{opacity:.75}
 </style>"""
 _FO_JS = """<script>(function(){
   function save(ul){var bl=ul.closest('.foblock');
     var ids=[].map.call(ul.querySelectorAll('li'),function(l){return +l.dataset.eid;});
     jpost('/meet-events/'+bl.dataset.meid+'/reorder-finish?heat='+bl.dataset.heat,{order:ids}).then(function(){location.reload();});}
   document.querySelectorAll('.foblock .folist').forEach(function(ul){
-    ul.addEventListener('click',function(e){var b=e.target.closest('.foup,.fodn');if(!b)return;
-      var li=b.closest('li');
-      if(b.classList.contains('foup')&&li.previousElementSibling){ul.insertBefore(li,li.previousElementSibling);save(ul);}
-      else if(b.classList.contains('fodn')&&li.nextElementSibling){ul.insertBefore(li.nextElementSibling,li);save(ul);}
+    ul.addEventListener('click',function(e){var b=e.target.closest('.foup,.fodn,.fodq');if(!b)return;
+      var li=b.closest('li'), bl=ul.closest('.foblock');
+      if(b.classList.contains('fodq')){
+        jpost('/meet-events/'+bl.dataset.meid+'/finish-status',{entry:+li.dataset.eid,status:b.dataset.st}).then(function(){location.reload();});return;}
+      var sib;
+      if(b.classList.contains('foup')){sib=li.previousElementSibling;
+        if(sib&&!sib.classList.contains('fodqrow')){ul.insertBefore(li,sib);save(ul);}}
+      else{sib=li.nextElementSibling;
+        if(sib&&!sib.classList.contains('fodqrow')){ul.insertBefore(sib,li);save(ul);}}
     });
   });
 })();</script>"""
@@ -2033,15 +2040,21 @@ async function postScan(n){{
     # Finish-order reorder (laned sprints/relays): fix a judgment call — times stay, runners move.
     finish_reorder = ""
     if record and me["laned"]:
-        byheat = {}
+        byheat, dqheat = {}, {}
         for e in entries:
             r = res.get(e["id"])
-            if r and r["mark_seconds"] is not None and not r["dq"]:
+            if not r:
+                continue
+            st = r["status"] if "status" in r.keys() else None
+            if r["dq"]:
+                dqheat.setdefault(e["heat"], []).append((e, "DNF" if st == "dnf" else "DQ"))
+            elif r["mark_seconds"] is not None:
                 byheat.setdefault(e["heat"], []).append((e, r))
         blocks = []
-        for heat in sorted(k for k in byheat if k is not None):
-            fin = sorted(byheat[heat], key=lambda x: x[1]["mark_seconds"])
-            if len(fin) < 2:
+        for heat in sorted(set(byheat) | set(dqheat) - {None}):
+            fin = sorted(byheat.get(heat, []), key=lambda x: x[1]["mark_seconds"])
+            dqs = dqheat.get(heat, [])
+            if len(fin) + len(dqs) < 2:
                 continue
             items = ""
             n = len(fin)
@@ -2054,13 +2067,23 @@ async function postScan(n){{
                           f'<span class="fot">{fmt_time(r["mark_seconds"])}</span>'
                           f'<span class="foname">{escape(nm)}{f" #{bib}" if bib else ""} '
                           f'<span class="muted">· Ln {e["lane"] or "—"}</span></span>'
-                          f'<span class="fomv">{up}{dn}</span></li>')
+                          f'<span class="fomv">{up}{dn}'
+                          f'<button type="button" class="fodq" data-st="dq">DQ</button>'
+                          f'<button type="button" class="fodq" data-st="dnf">DNF</button></span></li>')
+            for e, tag in dqs:
+                nm, bib, _sch = labels[e["id"]]
+                items += (f'<li data-eid="{e["id"]}" class="foli fodqrow">'
+                          f'<span class="fopl" style="color:#c0392b">{tag}</span>'
+                          f'<span class="foname">{escape(nm)}{f" #{bib}" if bib else ""} '
+                          f'<span class="muted">· Ln {e["lane"] or "—"}</span></span>'
+                          f'<span class="fomv"><button type="button" class="fodq" data-st="">Restore</button></span></li>')
             blocks.append(f'<div class="foblock" data-meid="{meid}" data-heat="{heat}">'
                           f'<h3>Heat {heat}</h3><ol class="folist">{items}</ol></div>')
         if blocks:
             finish_reorder = ('<div class="card"><h2>Finish order — fix a judgment call</h2>'
                               '<p class="muted">Use the &#9650;&#9660; to move a runner to their real '
-                              'place. The recorded times stay in order; only who holds each place changes.</p>'
+                              'place (times stay, runners move). <b>DQ</b>/<b>DNF</b> pulls a runner from '
+                              'the places (shown tagged on results); <b>Restore</b> undoes it.</p>'
                               + "".join(blocks) + _FO_CSS + _FO_JS + '</div>')
     body = (f'<p class="muted"><a href="/meets/{me["meet_id"]}/meet-day">← Race day</a></p>'
             f'<h1>{escape(ename)}</h1>{err}{field_note}{marks_form}{finish_reorder}{add}{tools}')
@@ -2864,8 +2887,8 @@ def build_results(mid):
         for r in conn.execute(
                 "SELECT r.* FROM results r JOIN entries en ON en.id=r.entry_id "
                 "WHERE en.meet_event_id=? AND r.dq=1", (me["id"],)).fetchall():
-            mark = fmt_time(r["mark_seconds"]) if me["unit"] == "seconds" else _fmt_ht(r["mark_metric"])
-            items.append({"place": "DQ", "mark": mark or "", "attempts": "",
+            tag = "DNF" if (("status" in r.keys() and r["status"] == "dnf")) else "DQ"
+            items.append({"place": tag, "mark": "", "attempts": "",   # time removed, tag shown
                           "name": r["snap_name"], "bib": r["snap_bib"],
                           "school": r["snap_school"], "points": 0})
         events_out.append({"name": f'{me["ename"]} — {_div_grade(me["gender"], me["grade"])}',
@@ -3218,13 +3241,16 @@ def lane_state(meid):
     recs = {}
     if ids:
         q = ",".join("?" * len(ids))
-        for r in conn.execute(f"SELECT entry_id, mark_seconds FROM results WHERE entry_id IN ({q})", tuple(ids)):
-            recs[r["entry_id"]] = r["mark_seconds"]
+        for r in conn.execute(f"SELECT entry_id, mark_seconds, status FROM results WHERE entry_id IN ({q})",
+                              tuple(ids)):
+            recs[r["entry_id"]] = (r["mark_seconds"], r["status"] if "status" in r.keys() else None)
     conn.close()
     start = _t_parse(clk["start_time"]) if clk else None
     stop = _t_parse(clk["stop_time"]) if clk else None
     for l in lanes:
-        l["secs"] = recs.get(l["entry_id"])
+        rec = recs.get(l["entry_id"])
+        l["secs"] = rec[0] if rec else None
+        l["status"] = rec[1] if rec else None
     return jsonify(server_ms=_t_ms(_t_now()), start_ms=_t_ms(start) if start else None,
                    stop_ms=_t_ms(stop) if stop else None, started=bool(start), stopped=bool(stop),
                    lanes=lanes)
@@ -3268,6 +3294,39 @@ def lane_finish(meid):
     conn.commit()
     conn.close()
     return jsonify(ok=True, lane=lane, secs=elapsed, name=name)
+
+
+@bp.post("/meet-events/<int:meid>/finish-status")
+@login_required
+def finish_status(meid):
+    """DQ / DNF (or restore) a runner on the finish page. 'dq'/'dnf' pull them out of the placings
+    (dq=1 → no place, no points, time not shown) but keep them on results tagged DQ/DNF; ''
+    restores them to a normal finisher. Body {entry:<eid>, status:'dq'|'dnf'|''}."""
+    me = load_meet_event(meid)
+    m = load_meet(me["meet_id"])
+    if not can_record_meet(m):
+        abort(403)
+    d = request.get_json(silent=True) or {}
+    try:
+        eid = int(d.get("entry"))
+    except (TypeError, ValueError):
+        return jsonify(error="Bad entry"), 400
+    status = (d.get("status") or "").strip().lower()
+    status = status if status in ("dq", "dnf") else None
+    conn = db.connect()
+    meids = _combine_meids(conn, me)
+    qm = ",".join("?" * len(meids))
+    if not conn.execute(f"SELECT 1 FROM entries WHERE id=? AND meet_event_id IN ({qm})",
+                        (eid, *meids)).fetchone():
+        conn.close()
+        return jsonify(error="Entry not in this event"), 400
+    conn.execute("UPDATE results SET status=?, dq=? WHERE entry_id=?",
+                 (status, 1 if status else 0, eid))
+    for m2 in meids:
+        _recompute_places(conn, load_meet_event(m2))
+    conn.commit()
+    conn.close()
+    return jsonify(ok=True, status=status or "")
 
 
 @bp.post("/meet-events/<int:meid>/reorder-finish")
@@ -3387,30 +3446,42 @@ function render(){
   renderFinishOrder(stopped);
 }
 var FOORDER=[];
+function foBtn(bg,onc,dis,label){return '<button onclick="'+onc+'" '+(dis?'disabled':'')
+  +' style="background:'+bg+';color:#fff;border:0;border-radius:7px;font-size:.9rem;font-weight:700;'
+  +'min-width:2rem;height:2.1rem;padding:0 .45rem;cursor:pointer">'+label+'</button>';}
 function renderFinishOrder(stopped){
   var wrap=document.getElementById('foWrap');if(!wrap)return;
-  var fin=LANES.filter(function(l){return l.secs!=null;}).sort(function(a,b){return a.secs-b.secs;});
-  if(!stopped||fin.length<2){ wrap.style.display='none'; return; }
+  var active=LANES.filter(function(l){return l.secs!=null&&!l.status;}).sort(function(a,b){return a.secs-b.secs;});
+  var out=LANES.filter(function(l){return l.status;});
+  if(!stopped||(active.length+out.length)<2){ wrap.style.display='none'; return; }
   wrap.style.display='';
-  FOORDER=fin.map(function(l){return l.entry_id;});
-  // Up/down buttons (not HTML5 drag — that doesn't work with touch on iOS).
-  document.getElementById('foList').innerHTML=fin.map(function(l,i){
-    var up='<button onclick="moveFO('+l.entry_id+',-1)" '+(i===0?'disabled':'')
-      +' style="background:#33475b;color:#fff;border:0;border-radius:7px;font-size:1.1rem;width:2.1rem;height:2.1rem;cursor:pointer">&#9650;</button>';
-    var dn='<button onclick="moveFO('+l.entry_id+',1)" '+(i===fin.length-1?'disabled':'')
-      +' style="background:#33475b;color:#fff;border:0;border-radius:7px;font-size:1.1rem;width:2.1rem;height:2.1rem;cursor:pointer">&#9660;</button>';
-    return '<li style="display:flex;align-items:center;gap:.5rem;padding:.55rem .6rem;margin:.3rem 0;'
-      +'border:1px solid #33475b;border-radius:10px;background:#182633;color:#fff">'
-      +'<span style="color:#ea6a2d;font-weight:800;width:1.5rem">'+(i+1)+'</span>'
-      +'<span class="t" style="width:4rem">'+fmt(l.secs)+'</span>'
-      +'<span style="flex:1">'+esc(l.name)+(l.bib?(' #'+l.bib):'')+' <span class="muted">· Ln '+l.lane+'</span></span>'
-      +'<span style="display:flex;gap:.3rem">'+up+dn+'</span></li>';}).join('');
+  FOORDER=active.map(function(l){return l.entry_id;});
+  var rows=active.map(function(l,i){
+    var acts=foBtn('#33475b','moveFO('+l.entry_id+',-1)',i===0,'&#9650;')
+      +foBtn('#33475b','moveFO('+l.entry_id+',1)',i===active.length-1,'&#9660;')
+      +foBtn('#7a2f2f',"setStatus("+l.entry_id+",'dq')",false,'DQ')
+      +foBtn('#4a4a4a',"setStatus("+l.entry_id+",'dnf')",false,'DNF');
+    return '<li style="display:flex;align-items:center;gap:.4rem;padding:.55rem .6rem;margin:.3rem 0;'
+      +'border:1px solid #33475b;border-radius:10px;background:#182633;color:#fff;flex-wrap:wrap">'
+      +'<span style="color:#ea6a2d;font-weight:800;width:1.4rem">'+(i+1)+'</span>'
+      +'<span class="t" style="width:3.6rem">'+fmt(l.secs)+'</span>'
+      +'<span style="flex:1;min-width:6rem">'+esc(l.name)+(l.bib?(' #'+l.bib):'')+' <span class="muted">· Ln '+l.lane+'</span></span>'
+      +'<span style="display:flex;gap:.3rem">'+acts+'</span></li>';}).join('');
+  var outrows=out.map(function(l){var tag=(l.status==='dnf'?'DNF':'DQ');
+    return '<li style="display:flex;align-items:center;gap:.4rem;padding:.5rem .6rem;margin:.25rem 0;'
+      +'border:1px solid #33475b;border-radius:10px;background:#141f2b;color:#8a97a5">'
+      +'<span style="color:#c0392b;font-weight:800;width:3rem">'+tag+'</span>'
+      +'<span style="flex:1">'+esc(l.name)+(l.bib?(' #'+l.bib):'')+' · Ln '+l.lane+'</span>'
+      +foBtn('#2f6db5',"setStatus("+l.entry_id+",'')",false,'Restore')+'</li>';}).join('');
+  document.getElementById('foList').innerHTML=rows
+    +(outrows?('<li style="list-style:none;margin:.6rem 0 .2rem;color:#8a97a5;font-size:.8rem">Did not place</li>'+outrows):'');
 }
 async function moveFO(eid,dir){
   var i=FOORDER.indexOf(eid);if(i<0)return;var j=i+dir;if(j<0||j>=FOORDER.length)return;
   var o=FOORDER.slice();var t=o[i];o[i]=o[j];o[j]=t;FOORDER=o;   // optimistic; poll confirms
   await jp('/meet-events/'+MEID+'/reorder-finish?heat='+HEAT,{order:o});poll();
 }
+async function setStatus(eid,st){await jp('/meet-events/'+MEID+'/finish-status',{entry:eid,status:st});poll();}
 function pick(n){MYLANE=n;render();}
 async function laneStart(){await jp('/meet-events/'+MEID+'/time/start?heat='+HEAT,{at:serverNow()});poll();}
 async function stopRace(){if(STOP||STOPPING)return;STOPPING=true;

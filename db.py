@@ -481,6 +481,9 @@ def migrate(conn):
     if "run_order" not in mecols:        # track: manual running order (NULL => fall back to e.sort)
         conn.execute("ALTER TABLE meet_events ADD COLUMN run_order INTEGER")
 
+    if "status" not in _column_names(conn, "results"):   # 'dq' | 'dnf' | NULL (dq=1 excludes from placing)
+        conn.execute("ALTER TABLE results ADD COLUMN status TEXT")
+
     # Promo codes for the self-serve $50 event fee (percent_off 1-100; 100 => free; super-admin managed).
     conn.execute(
         "CREATE TABLE IF NOT EXISTS promo_codes ("
