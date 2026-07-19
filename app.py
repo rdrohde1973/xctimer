@@ -25,7 +25,7 @@ from .phone import bp as phone_bp
 from .waivers import bp as waivers_bp
 from .road import bp as road_bp
 
-APP_VERSION = "1.49.0-footer-link"
+APP_VERSION = "1.50.0-welcome-route"
 
 LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width, initial-scale=1">
@@ -545,6 +545,13 @@ def create_app():
         if getattr(g, "principal", None):
             from .ui import home_url
             return redirect(home_url(g.principal))
+        return LANDING
+
+    @app.get("/welcome")
+    def welcome():
+        # Always the public marketing page, regardless of any session — "/" redirects a
+        # logged-in / phone-timer visitor to their home, so public "Powered by" links
+        # (e.g. on results pages, seen by people who also carry a timer session) point here.
         return LANDING
 
     @app.get("/security")
