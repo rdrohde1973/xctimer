@@ -16,7 +16,7 @@ from flask import Blueprint, request, redirect, g, abort, jsonify, Response
 from . import db, demo
 from .auth import login_required
 from .tenancy import active_district_id, all_districts
-from .ui import shell, BRAND_HTML, CSS, HEAD_EXTRA
+from .ui import shell, BRAND_HTML, POWERED_BY_HTML, CSS, HEAD_EXTRA
 from .meets import (load_meet, can_view_meet, can_setup_meet, can_record_meet)
 
 bp = Blueprint("xc", __name__)
@@ -1902,7 +1902,7 @@ def _public_xc(m, mode):
   <div id="v-grade" style="display:none">{grade}</div>
   <div id="v-team" style="display:none">{team}</div>
 </main>
-<footer class="pubfoot">Powered by {BRAND_HTML}</footer>
+<footer class="pubfoot">{POWERED_BY_HTML}</footer>
 <script>
 function tab(n){{
   ['overall','grade','team'].forEach(function(k){{
@@ -2099,7 +2099,7 @@ def _public_road(m, mode):
   {evfilter}
   {body}
 </main>
-<footer class="pubfoot">Powered by {BRAND_HTML}</footer>
+<footer class="pubfoot">{POWERED_BY_HTML}</footer>
 <script>
 const LTOKEN=location.pathname.replace(/^\\/r\\//,'').split('/')[0];
 let LOFFSET=0, LTIMER=null;
@@ -2228,7 +2228,7 @@ main{{max-width:960px;margin:0 auto;padding:1.4rem 1rem 4rem}}
 <div id="livebox"></div>
 <div id="timeline" class="tlwrap" style="display:none"></div>
 <div id="resultsbox">{inner}</div></main>
-<footer class="pubfoot">Powered by {BRAND_HTML}</footer>
+<footer class="pubfoot">{POWERED_BY_HTML}</footer>
 <script>
 const TOKEN={json.dumps(token)};
 let LOFFSET=0;

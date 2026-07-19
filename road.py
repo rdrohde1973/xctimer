@@ -19,7 +19,7 @@ from . import db
 from .auth import login_required, role_required, create_user, send_setup_email
 from .meets import load_meet, can_view_meet, can_setup_meet, _purge_meet
 from .xc import _is_org, _match_event
-from .ui import shell, CSRF_JS, BRAND_HTML, HEAD_EXTRA
+from .ui import shell, CSRF_JS, BRAND_HTML, POWERED_BY_HTML, HEAD_EXTRA
 
 HOST_FEE_CENTS = int(os.environ.get("XC_HOST_FEE_CENTS", "5000"))   # self-serve event fee ($50)
 
@@ -808,7 +808,7 @@ button.add{{background:#eef3f9;border:1px dashed #9db4cf;color:#12385f;font-weig
 <div class="hero">{logo_tag}<h1>{escape(m['name'])}</h1>
 <div class="sub">🛣 {escape(m['date'] or 'Register')}</div></div>
 <main>{inner}</main>
-<footer class="pubfoot">Powered by {BRAND_HTML}</footer>
+<footer class="pubfoot">{POWERED_BY_HTML}</footer>
 </body></html>"""
 
 

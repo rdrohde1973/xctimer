@@ -7,6 +7,11 @@ from markupsafe import escape
 BRAND = "XCTimer"
 # Styled wordmark echoing the logo: orange "xc", light "timer".
 BRAND_HTML = '<span class="bx">xc</span><span class="bt">timer</span>'
+# Public-page footer "Powered by xctimer" — links to the marketing site. Inline-styled to
+# look identical to the plain text (inherits the footer colour, no underline).
+POWERED_BY_HTML = ('<a href="https://xctimer.com" target="_blank" rel="noopener" '
+                   'style="color:inherit;text-decoration:none">Powered by '
+                   + BRAND_HTML + '</a>')
 LOGO_URL = "/static/branding/xctimer.png"        # light bg — landing / login card
 LOGO_DARK_URL = "/static/branding/xctimerdark.png?v=4"      # UI header (v= busts Cloudflare cache)
 LOGO_APP_URL = "/static/branding/xctimerdarkdark.png?v=1"   # phone app
