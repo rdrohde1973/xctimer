@@ -25,176 +25,171 @@ from .phone import bp as phone_bp
 from .waivers import bp as waivers_bp
 from .road import bp as road_bp
 
-APP_VERSION = "1.50.0-welcome-route"
+APP_VERSION = "1.51.0-landing-refresh"
 
 LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width, initial-scale=1">
 <title>XCTimer — the do-it-yourself meet manager for junior high &amp; middle school XC &amp; track</title>
 <meta name="description" content="Run your own cross-country or track meet — no expensive timing company required. XCTimer is a complete do-it-yourself meet manager for junior high & middle school: rosters, live timing, field events, scoring, and live results the whole crowd can follow. Built by a coach of 8 years and a parent of three XC & track kids.">
 <style>
-  :root{--navy:#164271;--navy-d:#0f3157;--orange:#ea6a2d;--orange-d:#cf5a22;
-        --gray:#868686;--ink:#20303f;--bg:#f5f8fc;--card:#ffffff;--line:#e3e9f1}
+  :root{--ink:#0c1929;--ink2:#13283f;--orange:#f0641e;--orange-d:#d4530f;--gray:#6b7684;
+        --body:#212b36;--bg:#f6f7f9;--card:#ffffff;--line:#e6e9ee;--green:#2e9e5b}
   *{box-sizing:border-box}
   html{scroll-behavior:smooth}
-  body{margin:0;font:16px/1.65 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
-       color:var(--ink);background:var(--bg)}
-  a{color:var(--navy);text-decoration:none}
-  .wrap{max-width:1080px;margin:0 auto;padding:0 1.2rem}
+  body{margin:0;font:16px/1.6 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+       color:var(--body);background:#fff}
+  a{color:var(--orange-d);text-decoration:none}
+  .wrap{max-width:1060px;margin:0 auto;padding:0 1.2rem}
   .btn{display:inline-block;background:var(--orange);color:#fff;font-weight:700;
        padding:.75rem 1.7rem;border-radius:11px;font-size:1.02rem;
-       box-shadow:0 6px 18px rgba(234,106,45,.32)}
+       box-shadow:0 6px 18px rgba(240,100,30,.30)}
   .btn:hover{background:var(--orange-d)}
-  .btn.ghost{background:transparent;color:var(--navy);box-shadow:none;border:1.5px solid #cdd8e6}
-  .btn.ghost:hover{background:#eef3f9}
+  .btn.ghost{background:transparent;color:#fff;box-shadow:none;border:1.5px solid rgba(255,255,255,.35)}
+  .btn.ghost:hover{background:rgba(255,255,255,.08)}
+  .btn.ghost2{background:transparent;color:var(--ink);box-shadow:none;border:1.5px solid #cfd6de}
+  .btn.ghost2:hover{background:#eef1f4}
+  .kicker{display:inline-block;color:var(--orange);font-weight:800;font-size:.8rem;
+          letter-spacing:.14em;text-transform:uppercase;margin-bottom:.8rem}
   /* nav */
-  nav{position:sticky;top:0;z-index:10;background:rgba(245,248,252,.9);
-      backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
-  nav .wrap{display:flex;align-items:center;justify-content:space-between;height:64px}
-  nav img{height:34px;width:auto}
-  nav a.signin{font-weight:700;color:var(--navy);padding:.5rem 1.1rem;border-radius:9px}
-  nav a.signin:hover{background:#eef3f9}
-  /* hero */
-  header.hero{background:radial-gradient(120% 90% at 50% -10%,#ffffff 0%,#eaf0f7 70%,#e2e9f2 100%);
-              padding:3.6rem 0 3.2rem;text-align:center;border-bottom:1px solid var(--line)}
-  .hero img.logo{width:min(430px,84vw);height:auto;filter:drop-shadow(0 10px 30px rgba(22,66,113,.14))}
-  .hero h1{font-size:clamp(1.7rem,4.6vw,2.7rem);line-height:1.15;margin:1.4rem auto .3rem;
-           max-width:15ch;color:var(--navy);letter-spacing:-.01em}
-  .hero p.sub{font-size:clamp(1rem,2.4vw,1.2rem);color:#43586c;max-width:44ch;margin:.6rem auto 1.8rem}
-  .hero .cta{display:flex;gap:.8rem;justify-content:center;flex-wrap:wrap}
-  .pill{display:inline-block;background:#fff;border:1px solid var(--line);color:var(--gray);
-        border-radius:999px;padding:.3rem .9rem;font-size:.82rem;font-weight:600;margin-bottom:1.1rem}
-  .pill b{color:var(--orange)}
+  nav{position:sticky;top:0;z-index:10;background:rgba(12,25,41,.93);backdrop-filter:blur(8px);
+      border-bottom:1px solid rgba(255,255,255,.08)}
+  nav .wrap{display:flex;align-items:center;justify-content:space-between;height:60px}
+  nav img{height:32px;width:auto}
+  nav a.signin{font-weight:700;color:#fff;padding:.45rem 1.1rem;border-radius:9px;
+               border:1.5px solid rgba(255,255,255,.25)}
+  nav a.signin:hover{background:rgba(255,255,255,.1)}
+  /* hero — dark, message left, live demo right */
+  header.hero{background:linear-gradient(160deg,var(--ink2) 0%,var(--ink) 60%,#0a1420 100%);
+              color:#e9eef5;padding:3.8rem 0 4.2rem;border-bottom:4px solid var(--orange)}
+  .hero .wrap{display:grid;grid-template-columns:1.15fr .85fr;gap:3rem;align-items:center}
+  .hero h1{font-size:clamp(2rem,5vw,3rem);line-height:1.1;margin:0 0 .7rem;color:#fff;
+           letter-spacing:-.015em}
+  .hero p.sub{font-size:clamp(1rem,2.2vw,1.15rem);color:#aebdcd;max-width:46ch;margin:0 0 1.7rem}
+  .hero .cta{display:flex;gap:.8rem;flex-wrap:wrap}
+  /* live results demo card (hero visual) */
+  .livedemo{background:#fff;border-radius:18px;padding:1.2rem 1.3rem;color:var(--body);
+            box-shadow:0 24px 60px rgba(0,0,0,.45),0 0 0 2px var(--orange);
+            max-width:340px;margin:0 auto}
+  .livedemo .hd{display:flex;align-items:center;gap:.5rem;font-weight:800;color:var(--orange);
+                font-size:.92rem}
+  .livedemo .dot{width:.7rem;height:.7rem;border-radius:50%;background:var(--green);
+                 animation:livepulse 1.1s infinite}
+  @keyframes livepulse{50%{opacity:.22}}
+  .livedemo .clk{font-size:2.8rem;font-weight:800;text-align:center;color:var(--ink);
+                 font-variant-numeric:tabular-nums;margin:.25rem 0 .55rem;letter-spacing:.5px}
+  .livedemo table{width:100%;border-collapse:collapse;font-size:.95rem}
+  .livedemo td{padding:.42rem .2rem;border-top:1px solid var(--line)}
+  .livedemo .pl{color:var(--orange);font-weight:800;width:1.7rem}
+  .livedemo .tm{text-align:right;font-variant-numeric:tabular-nums;color:#3f4c5a}
+  .livedemo .mut{color:var(--gray)}
+  .livedemo .cap{margin:.6rem 0 0;font-size:.78rem;color:var(--gray);text-align:center}
   /* sections */
-  section{padding:3.4rem 0}
-  h2{font-size:clamp(1.4rem,3.4vw,2rem);color:var(--navy);letter-spacing:-.01em;margin:.2em 0 .5em}
-  .lead{font-size:1.12rem;color:#43586c;max-width:60ch}
-  .split{display:grid;grid-template-columns:1fr 1fr;gap:2.4rem;align-items:center}
-  .contrast{background:#fff;border:1px solid var(--line);border-radius:16px;padding:1.6rem 1.8rem}
-  .contrast h3{margin:.2em 0 .5em;color:var(--navy)}
+  section{padding:3.2rem 0}
+  h2{font-size:clamp(1.4rem,3.2vw,1.9rem);color:var(--ink);letter-spacing:-.01em;margin:.2em 0 .45em}
+  .lead{font-size:1.1rem;color:#4a5766;max-width:62ch}
+  .split{display:grid;grid-template-columns:1fr 1fr;gap:2.6rem;align-items:center}
+  /* the difference */
+  .contrast{background:var(--bg);border:1px solid var(--line);border-radius:16px;padding:1.5rem 1.7rem}
   .contrast .row{display:flex;gap:.7rem;padding:.45rem 0;align-items:flex-start}
-  .x{color:#c0483f;font-weight:800}.ok{color:#2e8b57;font-weight:800}
+  .x{color:#c0483f;font-weight:800}.ok{color:var(--green);font-weight:800}
   /* features */
-  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:1.1rem;margin-top:1.6rem}
-  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:1.3rem 1.4rem}
-  .card .ic{font-size:1.6rem}
-  .card h3{margin:.5rem 0 .3rem;font-size:1.08rem;color:var(--navy)}
-  .card p{margin:0;color:#4a5f73;font-size:.95rem}
-  /* coach story band */
-  .band{background:linear-gradient(135deg,var(--navy) 0%,var(--navy-d) 100%);color:#eaf1f8}
+  #features{background:var(--bg);border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1.1rem;margin-top:1.5rem}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:1.25rem 1.35rem}
+  .card .ic{font-size:1.5rem}
+  .card h3{margin:.45rem 0 .3rem;font-size:1.06rem;color:var(--ink)}
+  .card p{margin:0;color:#4a5766;font-size:.94rem}
+  /* live (merged) */
+  #live .livelist{list-style:none;padding:0;margin:1.2rem 0 0;display:grid;gap:.6rem}
+  #live .livelist li{display:flex;gap:.6rem;align-items:flex-start;color:#3f4c5a;font-size:1rem}
+  #live .livelist .ck{color:var(--green);font-weight:800;flex-shrink:0}
+  #live .livenote{margin:1.2rem 0 0;font-style:italic;color:#4a5766;font-size:1rem;
+                  border-left:3px solid var(--orange);padding-left:.9rem}
+  .trkwrap{background:var(--ink);border-radius:18px;padding:1.2rem 1.2rem 1.4rem;
+           box-shadow:0 20px 50px rgba(12,25,41,.30);border:1px solid #1d3149;color:#dce7f2;
+           max-width:480px;margin:0 auto}
+  .trk-live{display:flex;align-items:center;gap:.5rem;color:var(--orange);font-weight:800;font-size:.92rem}
+  .trk-live .dot{width:.65rem;height:.65rem;border-radius:50%;background:var(--green);
+                 animation:livepulse 1.1s infinite}
+  .trk-clk{font-size:2.3rem;font-weight:800;text-align:center;color:#fff;
+           font-variant-numeric:tabular-nums;letter-spacing:1px;margin:.3rem 0 .1rem}
+  .trk-wait{text-align:center;color:#7f93a8;font-size:.88rem;border-top:1px solid #1d3149;
+            margin-top:.55rem;padding-top:.55rem}
+  .trk-strip{display:flex;gap:0;overflow-x:auto;margin:1rem 0 .2rem;padding-bottom:.45rem}
+  .trk-ev{flex:0 0 auto;width:72px;text-align:center;position:relative}
+  .trk-ev::before{content:"";position:absolute;top:9px;left:-50%;width:100%;height:2px;background:#26405b}
+  .trk-ev:first-child::before{display:none}
+  .trk-ev i{display:block;width:20px;height:20px;border-radius:50%;margin:0 auto .35rem;
+            background:#3a536e;border:3px solid var(--ink);position:relative;z-index:1}
+  .trk-ev.done i{background:var(--green)}
+  .trk-ev.run i{background:var(--orange);box-shadow:0 0 0 4px rgba(240,100,30,.25)}
+  .trk-ev span{font-size:.62rem;line-height:1.15;color:#9fb2c6;display:block}
+  .trk-ev.run span{color:var(--orange);font-weight:700}
+  .trk-tt{font-weight:800;color:#fff;font-size:.92rem;display:flex;align-items:center;gap:.4rem;margin-top:.5rem}
+  .trk-tbl{width:100%;border-collapse:collapse;margin-top:.5rem;font-size:.9rem}
+  .trk-tbl th{text-align:left;color:#7f93a8;font-size:.68rem;letter-spacing:.08em;
+              text-transform:uppercase;padding:.3rem .2rem}
+  .trk-tbl th.pts,.trk-tbl td.pts{text-align:right}
+  .trk-tbl td{padding:.45rem .2rem;border-top:1px solid #1d3149}
+  .trk-tbl .rk{color:var(--orange);font-weight:800;width:2rem}
+  .trk-tbl .pts{font-weight:800;color:#fff;font-variant-numeric:tabular-nums}
+  /* coach band */
+  .band{background:linear-gradient(135deg,var(--ink2) 0%,var(--ink) 100%);color:#e9eef5}
   .band h2{color:#fff}
-  .band .lead{color:#c3d3e4}
-  .quote{border-left:4px solid var(--orange);padding:.4rem 0 .4rem 1.2rem;margin:1.4rem 0;
-          font-size:1.25rem;font-weight:600;color:#fff;max-width:40ch}
-  .stat{display:flex;gap:2.2rem;flex-wrap:wrap;margin-top:1.4rem}
+  .band .lead{color:#aebdcd}
+  .quote{border-left:4px solid var(--orange);padding:.4rem 0 .4rem 1.2rem;margin:1.3rem 0;
+         font-size:1.2rem;font-weight:600;color:#fff;max-width:44ch}
+  .stat{display:flex;gap:2.2rem;flex-wrap:wrap;margin-top:1.2rem}
   .stat div b{display:block;font-size:2rem;color:var(--orange);line-height:1}
-  .stat div span{color:#c3d3e4;font-size:.9rem}
+  .stat div span{color:#aebdcd;font-size:.9rem}
+  /* fun run */
+  #funrun{background:linear-gradient(180deg,#ffffff 0%,#fdf3ea 100%);
+          border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+  #funrun .frlist{list-style:none;padding:0;margin:1.2rem 0 0;display:grid;gap:.6rem}
+  #funrun .frlist li{display:flex;gap:.6rem;align-items:flex-start;color:#3f4c5a;font-size:1rem}
+  #funrun .frlist .ck{color:var(--orange);font-weight:800;flex-shrink:0}
+  .frcard{background:#fff;border:2px solid #f3d6c1;border-radius:18px;padding:1.4rem 1.5rem;
+          box-shadow:0 16px 38px rgba(240,100,30,.16);max-width:340px;margin:0 auto}
+  .frcard h3{margin:.1rem 0 .2rem;color:var(--ink);font-size:1.25rem}
+  .frcard .sub{margin:0;color:#4a5766;font-size:.95rem}
+  .frcard .open{display:inline-flex;align-items:center;gap:.4rem;background:#effaf3;color:#1f7a43;
+                border:1px solid #cdeeda;border-radius:999px;padding:.25rem .8rem;
+                font-size:.8rem;font-weight:700;margin-bottom:.6rem}
+  .frcard .bibrow{display:flex;gap:.5rem;margin-top:.9rem}
+  .frcard .bib{background:#fff7f1;border:1px solid #f3d6c1;border-radius:11px;padding:.55rem .3rem;
+               text-align:center;flex:1}
+  .frcard .bib b{display:block;font-size:1.4rem;color:var(--orange);line-height:1.1}
+  .frcard .bib span{font-size:.72rem;color:var(--gray)}
+  .frcard .go{margin:.95rem 0 0;font-size:.88rem;color:var(--gray)}
   /* final cta */
   .final{text-align:center}
-  .final h2{margin-bottom:.4rem}
-  footer{border-top:1px solid var(--line);padding:2rem 0;color:var(--gray);font-size:.85rem;text-align:center}
-  @media(max-width:720px){ .split{grid-template-columns:1fr;gap:1.4rem} section{padding:2.6rem 0} }
+  .final h2{margin-bottom:.3rem}
+  footer{border-top:1px solid var(--line);padding:2rem 0;color:var(--gray);
+         font-size:.85rem;text-align:center}
+  footer a{color:var(--ink);font-weight:700}
+  @media(max-width:860px){
+    .hero .wrap,.split{grid-template-columns:1fr;gap:1.8rem}
+    section{padding:2.4rem 0}
+    header.hero{padding:2.8rem 0 3rem}
+  }
 </style></head><body>
 
 <nav><div class="wrap">
-  <img src="/static/branding/xctimer.png" alt="XCTimer">
+  <img src="/static/branding/xctimerdark.png?v=4" alt="XCTimer">
   <a class="signin" href="/login">Sign in</a>
 </div></nav>
 
 <header class="hero"><div class="wrap">
-  <img class="logo" src="/static/branding/xctimer.png" alt="XCTimer">
-  <div class="pill">Run your own meet — <b>no timing company required</b></div>
-  <h1>Any coach can run the whole meet. No timing company required.</h1>
-  <p class="sub">XCTimer isn't just a timer — it's a complete do-it-yourself meet manager.
-     Rosters, live timing, field events, scoring, and instant results — everything it takes
-     to run a junior high or middle school XC or track meet yourself, start to finish.</p>
-  <div class="cta">
-    <a class="btn" href="/login">Sign in</a>
-    <a class="btn ghost" href="#features">See what it does</a>
-  </div>
-</div></header>
-
-<section><div class="wrap split">
   <div>
-    <h2>Stop hiring a timing company. Run the whole meet yourself.</h2>
-    <p class="lead">Timing a meet used to mean paying an outside company hundreds of dollars a day
-    to show up with their gear and their staff — and waiting on their schedule for the results.
-    Not anymore. XCTimer puts the entire meet in your own hands: rosters, bibs, live timing,
-    field events, scoring, and results — all from your phone, for a fraction of the cost.
-    Any coach can run it, no timing crew required.</p>
-  </div>
-  <div class="contrast">
-    <h3>The difference</h3>
-    <div class="row"><span class="x">✕</span><div>Hire a timing company and pay per meet</div></div>
-    <div class="row"><span class="ok">✓</span><div>Run it yourself — no vendor, no invoice</div></div>
-    <div class="row"><span class="x">✕</span><div>Wait on their crew and their timeline</div></div>
-    <div class="row"><span class="ok">✓</span><div>You're in control of your own meet day</div></div>
-    <div class="row"><span class="x">✕</span><div>Just a stopwatch-and-results service</div></div>
-    <div class="row"><span class="ok">✓</span><div>A full meet manager: rosters → results</div></div>
-  </div>
-</div></section>
-
-<section id="features"><div class="wrap">
-  <h2>Not just timing — the whole meet, start to finish.</h2>
-  <p class="lead">Every job you used to hand off to a timing company, now in one tool you run yourself —
-     from the roster all the way to the results table, for cross country and track &amp; field.</p>
-  <div class="grid">
-    <div class="card"><div class="ic">📋</div><h3>AI roster intake &amp; bib stickers</h3>
-      <p>Drop in a spreadsheet, PDF, or even a photo of a roster — AI reads and cleans up the names — then auto-assign bibs and print Avery stickers with a scannable code.</p></div>
-    <div class="card"><div class="ic">⏱️</div><h3>Live timing from your phone</h3>
-      <p>Tap finishers for cross country, time heats and lanes for track — right from a phone at the line.
-      Or point the camera and let <b>robot vision</b> read each runner's bib tag automatically as they cross the
-      line — hands-free timing you won't find on any other phone.</p></div>
-    <div class="card"><div class="ic">📏</div><h3>Field events in feet &amp; inches</h3>
-      <p>Long Jump and Shot Put with all three attempts, plus a High Jump make/miss grid — the way officials record them.</p></div>
-    <div class="card"><div class="ic">🖨️</div><h3>Heat sheets &amp; scan</h3>
-      <p>Print clean heat sheets, mark them up at the event, then snap a photo — the marks read straight in.</p></div>
-    <div class="card"><div class="ic">🏆</div><h3>Instant results</h3>
-      <p>A public results page with a QR to share, team scoring by grade &amp; gender, and an Excel export.</p></div>
-    <div class="card"><div class="ic">📱</div><h3>Meet-day made easy</h3>
-      <p>A phone app for coaches and a no-login QR for helpers — everyone can pitch in without an account.</p></div>
-    <div class="card"><div class="ic">🤖</div><h3>AI athlete insights</h3>
-      <p>Just ask — an athlete's PRs and season progress, or a district record — and get an answer pulled straight from your own results.</p></div>
-  </div>
-</div></section>
-
-<style>
-#live{background:linear-gradient(180deg,#ffffff 0%,#eaf1f9 100%);border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
-#live .pill{background:#fff}
-#live .livelist{list-style:none;padding:0;margin:1.3rem 0 0;display:grid;gap:.65rem}
-#live .livelist li{display:flex;gap:.6rem;align-items:flex-start;color:#3a4f63;font-size:1.02rem}
-#live .livelist .ck{color:#2e8b57;font-weight:800;flex-shrink:0}
-#live .livenote{margin:1.3rem 0 0;font-style:italic;color:#4a5f73;font-size:1.02rem;
-                border-left:3px solid var(--orange);padding-left:.9rem}
-.livedemo{background:#fff;border:2px solid var(--orange);border-radius:18px;padding:1.2rem 1.3rem;
-          box-shadow:0 16px 38px rgba(22,66,113,.18);max-width:340px;margin:0 auto}
-.livedemo .hd{display:flex;align-items:center;gap:.5rem;font-weight:800;color:var(--orange);font-size:.92rem}
-.livedemo .dot{width:.7rem;height:.7rem;border-radius:50%;background:#2e9e5b;animation:livepulse 1.1s infinite}
-@keyframes livepulse{50%{opacity:.22}}
-.livedemo .clk{font-size:2.8rem;font-weight:800;text-align:center;color:var(--navy);
-               font-variant-numeric:tabular-nums;margin:.25rem 0 .55rem;letter-spacing:.5px}
-.livedemo table{width:100%;border-collapse:collapse;font-size:.95rem}
-.livedemo td{padding:.42rem .2rem;border-top:1px solid var(--line)}
-.livedemo .pl{color:var(--orange);font-weight:800;width:1.7rem}
-.livedemo .tm{text-align:right;font-variant-numeric:tabular-nums;color:#3a4f63}
-.livedemo .mut{color:var(--gray)}
-</style>
-<section id="live"><div class="wrap split">
-  <div>
-    <div class="pill">🟢 Live results — everyone's favorite feature</div>
-    <h2>The whole crowd follows every race — live.</h2>
-    <p class="lead">Share one link or QR code and families watch results roll in
-    <b>the instant each runner crosses the line</b> — from the fence, the bleachers, or grandparents
-    watching from three states away. A live race clock, finishers appearing in order, updated in
-    real time. No app to install, no account to create — just tap the link. It turns a quiet finish
-    chute into a scoreboard the whole meet is glued to.</p>
-    <ul class="livelist">
-      <li><span class="ck">✓</span> Live race clock, in sync on every phone in the stands</li>
-      <li><span class="ck">✓</span> Finishers pop in the moment they're timed</li>
-      <li><span class="ck">✓</span> One QR code — hundreds can watch at once</li>
-      <li><span class="ck">✓</span> No app, no login, works on any phone</li>
-    </ul>
-    <p class="livenote">"I spent years in those stands as a parent of three runners — this is the
-    feature I always wished I had."</p>
+    <span class="kicker">The do-it-yourself meet manager</span>
+    <h1>Run the whole meet yourself.</h1>
+    <p class="sub">Rosters, bibs, live timing, field events, scoring, and instant results —
+       a junior high or middle school XC or track meet, start to finish, from a phone.
+       No timing company. No big invoice.</p>
+    <div class="cta">
+      <a class="btn" href="/login">Sign in</a>
+      <a class="btn ghost" href="#features">See what it does</a>
+    </div>
   </div>
   <div>
     <div class="livedemo">
@@ -206,129 +201,121 @@ LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
         <tr><td class="pl">3</td><td>Harper Diaz <span class="mut">· Maple</span></td><td class="tm">5:36.1</td></tr>
         <tr><td class="pl">4</td><td class="mut">… crossing</td><td class="tm"></td></tr>
       </table>
+      <p class="cap">The live results page every family watches — from the stands or three states away.</p>
     </div>
+  </div>
+</div></header>
+
+<section id="diff"><div class="wrap split">
+  <div>
+    <h2>Stop hiring a timing company.</h2>
+    <p class="lead">Timing a meet used to mean paying an outside company hundreds of dollars a
+    day — their gear, their staff, their schedule. XCTimer puts the entire meet in your own
+    hands, and any coach can run it.</p>
+  </div>
+  <div class="contrast">
+    <div class="row"><span class="x">✕</span><div>Hire a timing company and pay per meet</div></div>
+    <div class="row"><span class="ok">✓</span><div>Run it yourself — no vendor, no invoice</div></div>
+    <div class="row"><span class="x">✕</span><div>Wait on their crew and their timeline</div></div>
+    <div class="row"><span class="ok">✓</span><div>You're in control of your own meet day</div></div>
+    <div class="row"><span class="x">✕</span><div>Just a stopwatch-and-results service</div></div>
+    <div class="row"><span class="ok">✓</span><div>A full meet manager: rosters → results</div></div>
   </div>
 </div></section>
 
-<style>
-#tracker{background:#f5f8fc}
-.trkwrap{max-width:860px;margin:1.7rem auto 0;background:#0e1d30;border-radius:18px;
-         padding:1.3rem 1.3rem 1.5rem;box-shadow:0 24px 60px rgba(15,49,87,.28);
-         border:1px solid #1c3149;color:#dce7f2;text-align:left}
-.trk-live{display:flex;align-items:center;gap:.5rem;color:#ea6a2d;font-weight:800;font-size:.95rem}
-.trk-live .dot{width:.7rem;height:.7rem;border-radius:50%;background:#2e9e5b;animation:trkp 1.1s infinite}
-@keyframes trkp{50%{opacity:.25}}
-.trk-clk{font-size:2.6rem;font-weight:800;text-align:center;color:#fff;
-         font-variant-numeric:tabular-nums;letter-spacing:1px;margin:.35rem 0 .1rem}
-.trk-wait{text-align:center;color:#7f93a8;font-size:.9rem;border-top:1px solid #1c3149;
-          margin-top:.6rem;padding-top:.6rem}
-.trk-strip{display:flex;gap:0;overflow-x:auto;margin:1.1rem 0 .2rem;padding-bottom:.5rem}
-.trk-ev{flex:0 0 auto;width:74px;text-align:center;position:relative}
-.trk-ev::before{content:"";position:absolute;top:9px;left:-50%;width:100%;height:2px;background:#26405b}
-.trk-ev:first-child::before{display:none}
-.trk-ev i{display:block;width:20px;height:20px;border-radius:50%;margin:0 auto .35rem;
-          background:#3a536e;border:3px solid #0e1d30;position:relative;z-index:1}
-.trk-ev.done i{background:#2e9e5b}
-.trk-ev.run i{background:#ea6a2d;box-shadow:0 0 0 4px rgba(234,106,45,.25)}
-.trk-ev span{font-size:.62rem;line-height:1.15;color:#9fb2c6;display:block}
-.trk-ev.run span{color:#ea6a2d;font-weight:700}
-.trk-tt{font-weight:800;color:#fff;font-size:.95rem;display:flex;align-items:center;gap:.4rem;margin-top:.5rem}
-.trk-tbl{width:100%;border-collapse:collapse;margin-top:.6rem;font-size:.92rem}
-.trk-tbl th{text-align:left;color:#7f93a8;font-size:.7rem;letter-spacing:.08em;
-            text-transform:uppercase;padding:.3rem .2rem}
-.trk-tbl th.pts,.trk-tbl td.pts{text-align:right}
-.trk-tbl td{padding:.5rem .2rem;border-top:1px solid #1c3149}
-.trk-tbl .rk{color:#ea6a2d;font-weight:800;width:2rem}
-.trk-tbl .pts{font-weight:800;color:#fff;font-variant-numeric:tabular-nums}
-</style>
-<section id="tracker"><div class="wrap" style="text-align:center">
-  <div class="pill">📡 Live meet tracker</div>
-  <h2>The whole meet on one page — race by race.</h2>
-  <p class="lead" style="margin-left:auto;margin-right:auto">Every event marches across a live progress
-  bar — finished, running, up next — with team standings that climb as points land. Families
-  see exactly where the meet is and who’s winning, all from one shared link.</p>
-  <div class="trkwrap">
-    <div class="trk-live"><span class="dot"></span> LIVE · 400m Girls 9th Grade · Heat 1</div>
-    <div class="trk-clk">0:04:12.8</div>
-    <div class="trk-wait">Waiting for the first finisher…</div>
-    <div class="trk-strip">
-      <div class="trk-ev done"><i></i><span>1600 Boys 9th</span></div>
-      <div class="trk-ev done"><i></i><span>100 Girls 7th</span></div>
-      <div class="trk-ev done"><i></i><span>100 Girls 8th</span></div>
-      <div class="trk-ev done"><i></i><span>100 Girls 9th</span></div>
-      <div class="trk-ev done"><i></i><span>100 Boys 7th</span></div>
-      <div class="trk-ev done"><i></i><span>100 Boys 8th</span></div>
-      <div class="trk-ev done"><i></i><span>400 Girls 7th</span></div>
-      <div class="trk-ev done"><i></i><span>400 Girls 8th</span></div>
-      <div class="trk-ev run"><i></i><span>400 Girls 9th</span></div>
-      <div class="trk-ev"><i></i><span>400 Boys 7th</span></div>
-      <div class="trk-ev"><i></i><span>400 Boys 8th</span></div>
-      <div class="trk-ev"><i></i><span>4x100 Girls 7th</span></div>
-      <div class="trk-ev"><i></i><span>4x100 Boys 9th</span></div>
+<section id="features"><div class="wrap">
+  <h2>Not just timing — the whole meet, start to finish.</h2>
+  <p class="lead">Every job you used to hand off, in one tool you run yourself — for cross
+     country and track &amp; field.</p>
+  <div class="grid">
+    <div class="card"><div class="ic">📋</div><h3>AI roster intake &amp; bib stickers</h3>
+      <p>Drop in a spreadsheet, PDF, or photo of a roster — AI cleans it up, assigns bibs, and prints Avery stickers.</p></div>
+    <div class="card"><div class="ic">⏱️</div><h3>Time it from a phone</h3>
+      <p>Tap finishers for cross country, heats &amp; lanes for track — with a no-login QR so helpers can pitch in.</p></div>
+    <div class="card"><div class="ic">🤖</div><h3>Robot-vision camera</h3>
+      <p>Point a phone at the finish line and bibs read themselves — hands-free timing no other phone can do.</p></div>
+    <div class="card"><div class="ic">📏</div><h3>Field events in feet &amp; inches</h3>
+      <p>Long Jump and Shot Put with all three attempts, plus a High Jump make/miss grid — the way officials record them.</p></div>
+    <div class="card"><div class="ic">🖨️</div><h3>Heat sheets that scan back</h3>
+      <p>Print clean heat sheets, mark them up at the event, snap a photo — the marks read straight in.</p></div>
+    <div class="card"><div class="ic">🏆</div><h3>Results, scoring &amp; AI insights</h3>
+      <p>A public results page with a QR, team scoring by grade &amp; gender, Excel export — and AI answers for PRs and records.</p></div>
+  </div>
+</div></section>
+
+<section id="live"><div class="wrap split">
+  <div>
+    <span class="kicker">🟢 Live — everyone's favorite feature</span>
+    <h2>The whole crowd follows every race — live.</h2>
+    <p class="lead">Share one link or QR and families watch finishers roll in the instant they
+    cross — while a live progress bar shows where the meet stands and team scores climb as
+    points land. No app, no account.</p>
+    <ul class="livelist">
+      <li><span class="ck">✓</span> Live race clock, in sync on every phone in the stands</li>
+      <li><span class="ck">✓</span> Finishers pop in the moment they're timed</li>
+      <li><span class="ck">✓</span> Event-by-event progress bar and climbing team scores</li>
+      <li><span class="ck">✓</span> One QR code — hundreds can watch at once</li>
+    </ul>
+    <p class="livenote">"I spent years in those stands as a parent of three runners — this is the
+    feature I always wished I had."</p>
+  </div>
+  <div>
+    <div class="trkwrap">
+      <div class="trk-live"><span class="dot"></span> LIVE · 400m Girls 9th Grade · Heat 1</div>
+      <div class="trk-clk">0:04:12.8</div>
+      <div class="trk-wait">Waiting for the first finisher…</div>
+      <div class="trk-strip">
+        <div class="trk-ev done"><i></i><span>1600 Boys 9th</span></div>
+        <div class="trk-ev done"><i></i><span>100 Girls 7th</span></div>
+        <div class="trk-ev done"><i></i><span>100 Girls 8th</span></div>
+        <div class="trk-ev done"><i></i><span>400 Girls 8th</span></div>
+        <div class="trk-ev run"><i></i><span>400 Girls 9th</span></div>
+        <div class="trk-ev"><i></i><span>400 Boys 7th</span></div>
+        <div class="trk-ev"><i></i><span>4x100 Girls 7th</span></div>
+        <div class="trk-ev"><i></i><span>4x100 Boys 9th</span></div>
+      </div>
+      <div class="trk-tt">🏆 Overall — team scores</div>
+      <table class="trk-tbl">
+        <tr><th class="rk">#</th><th>School</th><th class="pts">Points</th></tr>
+        <tr><td class="rk">1</td><td>Riverside</td><td class="pts">154</td></tr>
+        <tr><td class="rk">2</td><td>Oakmont</td><td class="pts">148</td></tr>
+        <tr><td class="rk">3</td><td>Summit Ridge</td><td class="pts">121</td></tr>
+      </table>
     </div>
-    <div class="trk-tt">🏆 Overall — team scores</div>
-    <table class="trk-tbl">
-      <tr><th class="rk">#</th><th>School</th><th class="pts">Points</th></tr>
-      <tr><td class="rk">1</td><td>Riverside</td><td class="pts">154</td></tr>
-      <tr><td class="rk">2</td><td>Oakmont</td><td class="pts">148</td></tr>
-      <tr><td class="rk">3</td><td>Summit Ridge</td><td class="pts">121</td></tr>
-      <tr><td class="rk">4</td><td>Pinecrest</td><td class="pts">96</td></tr>
-    </table>
   </div>
 </div></section>
 
 <section class="band"><div class="wrap">
-  <h2>Built by a coach — and a cross-country &amp; track parent.</h2>
-  <p class="lead">XCTimer was built by a former junior high coach who personally timed meets for
-  eight years — <b style="color:#fff">and a parent of three cross-country and track kids</b> who
-  spent just as many seasons in the stands. That's both sides of every meet: running it from the
-  finish line, and standing in the bleachers wanting to know, right now, how your own kid just did.
-  Every feature comes from that real experience — the bib stickers, the tap timer, the make/miss
-  high jump grid, scanning a marked-up sheet, and the live results the whole crowd can follow.</p>
-  <div class="quote">"As a coach, I wanted a tool any coach could run. As a parent, I wanted to see my kid's race the moment it happened."</div>
+  <h2>Built by a coach — and an XC &amp; track parent.</h2>
+  <p class="lead">Eight years timing junior-high meets as a coach, and just as many seasons in
+  the stands as a parent of three runners. Every feature comes from one of those two seats.</p>
+  <div class="quote">"As a coach, I wanted a tool any coach could run. As a parent, I wanted to
+  see my kid's race the moment it happened."</div>
   <div class="stat">
     <div><b>8 yrs</b><span>timing meets</span></div>
     <div><b>3 kids</b><span>XC &amp; track athletes</span></div>
-    <div><b>Both sides</b><span>coach &amp; parent</span></div>
+    <div><b>1 phone</b><span>is all it takes</span></div>
   </div>
 </div></section>
 
-<style>
-#funrun{background:linear-gradient(180deg,#ffffff 0%,#fdf1e8 100%);border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
-#funrun .pill{background:#fff;border-color:#f3d6c1;color:var(--orange)}
-#funrun .frlist{list-style:none;padding:0;margin:1.2rem 0 0;display:grid;gap:.6rem}
-#funrun .frlist li{display:flex;gap:.6rem;align-items:flex-start;color:#3a4f63;font-size:1.02rem}
-#funrun .frlist .ck{color:var(--orange);font-weight:800;flex-shrink:0}
-.frcard{background:#fff;border:2px solid #f3d6c1;border-radius:18px;padding:1.4rem 1.5rem;
-        box-shadow:0 16px 38px rgba(234,106,45,.16);max-width:340px;margin:0 auto}
-.frcard h3{margin:.1rem 0 .2rem;color:var(--navy);font-size:1.25rem}
-.frcard .sub{margin:0;color:#4a5f73;font-size:.95rem}
-.frcard .bibrow{display:flex;gap:.5rem;margin-top:.9rem}
-.frcard .bib{background:#fff7f1;border:1px solid #f3d6c1;border-radius:11px;padding:.55rem .3rem;
-             text-align:center;flex:1}
-.frcard .bib b{display:block;font-size:1.4rem;color:var(--orange);line-height:1.1}
-.frcard .bib span{font-size:.72rem;color:var(--gray)}
-.frcard .go{margin:.95rem 0 0;font-size:.88rem;color:var(--gray)}
-</style>
 <section id="funrun"><div class="wrap split">
   <div>
-    <div class="pill">🏅 New — community events</div>
-    <h2>Hosting a Fun Run or community 5K? Run that yourself, too.</h2>
-    <p class="lead">The same engine that runs a school meet now powers community races. Set up a
-    Fun Run, a neighborhood 5K, or a 10K &amp; half — no schools, no rosters, none of the paperwork.
-    Share one link and runners <b>sign themselves up</b>; you just show up and start the clock.</p>
+    <span class="kicker">🏅 New — community events</span>
+    <h2>Hosting a fun run or community 5K? Run that yourself, too.</h2>
+    <p class="lead">The same engine now powers community races — a fun run, a neighborhood 5K,
+    or a 10K &amp; half. Share one link and runners sign themselves up; you just show up and
+    start the clock.</p>
     <ul class="frlist">
-      <li><span class="ck">✓</span> A public sign-up page + QR — runners enter their own name, age, city &amp; club</li>
+      <li><span class="ck">✓</span> Public sign-up page + QR — runners enter their own name, age, city &amp; club</li>
       <li><span class="ck">✓</span> Your event's logo and colors on the registration page and printed bibs</li>
-      <li><span class="ck">✓</span> Results by gender &amp; age group — 10 &amp; Under through 60+, bracketed however you like</li>
-      <li><span class="ck">✓</span> Robot-vision camera timing, phone timing, or a no-login QR for helpers</li>
-      <li><span class="ck">✓</span> Live results the whole crowd follows as each runner crosses the line</li>
+      <li><span class="ck">✓</span> Results by gender &amp; age group — bracketed however you like</li>
+      <li><span class="ck">✓</span> Phone or robot-vision camera timing, with live results for the crowd</li>
     </ul>
-    <a class="btn" href="/host" style="margin-top:1.1rem">🏁 Set up your own fun run — $50</a>
+    <a class="btn" href="/host" style="margin-top:1.2rem">🏁 Set up your own fun run — $50</a>
   </div>
   <div>
     <div class="frcard">
-      <div class="pill" style="margin:0 0 .6rem">🟢 Registration open</div>
+      <span class="open">🟢 Registration open</span>
       <h3>Maple Grove Community 5K</h3>
       <p class="sub">Pick your race · grab your bib · no account needed</p>
       <div class="bibrow">
@@ -343,15 +330,16 @@ LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
 
 <section class="final"><div class="wrap">
   <h2>Ready to run your own meet?</h2>
-  <p class="lead" style="margin:.4rem auto 1.4rem">Whether it's a school meet or a community fun run — sign in to get started, no timing company and no big invoice, or reach out to bring XCTimer to your district.</p>
-  <div class="cta" style="display:flex;gap:.8rem;justify-content:center;flex-wrap:wrap">
+  <p class="lead" style="margin:.4rem auto 1.4rem">School meet or community fun run — no timing
+     company, no big invoice.</p>
+  <div style="display:flex;gap:.8rem;justify-content:center;flex-wrap:wrap">
     <a class="btn" href="/login">Sign in</a>
-    <a class="btn ghost" href="mailto:admin@xctimer.com?subject=XCTimer%20for%20our%20district">Get in touch</a>
+    <a class="btn ghost2" href="mailto:admin@xctimer.com?subject=XCTimer%20for%20our%20district">Get in touch</a>
   </div>
 </div></section>
 
 <footer>© XCTimer · xctimer.com · the do-it-yourself meet manager for junior high cross country &amp; track
-<br><a href="/security" style="color:var(--navy);font-weight:700">Security &amp; data privacy</a></footer>
+<br><a href="/security">Security &amp; data privacy</a></footer>
 </body></html>"""
 
 
