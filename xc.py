@@ -737,6 +737,17 @@ def xc_meet_day(mid):
     tbl = (f'<div class="card"><h2>{noun} — tap to time</h2><table><tr><th>{noun[:-1]}</th><th>Mode</th>'
            f'<th>Status</th><th>Finishers</th><th></th></tr>{"".join(rows)}</table></div>'
            if races else f'<div class="card muted">No {noun.lower()} yet — add them on the Setup tab.</div>')
+    # Community events with >1 race: one camera at the line records ALL races — each scanned bib is
+    # auto-routed to the race that runner registered for, and timed off THAT race's own clock.
+    allcam = ""
+    if _is_org(m) and len(races) > 1:
+        allcam = (f'<div class="card" style="border:1px solid #2f6db5">'
+                  f'<a class="btn" href="/meets/{mid}/camera" '
+                  f'style="background:#006aff;color:#fff">📷 Scan all races — one camera</a>'
+                  f'<p class="muted" style="margin:.5rem 0 0">One phone/iPad at the finish scans every '
+                  f'race at once. Each runner is recorded in the race they registered for, timed from '
+                  f'that race\'s start — so a 10K that started at 7:45 and a 5K at 8:00 both come out '
+                  f'right. <b>Start each race first.</b></p></div>')
     if _is_org(m):
         # Community events: Avery 5163 stickers with the event logo, + spares.
         # Self-serve web events time by tap-then-scan (camera reads ArUco) → ArUco tags only.
@@ -757,7 +768,7 @@ def xc_meet_day(mid):
     from .meets import timer_qr_card
     body = (f'<p class="muted"><a href="/meets">← Meets</a></p><h1>{escape(m["name"])}</h1>'
             f'{_xc_tabs(mid, "meetday", road=(m["sport"]=="road"), organizer=_is_org(m))}'
-            f'{tbl}{print_bar}{walkup}{timer_qr_card(m)}')
+            f'{allcam}{tbl}{print_bar}{walkup}{timer_qr_card(m)}')
     return shell(g.principal, body, active="meets")
 
 
