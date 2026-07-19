@@ -399,15 +399,81 @@ def _digest(principal, question=""):
     return text[:60000]
 
 
-_SYS = ("You are XCTimer's roster insights assistant for a school running program. "
-        "Answer the coach/admin's question using ONLY the data digest provided. Be concise "
-        "and factual; give plain text (no markdown tables). The digest includes SEASON "
-        "PERFORMANCE LISTS — each athlete's best mark per event, already ranked (fastest "
-        "time / longest distance / highest jump first) and grouped by event × gender × grade; "
-        "use them for 'who is fastest', 'top N', and 'best in <event>' questions, and to rank "
-        "across grades, compare the per-grade lists. Times are M:SS.xx; field marks are "
-        "feet-inches (e.g. 15-06). If the data doesn't contain the answer, say so briefly. "
-        "Never invent athletes, times, or results.")
+# How-to knowledge for the school side (track + XC), the coach / district-admin /
+# super-admin workflow. The Ref widget (road.py) covers self-serve road hosts; this is
+# the equivalent for the logged-in school program so Insights can answer "how do I…"
+# questions as well as data questions.
+_PLATFORM_HELP = """HOW XCTIMER WORKS (school programs — Track & Cross Country). Use this to answer
+"how do I…" / "where is…" / "can XCTimer…" questions. Never invent features; if you're unsure a
+feature exists, say so and suggest emailing admin@xctimer.com.
+
+ROLES: super admin (runs the whole platform, all districts, adds districts + district admins);
+district admin (one district — all its schools, meets, records, and coaches); coach (their own
+school(s) only); timer (a race-day-only login for a single meet, no roster/insights access).
+The header logo follows the role. Invite coaches from the Users page (they get an email to set a
+password); anyone can also use "Email me a login link" on the login page.
+
+ROSTERS: On a school page add athletes by hand, or Import a roster from an .xlsx/.csv or a Google
+Sheet link — the AI parses messy columns into clean rows (name, grade, gender, XC/Track, contact
+fields) which you review before committing. Add a school with a logo upload (the logo shows on the
+school card and on printed bib stickers). Each athlete gets a bib for the season.
+
+CREATE A MEET: pick sport (Track or Cross Country), a date, and which schools attend. Track meet
+setup also sets the scoring/points table, the per-athlete event limit, whether events are laned,
+and the High Jump bar schedule.
+
+TRACK — SETUP: Batch-add events (sprints, distance, relays, and field: Long Jump / Shot Put /
+High Jump) for Boys+Girls and each grade at once. Enter athletes into events with a checklist (and
+a relay picker for relays); the event-limit cap warns if an athlete is over. Set the running order
+on the Setup tab: a General event-type order (drag the event types, e.g. 1600, 100, 400, 4x100,
+200, 4x400, 3200) plus a fine-tune table you can drag division-by-division. Draw heats — laned
+events get center-out lane assignments. Print a heat-sheet PDF and a full meet packet (the High
+Jump page prints landscape with the bar ladder/grid).
+
+TRACK — RACE DAY (phones): Open the Phone Timer app (coaches log in, or share the app QR/link for a
+no-login timer). Pick the event — combined divisions (same event across grades) show as ONE pick.
+Gun start: arm "listen for the gun" on the starter's phone; the clap/gun starts a shared clock on
+every phone at once (a second Start tap won't reset it). Lane timing: each helper picks a lane and
+taps as their runner crosses; when every lane is tapped the race auto-stops. Distance races use a
+tap console (tap each finisher, then assign names, STOP, UNDO). False start: Reset race clears the
+clock and all lane times on every phone. After a lane race you can fix the finish order with ▲▼
+buttons (times stay put, runners move) and mark a runner DQ or DNF (removes their time from the
+placings, shows DQ/DNF on results; Restore undoes it). Field events use the Pit console: record
+each attempt by bib (e.g. "10 6" = 10ft 6in, "F" = foul); High Jump records the best height cleared.
+Timing uses each phone's own clock, so it's accurate even on a bad cell connection.
+
+TRACK — SCAN-BACK: If you time on paper, photograph the printed heat sheet (or the High Jump grid)
+in the Scan tab and the AI reads the handwritten marks back onto the right runners.
+
+CROSS COUNTRY: Create an XC meet with Boys/Girls races. Print ArUco bib stickers (Avery 5163) with
+your logo. Race day is tap-then-scan: tap each runner as they cross the chute, then camera-scan (or
+type) their bib to attach names — works even after you stop the clock; a bib that isn't entered
+records silently as "Bib N". Insert a missed runner mid-list and everyone shifts down. Share the
+no-login phone timer QR with helpers.
+
+RESULTS & INSIGHTS: The public results page (share its link/QR) shows a live board, a meet-progress
+timeline, team scores, and an xlsx export. Each athlete has a Progress card with per-event PRs and
+season points. This Insights assistant answers roster/results/record questions from your own data.
+District records live in a records table (district admins manage them) and this assistant can quote
+them."""
+
+_SYS = ("You are XCTimer's assistant for a school running program (Cross Country + Track). "
+        "You do TWO jobs:\n"
+        "1) DATA questions (rosters, meet results, PRs, records, 'who is fastest / top N / best "
+        "in <event>'): answer using ONLY the DATA DIGEST provided in the user message. The digest "
+        "includes SEASON PERFORMANCE LISTS — each athlete's best mark per event, already ranked "
+        "(fastest time / longest distance / highest jump first) and grouped by event × gender × "
+        "grade; use them for ranking questions, and compare the per-grade lists to rank across "
+        "grades. Times are M:SS.xx; field marks are feet-inches (e.g. 15-06). NEVER invent "
+        "athletes, times, or results — if the digest doesn't contain the answer, say so briefly.\n"
+        "2) HOW-TO / platform questions (how do I set up a meet, draw heats, time with phones, "
+        "print bibs, mark a DQ, import a roster, what can XCTimer do, etc.): answer from the "
+        "HOW XCTIMER WORKS guide below. Be specific and step-by-step; never invent features — if "
+        "it's not covered, say you're not sure and suggest emailing admin@xctimer.com.\n"
+        "Tailor how-to answers to the user's role (given below): a coach acts on their own "
+        "school(s); a district admin on the whole district; a super admin on the platform. Be "
+        "concise, friendly, and plain-text (no markdown tables).\n\n"
+        + _PLATFORM_HELP)
 
 
 @bp.get("/insights")
@@ -420,8 +486,9 @@ def insights_page():
                  else "all districts" if (p.is_super and active_district_id() is None)
                  else "this district")
     body = f"""
-<h1>AI Roster Insights</h1>
-<p class="sub">Ask about {escape(scope_lbl)} — rosters, meet results, PRs. Answers use your data only.</p>
+<h1>AI Insights &amp; Help</h1>
+<p class="sub">Ask about {escape(scope_lbl)} — rosters, results, PRs and records (from your data),
+or how to use XCTimer (setup, heats, phone timing, bibs, DQ/DNF…).</p>
 <div class="card">
   <div id="log" style="min-height:60px"></div>
   <div id="chips" style="display:flex;flex-wrap:wrap;gap:.4rem;margin-top:.5rem"></div>
@@ -436,8 +503,9 @@ def insights_page():
 .aichip:hover{{border-color:var(--acc)}}</style>
 <script>
 const SUGGEST=["Who is my fastest 200m runner?","Top 5 girls in the 1600m",
-  "What's the district record for the 100m?","Which school has the best shot put?",
-  "Who has the best high jump this season?"];
+  "What's the district record for the 100m?","How do I draw heats for a track meet?",
+  "How do I time a race with phones?","How do I mark a runner DQ?",
+  "How do I import my roster?"];
 document.getElementById('chips').innerHTML =
   SUGGEST.map(s=>'<button class="aichip" onclick="askQ(this.textContent)">'+esc(s)+'</button>').join('');
 let HIST=[];
@@ -469,9 +537,13 @@ def insights_ask():
     if not q:
         return jsonify(error="Ask a question"), 400
     history = (request.get_json(silent=True) or {}).get("history") or []
+    role_lbl = ("super admin (whole platform, all districts)" if p.is_super and active_district_id() is None
+                else "super admin (viewing one district)" if p.is_super
+                else "coach (own school(s) only)" if p.role == "coach"
+                else "district admin (whole district)")
     try:
         digest = _digest(p, q)
-        answer = ai.claude_chat(_SYS, f"DATA DIGEST:\n{digest}\n\nQUESTION: {q}",
+        answer = ai.claude_chat(_SYS, f"USER ROLE: {role_lbl}\n\nDATA DIGEST:\n{digest}\n\nQUESTION: {q}",
                                 max_tokens=1000, history=history)
     except Exception as e:  # noqa: BLE001
         return jsonify(error=f"Insights unavailable: {e}"), 500
