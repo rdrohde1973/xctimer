@@ -1810,23 +1810,24 @@ def add_bib(meid):
 _FO_CSS = """<style>
 .foblock{margin:.4rem 0 1rem}.foblock h3{margin:.5rem 0 .2rem;font-size:1rem}
 .folist{list-style:none;padding:0;margin:0}
-.foli{display:flex;align-items:center;gap:.6rem;padding:.5rem .7rem;margin:.25rem 0;border:1px solid var(--line);border-radius:9px;background:var(--panel2);cursor:grab}
+.foli{display:flex;align-items:center;gap:.6rem;padding:.5rem .7rem;margin:.25rem 0;border:1px solid var(--line);border-radius:9px;background:var(--panel2)}
 .foli .fopl{color:#ea6a2d;font-weight:800;width:1.6rem;text-align:center}
 .foli .fot{font-variant-numeric:tabular-nums;color:var(--mut);width:5rem}
-.foli .foname{flex:1}.foli .fogrip{color:var(--mut)}
+.foli .foname{flex:1}
+.foli .fomv{display:flex;gap:.3rem}
+.foli .fomv button{background:var(--panel,#243447);color:var(--fg,#fff);border:1px solid var(--line);border-radius:7px;width:2rem;height:2rem;font-size:1rem;cursor:pointer}
+.foli .fomv button:disabled{opacity:.3;cursor:default}
 </style>"""
 _FO_JS = """<script>(function(){
-  document.querySelectorAll('.foblock').forEach(function(bl){
-    var ul=bl.querySelector('.folist'), meid=bl.dataset.meid, heat=bl.dataset.heat, d=null, _t=null;
-    function save(){clearTimeout(_t);_t=setTimeout(function(){
-      var ids=[].map.call(ul.querySelectorAll('li'),function(l){return +l.dataset.eid;});
-      jpost('/meet-events/'+meid+'/reorder-finish?heat='+heat,{order:ids}).then(function(){location.reload();});
-    },300);}
-    ul.addEventListener('dragstart',function(e){d=e.target.closest('li');if(d)d.style.opacity='.4';});
-    ul.addEventListener('dragend',function(){if(d)d.style.opacity='';d=null;save();});
-    ul.addEventListener('dragover',function(e){e.preventDefault();var t=e.target.closest('li');
-      if(!t||t===d||t.parentNode!==ul)return;var r=t.getBoundingClientRect();
-      ul.insertBefore(d,(e.clientY-r.top)/r.height>.5?t.nextSibling:t);});
+  function save(ul){var bl=ul.closest('.foblock');
+    var ids=[].map.call(ul.querySelectorAll('li'),function(l){return +l.dataset.eid;});
+    jpost('/meet-events/'+bl.dataset.meid+'/reorder-finish?heat='+bl.dataset.heat,{order:ids}).then(function(){location.reload();});}
+  document.querySelectorAll('.foblock .folist').forEach(function(ul){
+    ul.addEventListener('click',function(e){var b=e.target.closest('.foup,.fodn');if(!b)return;
+      var li=b.closest('li');
+      if(b.classList.contains('foup')&&li.previousElementSibling){ul.insertBefore(li,li.previousElementSibling);save(ul);}
+      else if(b.classList.contains('fodn')&&li.nextElementSibling){ul.insertBefore(li.nextElementSibling,li);save(ul);}
+    });
   });
 })();</script>"""
 
@@ -2043,20 +2044,23 @@ async function postScan(n){{
             if len(fin) < 2:
                 continue
             items = ""
+            n = len(fin)
             for i, (e, r) in enumerate(fin):
                 nm, bib, _sch = labels[e["id"]]
-                items += (f'<li draggable="true" data-eid="{e["id"]}" class="foli">'
+                up = f'<button type="button" class="foup"{" disabled" if i == 0 else ""}>&#9650;</button>'
+                dn = f'<button type="button" class="fodn"{" disabled" if i == n - 1 else ""}>&#9660;</button>'
+                items += (f'<li data-eid="{e["id"]}" class="foli">'
                           f'<span class="fopl">{i + 1}</span>'
                           f'<span class="fot">{fmt_time(r["mark_seconds"])}</span>'
                           f'<span class="foname">{escape(nm)}{f" #{bib}" if bib else ""} '
                           f'<span class="muted">· Ln {e["lane"] or "—"}</span></span>'
-                          f'<span class="fogrip">&#9776;</span></li>')
+                          f'<span class="fomv">{up}{dn}</span></li>')
             blocks.append(f'<div class="foblock" data-meid="{meid}" data-heat="{heat}">'
                           f'<h3>Heat {heat}</h3><ol class="folist">{items}</ol></div>')
         if blocks:
             finish_reorder = ('<div class="card"><h2>Finish order — fix a judgment call</h2>'
-                              '<p class="muted">Drag a runner to their real place. The recorded '
-                              'times stay in order; only who holds each place changes.</p>'
+                              '<p class="muted">Use the &#9650;&#9660; to move a runner to their real '
+                              'place. The recorded times stay in order; only who holds each place changes.</p>'
                               + "".join(blocks) + _FO_CSS + _FO_JS + '</div>')
     body = (f'<p class="muted"><a href="/meets/{me["meet_id"]}/meet-day">← Race day</a></p>'
             f'<h1>{escape(ename)}</h1>{err}{field_note}{marks_form}{finish_reorder}{add}{tools}')
@@ -3345,8 +3349,8 @@ _LANE_PAGE = """
 <div id="rec" class="rec"></div>
 <div id="foWrap" style="display:none;margin-top:1rem">
   <h2 style="margin:.2rem 0 .1rem">Finish order</h2>
-  <p class="muted" style="font-size:.85rem;margin:.1rem 0 .5rem">Judgment call at the line? Drag a
-  runner to their real place — the <b>times stay put</b>, only the runners move.</p>
+  <p class="muted" style="font-size:.85rem;margin:.1rem 0 .5rem">Judgment call at the line? Use the
+  &#9650;&#9660; to move a runner to their real place — the <b>times stay put</b>, only the runners move.</p>
   <ol id="foList" style="list-style:none;padding:0;margin:0"></ol>
 </div>
 <a class="btn" href="/meet-events/__MEID__/next?heat=__HEAT__" style="display:block;text-align:center;margin-top:1rem">Next heat &rarr;</a>
@@ -3382,30 +3386,31 @@ function render(){
     b.textContent=(!started?'Waiting for start…':('TAP — Lane '+MYLANE+((l&&l.name)?(' ('+l.name+')'):'')+' crossed'));}
   renderFinishOrder(stopped);
 }
+var FOORDER=[];
 function renderFinishOrder(stopped){
   var wrap=document.getElementById('foWrap');if(!wrap)return;
   var fin=LANES.filter(function(l){return l.secs!=null;}).sort(function(a,b){return a.secs-b.secs;});
-  if(!stopped||fin.length<2||FODRAG){ if(!FODRAG) wrap.style.display='none'; return; }
+  if(!stopped||fin.length<2){ wrap.style.display='none'; return; }
   wrap.style.display='';
+  FOORDER=fin.map(function(l){return l.entry_id;});
+  // Up/down buttons (not HTML5 drag — that doesn't work with touch on iOS).
   document.getElementById('foList').innerHTML=fin.map(function(l,i){
-    return '<li draggable="true" data-eid="'+l.entry_id+'" '
-      +'style="display:flex;align-items:center;gap:.6rem;padding:.6rem .7rem;margin:.3rem 0;'
-      +'border:1px solid #33475b;border-radius:10px;background:#182633;color:#fff;cursor:grab">'
-      +'<span style="color:#ea6a2d;font-weight:800;width:1.6rem">'+(i+1)+'</span>'
-      +'<span class="t" style="width:4.2rem">'+fmt(l.secs)+'</span>'
+    var up='<button onclick="moveFO('+l.entry_id+',-1)" '+(i===0?'disabled':'')
+      +' style="background:#33475b;color:#fff;border:0;border-radius:7px;font-size:1.1rem;width:2.1rem;height:2.1rem;cursor:pointer">&#9650;</button>';
+    var dn='<button onclick="moveFO('+l.entry_id+',1)" '+(i===fin.length-1?'disabled':'')
+      +' style="background:#33475b;color:#fff;border:0;border-radius:7px;font-size:1.1rem;width:2.1rem;height:2.1rem;cursor:pointer">&#9660;</button>';
+    return '<li style="display:flex;align-items:center;gap:.5rem;padding:.55rem .6rem;margin:.3rem 0;'
+      +'border:1px solid #33475b;border-radius:10px;background:#182633;color:#fff">'
+      +'<span style="color:#ea6a2d;font-weight:800;width:1.5rem">'+(i+1)+'</span>'
+      +'<span class="t" style="width:4rem">'+fmt(l.secs)+'</span>'
       +'<span style="flex:1">'+esc(l.name)+(l.bib?(' #'+l.bib):'')+' <span class="muted">· Ln '+l.lane+'</span></span>'
-      +'<span style="color:#8a97a5">&#9776;</span></li>';}).join('');
+      +'<span style="display:flex;gap:.3rem">'+up+dn+'</span></li>';}).join('');
 }
-var FODRAG=false;
-(function(){var ul=document.getElementById('foList');if(!ul)return;var d=null;
-  ul.addEventListener('dragstart',function(e){d=e.target.closest('li');FODRAG=true;if(d)d.style.opacity=".4";});
-  ul.addEventListener('dragend',function(){if(d)d.style.opacity="";d=null;FODRAG=false;saveFO();});
-  ul.addEventListener('dragover',function(e){e.preventDefault();var t=e.target.closest('li');
-    if(!t||t===d||t.parentNode!==ul)return;var r=t.getBoundingClientRect();
-    ul.insertBefore(d,(e.clientY-r.top)/r.height>.5?t.nextSibling:t);});
-  function saveFO(){var ids=[].map.call(ul.querySelectorAll('li'),function(l){return +l.dataset.eid;});
-    jp('/meet-events/'+MEID+'/reorder-finish?heat='+HEAT,{order:ids}).then(function(){poll();});}
-})();
+async function moveFO(eid,dir){
+  var i=FOORDER.indexOf(eid);if(i<0)return;var j=i+dir;if(j<0||j>=FOORDER.length)return;
+  var o=FOORDER.slice();var t=o[i];o[i]=o[j];o[j]=t;FOORDER=o;   // optimistic; poll confirms
+  await jp('/meet-events/'+MEID+'/reorder-finish?heat='+HEAT,{order:o});poll();
+}
 function pick(n){MYLANE=n;render();}
 async function laneStart(){await jp('/meet-events/'+MEID+'/time/start?heat='+HEAT,{at:serverNow()});poll();}
 async function stopRace(){if(STOP||STOPPING)return;STOPPING=true;

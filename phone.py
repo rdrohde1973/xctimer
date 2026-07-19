@@ -26,6 +26,51 @@ TAP_EVENTS = ("800m", "1600m", "3200m", "4x400m Relay")
 LANE_EVENTS = ("100m", "200m", "400m", "4x100m Relay")   # laned -> one volunteer per lane
 
 
+def _picker_events(conn, mid, names):
+    """Timer-picker entries for `names`, with COMBINED divisions collapsed into one pick (they run
+    as a single race, timed across the group via _combine_meids). Each entry: {meid, label, heats}
+    where meid is a representative and heats spans the whole combine group."""
+    q = ",".join("?" * len(names))
+    rows = conn.execute(
+        f"SELECT me.id, e.name AS ename, me.gender, me.grade, me.combine_id FROM meet_events me "
+        f"JOIN events e ON e.id=me.event_id WHERE me.meet_id=? AND e.name IN ({q}) "
+        f"ORDER BY (me.run_order IS NULL), me.run_order, e.sort, me.gender, me.grade",
+        (mid, *names)).fetchall()
+
+    def _div(r):
+        g = {"M": "Boys", "F": "Girls"}.get(r["gender"], "")
+        gr = f"{r['grade']}th Grade " if r["grade"] else ""
+        return (gr + (g + " " if g else "")).strip()
+
+    groups, idx = [], {}
+    for r in rows:
+        cid = r["combine_id"] if "combine_id" in r.keys() else None
+        if cid is not None and cid in idx:
+            groups[idx[cid]].append(r)
+        else:
+            if cid is not None:
+                idx[cid] = len(groups)
+            groups.append([r])
+    out = []
+    for mem in groups:
+        meids = [x["id"] for x in mem]
+        hq = ",".join("?" * len(meids))
+        heats = [h[0] for h in conn.execute(
+            f"SELECT DISTINCT heat FROM entries WHERE meet_event_id IN ({hq}) AND heat IS NOT NULL "
+            f"ORDER BY heat", tuple(meids)).fetchall()]
+        ename = mem[0]["ename"]
+        if len(mem) == 1:
+            label = f'{_div(mem[0])} {ename}'.strip()
+        elif len({x["ename"] for x in mem}) == 1 and len({x["gender"] for x in mem}) == 1:
+            g = {"M": "Boys", "F": "Girls"}.get(mem[0]["gender"], "")
+            grs = "/".join(str(x) for x in sorted({x["grade"] for x in mem if x["grade"]}))
+            label = f'{(g + " ") if g else ""}{ename} · Gr {grs} 🔗'.strip()
+        else:
+            label = f'{ename} · combined 🔗'
+        out.append({"meid": mem[0]["id"], "label": label, "heats": heats})
+    return out
+
+
 def _phone_url():
     base = os.environ.get("XC_PUBLIC_URL") or request.host_url.rstrip("/")
     return f"{base}/phone"
@@ -364,39 +409,15 @@ def phone_meet(mid):
 
 def _track_timer(conn, m):
     """Two-tab Track Timer: Time race (event/heat pickers -> tap console) + Scan sheet."""
-    tap_q = ",".join("?" * len(TAP_EVENTS))
-    events = conn.execute(
-        f"SELECT me.id, e.name AS ename, me.gender, me.grade FROM meet_events me "
-        f"JOIN events e ON e.id=me.event_id WHERE me.meet_id=? AND e.name IN ({tap_q}) "
-        f"ORDER BY (me.run_order IS NULL), me.run_order, e.sort, me.gender, me.grade",
-        (m["id"], *TAP_EVENTS)).fetchall()
     evdata, ev_opts = {}, ['<option value="">— pick event —</option>']
-    for ev in events:
-        heats = [r[0] for r in conn.execute(
-            "SELECT DISTINCT heat FROM entries WHERE meet_event_id=? AND heat IS NOT NULL "
-            "ORDER BY heat", (ev["id"],)).fetchall()]
-        gword = {"M": "Boys", "F": "Girls"}.get(ev["gender"], "")
-        gr = f"{ev['grade']}th Grade " if ev["grade"] else ""
-        label = f"{gr}{gword + ' ' if gword else ''}{ev['ename']}".strip()
-        evdata[str(ev["id"])] = {"label": label, "heats": heats}
-        ev_opts.append(f'<option value="{ev["id"]}">{escape(label)}</option>')
+    for e in _picker_events(conn, m["id"], TAP_EVENTS):        # combined divisions -> one pick
+        evdata[str(e["meid"])] = {"label": e["label"], "heats": e["heats"]}
+        ev_opts.append(f'<option value="{e["meid"]}">{escape(e["label"])}</option>')
     # Laned sprints/relays -> lane-timing (one volunteer per lane).
-    lane_q = ",".join("?" * len(LANE_EVENTS))
-    lane_events = conn.execute(
-        f"SELECT me.id, e.name AS ename, me.gender, me.grade FROM meet_events me "
-        f"JOIN events e ON e.id=me.event_id WHERE me.meet_id=? AND e.name IN ({lane_q}) "
-        f"ORDER BY (me.run_order IS NULL), me.run_order, e.sort, me.gender, me.grade",
-        (m["id"], *LANE_EVENTS)).fetchall()
     lanedata, lane_opts = {}, ['<option value="">— pick sprint / relay —</option>']
-    for ev in lane_events:
-        heats = [r[0] for r in conn.execute(
-            "SELECT DISTINCT heat FROM entries WHERE meet_event_id=? AND heat IS NOT NULL "
-            "ORDER BY heat", (ev["id"],)).fetchall()]
-        gword = {"M": "Boys", "F": "Girls"}.get(ev["gender"], "")
-        gr = f"{ev['grade']}th Grade " if ev["grade"] else ""
-        label = f"{gr}{gword + ' ' if gword else ''}{ev['ename']}".strip()
-        lanedata[str(ev["id"])] = {"label": label, "heats": heats}
-        lane_opts.append(f'<option value="{ev["id"]}">{escape(label)}</option>')
+    for e in _picker_events(conn, m["id"], LANE_EVENTS):
+        lanedata[str(e["meid"])] = {"label": e["label"], "heats": e["heats"]}
+        lane_opts.append(f'<option value="{e["meid"]}">{escape(e["label"])}</option>')
     # Meet switcher (track meets the user can time) — hidden for a no-login QR
     # session, which is already locked to this one meet.
     scoped = bool(getattr(getattr(g, "principal", None), "meet_scope", None))
