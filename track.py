@@ -763,6 +763,71 @@ def delete_entry(eid):
     return redirect(f"/meet-events/{e['meet_event_id']}")
 
 
+@bp.post("/entries/<int:eid>/assign-slot")
+@login_required
+def assign_slot(eid):
+    """Give ONE (usually last-minute) entry an open heat+lane WITHOUT reshuffling anyone
+    else. Optional target heat/lane in the JSON body; otherwise auto-pick the next open
+    lane — a free lane in an existing heat first, then a brand-new heat."""
+    conn = db.connect()
+    e = conn.execute("SELECT * FROM entries WHERE id=?", (eid,)).fetchone()
+    if not e:
+        conn.close(); abort(404)
+    me = load_meet_event(e["meet_event_id"])
+    m = load_meet(me["meet_id"])
+    if not can_setup_meet(m):
+        conn.close(); abort(403)
+    meids = _combine_meids(conn, me)
+    qm = ",".join("?" * len(meids))
+    laned = bool(me["laned"])
+    lanescount = m["lanes"] or DEFAULT_LANES
+    size = lanescount if laned else 2 * lanescount
+    occ = {}  # heat -> [lanes] already taken by everyone else
+    for o in conn.execute(
+            f"SELECT heat, lane FROM entries WHERE meet_event_id IN ({qm}) AND id!=? "
+            f"AND heat IS NOT NULL", (*meids, eid)).fetchall():
+        occ.setdefault(o["heat"], []).append(o["lane"])
+
+    d = request.get_json(silent=True) or {}
+
+    def _int(x):
+        try:
+            return int(x)
+        except (TypeError, ValueError):
+            return None
+    req_heat, req_lane = _int(d.get("heat")), _int(d.get("lane"))
+
+    heat = lane = None
+    if req_heat:                       # explicit pick — honor only if genuinely free
+        used = [l for l in occ.get(req_heat, []) if l]
+        if req_heat not in occ:        # a brand-new heat
+            heat = req_heat
+            lane = (req_lane if req_lane and 1 <= req_lane <= (lanescount if laned else size)
+                    else (lane_order(size)[0] if laned else 1))
+        elif laned:
+            if req_lane and req_lane not in used and 1 <= req_lane <= lanescount:
+                heat, lane = req_heat, req_lane
+        elif len(occ.get(req_heat, [])) < size:
+            heat, lane = req_heat, (req_lane if req_lane and req_lane not in used
+                                    else len(occ.get(req_heat, [])) + 1)
+    if heat is None:                   # auto: fill an existing heat with room (lowest first)
+        for h in sorted(occ):
+            used = [l for l in occ[h] if l]
+            if laned:
+                free = [ln for ln in range(1, lanescount + 1) if ln not in used]
+                if free:
+                    heat, lane = h, free[0]; break
+            elif len(occ[h]) < size:
+                heat, lane = h, len(occ[h]) + 1; break
+    if heat is None:                   # all heats full (or none drawn) -> a fresh heat
+        heat = (max(occ) + 1) if occ else 1
+        lane = lane_order(size)[0] if laned else 1
+
+    conn.execute("UPDATE entries SET heat=?, lane=? WHERE id=?", (heat, lane, eid))
+    conn.commit(); conn.close()
+    return jsonify(ok=True, heat=heat, lane=lane)
+
+
 # ------------------------------- assign athletes -------------------------------
 def _track_tabs(mid, active):
     def tab(href, label, key):
@@ -1838,6 +1903,29 @@ _FO_JS = """<script>(function(){
   });
 })();</script>"""
 
+# Last-minute lane assignment (event page HT/LN cell) — assign one entry to an open
+# slot without moving anyone else.
+_ASSIGN_CSS = """<style>
+.asln{display:inline-flex;gap:.25rem;align-items:center;flex-wrap:wrap}
+.asln select{width:auto;padding:.12rem .3rem;font-size:.8rem}
+.asln .aslnbtn{padding:.14rem .55rem;font-size:.8rem;background:var(--panel,#243447);
+  color:var(--fg,#fff);border:1px solid var(--line);border-radius:6px;cursor:pointer}
+.asln .aslnbtn:disabled{opacity:.4;cursor:default}
+</style>"""
+_ASSIGN_JS = """<script>(function(){
+  document.querySelectorAll('.aslnbtn').forEach(function(b){
+    b.addEventListener('click',function(){
+      var eid=b.dataset.eid;
+      var sel=document.querySelector('.asln select[data-eid="'+eid+'"]');
+      var v=sel?sel.value:'auto', body={};
+      if(v&&v.indexOf(':')>0){var p=v.split(':');body.heat=+p[0];if(+p[1]>0)body.lane=+p[1];}
+      b.disabled=true;
+      jpost('/entries/'+eid+'/assign-slot',body).then(function(){location.reload();})
+        .catch(function(e){b.disabled=false;alert((e&&e.message)||'Failed');});
+    });
+  });
+})();</script>"""
+
 
 @bp.get("/meet-events/<int:meid>")
 @login_required
@@ -1868,6 +1956,30 @@ def event_page(meid):
         if me["kind"] != "relay" else []
     schools = _attending_schools(conn, me["meet_id"]) if me["kind"] == "relay" else []
     conn.close()
+
+    # Open-lane assignment for last-minute adds — offered only when a draw already
+    # exists (otherwise the Seed buttons handle the whole field).
+    draw_exists = any(x["heat"] for x in entries)
+    _laned = bool(me["laned"])
+    _lanescount = m["lanes"] or DEFAULT_LANES
+    _size = _lanescount if _laned else 2 * _lanescount
+    _occ = {}
+    for x in entries:
+        if x["heat"]:
+            _occ.setdefault(x["heat"], []).append(x["lane"])
+    _next_new_heat = (max(_occ) + 1) if _occ else 1
+    _slot_opts = ['<option value="auto">Auto (next open)</option>']
+    for h in sorted(_occ):
+        _used = [l for l in _occ[h] if l]
+        if _laned:
+            for ln in range(1, _lanescount + 1):
+                if ln not in _used:
+                    _slot_opts.append(f'<option value="{h}:{ln}">Heat {h} · Ln {ln}</option>')
+        elif len(_occ[h]) < _size:
+            _slot_opts.append(f'<option value="{h}:{len(_occ[h]) + 1}">'
+                              f'Heat {h} · #{len(_occ[h]) + 1}</option>')
+    _slot_opts.append(f'<option value="{_next_new_heat}:0">New heat {_next_new_heat}</option>')
+    _slot_opts_html = "".join(_slot_opts)
 
     div = {"M": "Boys", "F": "Girls"}.get(me["gender"], "Open")
     ename = f'{me["ename"]} — {div}' + (f' {me["grade"]}' if me["grade"] else "")
@@ -1903,13 +2015,20 @@ def event_page(meid):
         r = res.get(e["id"])
         place = r["place"] if r and r["place"] else ""
         dqc = f'<input type="checkbox" name="dq_{e["id"]}" style="width:auto" {"checked" if r and r["dq"] else ""}>'
-        hl = f'{e["heat"] or ""}' + (f'/{e["lane"]}' if e["lane"] else "")
+        if e["heat"]:
+            hlcell = (f'<span class="muted">{e["heat"]}'
+                      + (f'/{e["lane"]}' if e["lane"] else "") + '</span>')
+        elif setup and draw_exists:
+            hlcell = (f'<span class="asln"><select data-eid="{e["id"]}">{_slot_opts_html}</select>'
+                      f'<button type="button" class="aslnbtn" data-eid="{e["id"]}">Assign</button></span>')
+        else:
+            hlcell = ""
         dtag = (f' <span class="pill">{me_div.get(e["meet_event_id"], "")}</span>'
                 if combined else "")
         delc = (f'<form class="inline" method="post" action="/entries/{e["id"]}/delete">'
                 f'<button class="danger">✕</button></form>' if setup else "")
         rows.append(
-            f'<tr><td>{place}</td><td class="muted">{hl}</td>'
+            f'<tr><td>{place}</td><td>{hlcell}</td>'
             f'<td><b>{escape(name)}</b>{f" #{bib}" if bib else ""}{dtag}<br>'
             f'<span class="muted">{escape(school or "")}</span></td>'
             f'<td>{mark_cell(e)}</td><td>{dqc}</td><td>{delc}</td></tr>')
@@ -2085,8 +2204,10 @@ async function postScan(n){{
                               'place (times stay, runners move). <b>DQ</b>/<b>DNF</b> pulls a runner from '
                               'the places (shown tagged on results); <b>Restore</b> undoes it.</p>'
                               + "".join(blocks) + _FO_CSS + _FO_JS + '</div>')
+    assign_ui = (_ASSIGN_CSS + _ASSIGN_JS) if (setup and draw_exists) else ""
     body = (f'<p class="muted"><a href="/meets/{me["meet_id"]}/meet-day">← Race day</a></p>'
-            f'<h1>{escape(ename)}</h1>{err}{field_note}{marks_form}{finish_reorder}{add}{tools}')
+            f'<h1>{escape(ename)}</h1>{err}{field_note}{marks_form}{finish_reorder}{add}{tools}'
+            f'{assign_ui}')
     return shell(g.principal, body, active="meets")
 
 
