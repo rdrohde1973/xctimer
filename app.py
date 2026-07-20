@@ -25,7 +25,7 @@ from .phone import bp as phone_bp
 from .waivers import bp as waivers_bp
 from .road import bp as road_bp
 
-APP_VERSION = "1.52.0-pocket-section"
+APP_VERSION = "1.53.0-cta-cleanup"
 
 LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width, initial-scale=1">
@@ -193,8 +193,8 @@ LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
        a junior high or middle school XC or track meet, start to finish, from a phone.
        No timing company. No big invoice.</p>
     <div class="cta">
-      <a class="btn" href="/login">Sign in</a>
-      <a class="btn ghost" href="#features">See what it does</a>
+      <a class="btn" href="#features">See what it does</a>
+      <a class="btn ghost" href="mailto:admin@xctimer.com?subject=XCTimer%20for%20our%20district">Get in touch</a>
     </div>
   </div>
   <div>
@@ -342,8 +342,8 @@ LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
   <p class="lead" style="margin:.4rem auto 1.4rem">School meet or community fun run — no timing
      company, no big invoice.</p>
   <div style="display:flex;gap:.8rem;justify-content:center;flex-wrap:wrap">
-    <a class="btn" href="/login">Sign in</a>
-    <a class="btn ghost2" href="mailto:admin@xctimer.com?subject=XCTimer%20for%20our%20district">Get in touch</a>
+    <a class="btn" href="/host">🏁 Set up a fun run — $50</a>
+    <a class="btn ghost2" href="mailto:admin@xctimer.com?subject=XCTimer%20for%20our%20district">Bring XCTimer to your district</a>
   </div>
 </div></section>
 
