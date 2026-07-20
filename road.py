@@ -866,6 +866,38 @@ def register(token):
     return _reg_shell(m, inner)
 
 
+def _notify_registration(m, details):
+    """Email the operator when a runner self-registers for a community event.
+    Recipient defaults to rob@xctimer.com (override with XC_REG_NOTIFY)."""
+    to = os.environ.get("XC_REG_NOTIFY", "rob@xctimer.com")
+    if not to or not details:
+        return
+    conn = db.connect()
+    rname = {r["id"]: r["name"] for r in
+             conn.execute("SELECT id, name FROM races WHERE meet_id=?", (m["id"],)).fetchall()}
+    total = conn.execute("SELECT COUNT(*) FROM participants WHERE meet_id=?", (m["id"],)).fetchone()[0]
+    conn.close()
+    base = os.environ.get("XC_PUBLIC_URL", "https://xctimer.com")
+    rows = "".join(
+        f"<tr><td>#{b}</td><td>{escape(nm)}</td><td>{escape(rname.get(rid, '—'))}</td>"
+        f"<td>{age if age is not None else '—'}</td><td>{escape(g or '—')}</td>"
+        f"<td>{escape(city or '—')}</td><td>{escape(club or '—')}</td></tr>"
+        for (b, nm, rid, age, g, city, club) in details)
+    n = len(details)
+    html = (
+        f"<h2 style='margin:0 0 .4rem'>New registration — {escape(m['name'])}</h2>"
+        f"<p>{n} runner{'s' if n != 1 else ''} just registered "
+        f"({total} total on this event).</p>"
+        f"<table style='border-collapse:collapse' border='1' cellpadding='6'>"
+        f"<tr style='background:#f0f2f5'><th>Bib</th><th>Name</th><th>Race</th>"
+        f"<th>Age</th><th>Sex</th><th>City</th><th>Club</th></tr>{rows}</table>"
+        f"<p style='margin-top:1rem'><a href='{base}/meets/{m['id']}/participants'>"
+        f"View all participants →</a></p>")
+    subj = f"New registration — {m['name']} ({n} runner{'s' if n != 1 else ''})"
+    from .auth import send_email
+    send_email(to, subj, html)
+
+
 @bp.post("/register/<token>")
 def register_post(token):
     m = _event_by_token(token)
@@ -887,6 +919,7 @@ def register_post(token):
     valid_races = {r[0] for r in conn.execute("SELECT id FROM races WHERE meet_id=?", (m["id"],)).fetchall()}
     nextbib = _next_bib(conn, m["id"])
     created = []
+    details = []
     # PAYMENT HOOK: when online payment is added, this loop runs only after a
     # successful charge (Stripe checkout session) and sets paid=1 on the created rows.
     for i, raw in enumerate(names[:25]):   # cap per submission
@@ -907,6 +940,7 @@ def register_post(token):
                 "INSERT INTO participants (meet_id, race_id, bib, name, age, gender, city, club, paid) "
                 "VALUES (?,?,?,?,?,?,?,?,?)", (m["id"], race_id, bib, name, age, gender, city, club, paid))
             created.append((bib, name))
+            details.append((bib, name, race_id, age, gender, city, club))
         except Exception:
             nextbib -= 1
     conn.commit()
@@ -915,6 +949,11 @@ def register_post(token):
     if not created:
         return _reg_shell(m, '<div class="card">Please enter at least one runner\'s name. '
                              f'<a href="/register/{escape(token)}">Back</a></div>'), 200
+
+    try:                       # notify the operator a registration came in (best-effort)
+        _notify_registration(m, details)
+    except Exception:  # noqa: BLE001
+        pass
     rname = {r[0]: r[1] for r in db.connect().execute("SELECT id,name FROM races WHERE meet_id=?", (m["id"],)).fetchall()}
     rows = "".join(f'<li><b>Bib #{b}</b> — {escape(nm)}</li>' for b, nm in created)
     total = fee * len(created)
