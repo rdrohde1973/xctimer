@@ -955,8 +955,10 @@ def meet_stickers(mid):
     groups = _sticker_groups(mid, with_events=(m["sport"] == "track"),
                              fill_to=pdfs.per_page(template), code=code,
                              extra_blanks=pdfs.per_page(template))   # + one logo-less blank sheet
-    # QR/ArUco encodes just the bib number (no URL).
-    pdf = pdfs.meet_stickers_pdf(groups, template=template, qr_prefix="")
+    # QR/ArUco encodes just the bib number; ArUco stickers add a live-results QR.
+    base = os.environ.get("XC_PUBLIC_URL", request.host_url.rstrip("/"))
+    results_url = f"{base}/r/{m['public_token']}" if m["public_token"] else None
+    pdf = pdfs.meet_stickers_pdf(groups, template=template, qr_prefix="", results_url=results_url)
     return Response(pdf, mimetype="application/pdf",
                     headers={"Content-Disposition": 'inline; filename="meet-stickers.pdf"'})
 
@@ -1000,7 +1002,9 @@ def school_meet_stickers(mid, sid):
     code = "aruco" if request.args.get("code") == "aruco" else None
     groups = _sticker_groups(mid, with_events=(m["sport"] == "track"),
                              fill_to=pdfs.per_page(template), only_sid=sid, code=code)
-    pdf = pdfs.meet_stickers_pdf(groups, template=template, qr_prefix="")
+    base = os.environ.get("XC_PUBLIC_URL", request.host_url.rstrip("/"))
+    results_url = f"{base}/r/{m['public_token']}" if m["public_token"] else None
+    pdf = pdfs.meet_stickers_pdf(groups, template=template, qr_prefix="", results_url=results_url)
     return Response(pdf, mimetype="application/pdf",
                     headers={"Content-Disposition": 'inline; filename="school-stickers.pdf"'})
 

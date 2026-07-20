@@ -25,6 +25,36 @@ def _logo_reader(logo_path):
             return None
     return None
 
+
+# "Powered by" wordmark logo shown on every sticker (cached ImageReader).
+_BRAND_LOGO_FILE = "/static/branding/xctimerdark.png"
+_brand_logo_box = {}
+
+
+def _brand_logo():
+    if "img" not in _brand_logo_box:
+        _brand_logo_box["img"] = _logo_reader(_BRAND_LOGO_FILE)
+    return _brand_logo_box["img"]
+
+
+def _draw_brand_logo(c, ax, y, max_w, max_h, center=True):
+    """Draw the xctimer wordmark fitting within (max_w x max_h), preserving aspect.
+    `y` = bottom edge; `ax` = center-x if center else left-x. Returns True if drawn."""
+    img = _brand_logo()
+    if img is None:
+        return False
+    try:
+        iw, ih = img.getSize()
+        if not iw or not ih:
+            return False
+        scale = min(max_w / iw, max_h / ih)
+        w, h = iw * scale, ih * scale
+        x = (ax - w / 2) if center else ax
+        c.drawImage(img, x, y, w, h, preserveAspectRatio=True, mask="auto")
+        return True
+    except Exception:  # noqa: BLE001
+        return False
+
 # Avery label geometry (US Letter), in inches: (cols, rows, label_w, label_h,
 # top_margin, side_margin, pitch_x, pitch_y).
 TEMPLATES = {
@@ -171,8 +201,10 @@ def blank_fillers(used_bibs, bib_start, bib_end, need):
     return out
 
 
-def bib_stickers_pdf(school_name, athletes, *, template="5160", qr_prefix="", logo_path=None):
-    """Avery label sheet for one school: logo + bib + name + school + QR."""
+def bib_stickers_pdf(school_name, athletes, *, template="5160", qr_prefix="", logo_path=None,
+                     results_url=None):
+    """Avery label sheet: logo + bib + name + 'Powered by XCTimer' + code. ArUco
+    stickers also carry a small QR to the meet's live-results page."""
     t = TEMPLATES.get(template, TEMPLATES["5160"])
     buf = io.BytesIO()
     c = pdfcanvas.Canvas(buf, pagesize=letter)
@@ -184,7 +216,7 @@ def bib_stickers_pdf(school_name, athletes, *, template="5160", qr_prefix="", lo
         slot = i % per_page
         if i and slot == 0:
             c.showPage()
-        _draw_label(c, t, slot, ph, a, school_name, qr_prefix, logo)
+        _draw_label(c, t, slot, ph, a, school_name, qr_prefix, logo, results_url)
     c.showPage()
     c.save()
     buf.seek(0)
@@ -410,33 +442,58 @@ def _fit_text(c, text, font, size, max_w, min_size=6):
     return text, size
 
 
-def _draw_label_xc(c, x, y_top, lw, lh, a, school_name, qr_prefix, logo):
-    """XC / no-event sticker: full-height logo left, BIG centered bib, name and
-    school stacked below, QR right. The classic layout."""
+def _draw_label_xc(c, x, y_top, lw, lh, a, school_name, qr_prefix, logo, results_url=None):
+    """XC / no-event sticker: full-height logo left, BIG centered bib, name and a
+    'Powered by XCTimer' line below, camera/QR code right. ArUco stickers also carry a
+    small QR to the meet's live-results page beneath the tag."""
     pad = 0.06 * lh
     bottom = y_top - lh
-    content_l = x + pad
-    if logo is not None:                       # full-height mascot on the left
-        logo_w = 0.28 * lw
-        try:
-            c.drawImage(logo, x + pad, bottom + pad, logo_w, lh - 2 * pad,
-                        preserveAspectRatio=True, anchor="w", mask="auto")
-            content_l = x + pad + logo_w + 0.06 * inch
-        except Exception:  # noqa: BLE001
-            pass
-    qr_sz = min(lh - 2 * pad, 0.30 * lw)
-    qr_x = x + lw - pad - qr_sz
     code = a.get("code") if isinstance(a, dict) else None
-    if code == "aruco" and isinstance(a["bib"], int) and a["bib"] <= 1023:
-        # Camera-readable ArUco tag instead of the QR (bib IS the tag id).
+    is_aruco = code == "aruco" and isinstance(a["bib"], int) and a["bib"] <= 1023
+    results_qr = bool(is_aruco and results_url and lh >= 1.4 * inch)
+    content_l = x + pad
+    if results_qr:
+        # Left column: event logo top-left, live-results QR centered below it.
+        left_w = min(0.82 * inch, 0.24 * lw)
+        lx = x + pad
+        if logo is not None:
+            try:
+                c.drawImage(logo, lx, y_top - pad - 0.40 * lh, left_w, 0.40 * lh,
+                            preserveAspectRatio=True, anchor="nw", mask="auto")
+            except Exception:  # noqa: BLE001
+                pass
+        rq = min(left_w, 0.30 * lh)
+        c.drawImage(_qr_image(results_url), lx + (left_w - rq) / 2, bottom + 0.13 * lh,
+                    rq, rq, preserveAspectRatio=True, mask="auto")
+        c.setFont("Helvetica", min(lh * 0.06, 5.5))
+        c.setFillGray(0.5)
+        c.drawCentredString(lx + left_w / 2, bottom + 0.04 * lh, "LIVE RESULTS")
+        c.setFillGray(0)
+        content_l = lx + left_w + 0.08 * inch
+        # ArUco (camera) tag on the right, vertically centered.
+        qr_sz = min(lh - 2 * pad, 0.30 * lw)
+        qr_x = x + lw - pad - qr_sz
         draw_aruco(c, qr_x, bottom + (lh - qr_sz) / 2, qr_sz, a["bib"])
     else:
-        qr_text = f"{qr_prefix}{a['bib']}" if qr_prefix else str(a["bib"])
-        try:
-            c.drawImage(_qr_image(qr_text), qr_x, bottom + (lh - qr_sz) / 2,
-                        qr_sz, qr_sz, preserveAspectRatio=True, mask="auto")
-        except Exception:  # noqa: BLE001
-            pass
+        if logo is not None:                       # full-height mascot on the left
+            logo_w = 0.28 * lw
+            try:
+                c.drawImage(logo, x + pad, bottom + pad, logo_w, lh - 2 * pad,
+                            preserveAspectRatio=True, anchor="w", mask="auto")
+                content_l = x + pad + logo_w + 0.06 * inch
+            except Exception:  # noqa: BLE001
+                pass
+        qr_sz = min(lh - 2 * pad, 0.30 * lw)
+        qr_x = x + lw - pad - qr_sz
+        if is_aruco:
+            draw_aruco(c, qr_x, bottom + (lh - qr_sz) / 2, qr_sz, a["bib"])
+        else:
+            qr_text = f"{qr_prefix}{a['bib']}" if qr_prefix else str(a["bib"])
+            try:
+                c.drawImage(_qr_image(qr_text), qr_x, bottom + (lh - qr_sz) / 2,
+                            qr_sz, qr_sz, preserveAspectRatio=True, mask="auto")
+            except Exception:  # noqa: BLE001
+                pass
     content_r = qr_x - 0.05 * inch
     cx = (content_l + content_r) / 2
     mw = max(0.4 * inch, content_r - content_l)
@@ -450,24 +507,26 @@ def _draw_label_xc(c, x, y_top, lw, lh, a, school_name, qr_prefix, logo):
     c.setFont("Helvetica-Bold", nsz)
     c.setFillGray(0.1)
     c.drawCentredString(cx, bottom + lh * 0.26, ntext)
-    if school_name:
-        stext, ssz = _fit_text(c, school_name, "Helvetica", min(lh * 0.13, 10), mw)
-        c.setFont("Helvetica", ssz)
-        c.setFillGray(0.42)
-        c.drawCentredString(cx, bottom + lh * 0.09, stext)
+    # 'Powered by' wordmark logo (falls back to text if the asset is missing).
+    if not _draw_brand_logo(c, cx, bottom + lh * 0.05, mw * 0.85, min(lh * 0.15, 0.17 * inch)):
+        btext, bsz = _fit_text(c, "Powered by XCTimer", "Helvetica", min(lh * 0.11, 8), mw)
+        c.setFont("Helvetica", bsz)
+        c.setFillGray(0.5)
+        c.drawCentredString(cx, bottom + lh * 0.09, btext)
     c.setFillGray(0)
 
 
-def _draw_label(c, t, slot, ph, a, school_name, qr_prefix, logo=None):
+def _draw_label(c, t, slot, ph, a, school_name, qr_prefix, logo=None, results_url=None):
     """One sticker. No events (XC) -> big centered-bib layout; with events (track)
-    -> big bib top-left + name/school beside + event lines below. QR of the bib."""
+    -> big bib top-left + name beside + event lines below + 'Powered by XCTimer'.
+    ArUco stickers also carry a small live-results QR."""
     col = slot % t["cols"]
     row = slot // t["cols"]
     x = t["side"] * inch + col * t["px"] * inch
     y_top = ph - t["top"] * inch - row * t["py"] * inch
     lw, lh = t["lw"] * inch, t["lh"] * inch
     if not (a.get("events") if isinstance(a, dict) else None):
-        _draw_label_xc(c, x, y_top, lw, lh, a, school_name, qr_prefix, logo)
+        _draw_label_xc(c, x, y_top, lw, lh, a, school_name, qr_prefix, logo, results_url)
         return
     pad = 0.07 * inch
     top = y_top - pad
@@ -520,11 +579,13 @@ def _draw_label(c, t, slot, ph, a, school_name, qr_prefix, logo=None):
     c.setFont("Helvetica-Bold", nsz)
     c.setFillColorRGB(*NAVY)
     c.drawString(name_x, top - nsz, ntext)
-    if school_name:
-        stext, ssz = _fit_text(c, school_name, "Helvetica", min(lh * 0.13, 9.5), name_w)
-        c.setFont("Helvetica", ssz)
-        c.setFillGray(0.45)
-        c.drawString(name_x, top - nsz - ssz - 0.03 * inch, stext)
+    # 'Powered by' wordmark logo under the name (text fallback if asset missing).
+    bh = min(lh * 0.13, 0.15 * inch)
+    if not _draw_brand_logo(c, name_x, top - nsz - 0.02 * inch - bh, name_w * 0.8, bh, center=False):
+        btext, bsz = _fit_text(c, "Powered by XCTimer", "Helvetica", min(lh * 0.12, 8.5), name_w)
+        c.setFont("Helvetica", bsz)
+        c.setFillGray(0.5)
+        c.drawString(name_x, top - nsz - bsz - 0.03 * inch, btext)
 
     # Body: event lines, left-aligned under the bib.
     events = a.get("events") if isinstance(a, dict) else None
@@ -548,10 +609,19 @@ def _draw_label(c, t, slot, ph, a, school_name, qr_prefix, logo=None):
             c.setFillGray(0)
             c.drawString(content_l, cursor, etext)
             cursor -= line_gap
+    # ArUco stickers: small live-results QR bottom-right, beneath the tag.
+    if code == "aruco" and results_url and lh >= 1.4 * inch:
+        rq = min(0.30 * lh, 0.55 * inch)
+        rq_x = x + lw - pad - rq
+        c.drawImage(_qr_image(results_url), rq_x, bottom + 0.02 * inch,
+                    rq, rq, preserveAspectRatio=True, mask="auto")
+        c.setFont("Helvetica", 5.5)
+        c.setFillGray(0.5)
+        c.drawCentredString(rq_x + rq / 2, bottom - 0.06 * inch, "LIVE RESULTS")
     c.setFillGray(0)
 
 
-def meet_stickers_pdf(groups, *, template="5160", qr_prefix=""):
+def meet_stickers_pdf(groups, *, template="5160", qr_prefix="", results_url=None):
     """Meet-wide sticker sheets. `groups` = list of (school_name, logo_path, athletes).
     Each school starts on a fresh sheet (no two schools share one)."""
     t = TEMPLATES.get(template, TEMPLATES["5160"])
@@ -569,7 +639,7 @@ def meet_stickers_pdf(groups, *, template="5160", qr_prefix=""):
             slot = i % per_page
             if i and slot == 0:
                 c.showPage()
-            _draw_label(c, t, slot, ph, a, school_name, qr_prefix, logo)
+            _draw_label(c, t, slot, ph, a, school_name, qr_prefix, logo, results_url)
         c.showPage()  # next school on a clean sheet
         drew = True
     if not drew:
@@ -689,9 +759,10 @@ def draw_aruco(c, x, y, size, marker_id):
                        cell, cell, stroke=0, fill=1)
 
 
-def road_tag_sheet_pdf(event_name, participants):
+def road_tag_sheet_pdf(event_name, participants, *, results_url=None):
     """Camera-timing tag sheet: one large ArUco tag + bib + name per cell (2x3 per
-    letter page). Prototype for pin-on bibs — tag-forward so the camera reads it."""
+    letter page). Prototype for pin-on bibs — tag-forward so the camera reads it.
+    Carries a 'Powered by XCTimer' line and (with results_url) a live-results QR."""
     buf = io.BytesIO()
     c = pdfcanvas.Canvas(buf, pagesize=letter)
     pw, ph = letter
@@ -723,6 +794,21 @@ def road_tag_sheet_pdf(event_name, participants):
         c.setFillColorRGB(0.55, 0.55, 0.55)
         c.setFont("Helvetica", 8)
         c.drawCentredString(cx, top - 0.35 * inch - tag - 1.05 * inch, event_name or "")
+        # Live-results QR to the left of the tag, mid-height (bib <=1023 tags only).
+        if results_url and p["bib"] <= 1023:
+            rq = 0.8 * inch
+            rq_x = col * cw + 0.14 * inch
+            rq_y = top - 0.35 * inch - tag / 2 - rq / 2
+            c.drawImage(_qr_image(results_url), rq_x, rq_y, rq, rq,
+                        preserveAspectRatio=True, mask="auto")
+            c.setFillColorRGB(0.5, 0.5, 0.5)
+            c.setFont("Helvetica", 7)
+            c.drawCentredString(rq_x + rq / 2, rq_y - 0.13 * inch, "LIVE RESULTS")
+        if not _draw_brand_logo(c, cx, top - 0.35 * inch - tag - 1.40 * inch,
+                                1.7 * inch, 0.17 * inch):
+            c.setFillColorRGB(0.6, 0.6, 0.6)
+            c.setFont("Helvetica", 7)
+            c.drawCentredString(cx, top - 0.35 * inch - tag - 1.22 * inch, "Powered by XCTimer")
     c.showPage()
     c.save()
     buf.seek(0)

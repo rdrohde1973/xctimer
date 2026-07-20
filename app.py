@@ -25,7 +25,7 @@ from .phone import bp as phone_bp
 from .waivers import bp as waivers_bp
 from .road import bp as road_bp
 
-APP_VERSION = "1.55.0-orange-i"
+APP_VERSION = "1.57.0-sticker-logo-cta"
 
 LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width, initial-scale=1">
@@ -343,7 +343,7 @@ LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
       <li><span class="ck">✓</span> Results by gender &amp; age group — bracketed however you like</li>
       <li><span class="ck">✓</span> Phone or robot-vision camera timing, with live results for the crowd</li>
     </ul>
-    <a class="btn" href="/host" style="margin-top:1.2rem">🏁 Set up your own fun run — $50</a>
+    <a class="btn" href="/host" style="margin-top:1.2rem">🏁 Set up your own fun run</a>
   </div>
   <div>
     <div class="frcard">
@@ -365,7 +365,7 @@ LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
   <p class="lead" style="margin:.4rem auto 1.4rem">School meet or community fun run — no timing
      company, no big invoice.</p>
   <div style="display:flex;gap:.8rem;justify-content:center;flex-wrap:wrap">
-    <a class="btn" href="/host">🏁 Set up a fun run — $50</a>
+    <a class="btn" href="/host">🏁 Set up a fun run</a>
     <a class="btn ghost2" href="mailto:admin@xctimer.com?subject=XCTimer%20for%20our%20district">Bring XCTimer to your district</a>
   </div>
 </div></section>

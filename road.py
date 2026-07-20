@@ -724,7 +724,10 @@ def participant_stickers(mid):
     for _ in range(spares):    # blank stickers (number + code, no name) to hand-write walk-ups
         athletes.append({"bib": nextspare, "name": "", "code": code})
         nextspare += 1
-    data = pdfs.bib_stickers_pdf(m["name"], athletes, template=template, logo_path=s.get("event_logo"))
+    base = os.environ.get("XC_PUBLIC_URL", request.host_url.rstrip("/"))
+    results_url = f"{base}/r/{m['public_token']}" if m["public_token"] else None
+    data = pdfs.bib_stickers_pdf(m["name"], athletes, template=template,
+                                 logo_path=s.get("event_logo"), results_url=results_url)
     fname = (m["name"] or "stickers").replace(" ", "_")
     return Response(data, mimetype="application/pdf",
                     headers={"Content-Disposition": f'inline; filename="{fname}-stickers.pdf"',
@@ -952,7 +955,9 @@ def participant_tags(mid):
         (mid,)).fetchall()
     conn.close()
     from . import pdfs
-    data = pdfs.road_tag_sheet_pdf(m["name"], [dict(p) for p in ps])
+    base = os.environ.get("XC_PUBLIC_URL", request.host_url.rstrip("/"))
+    results_url = f"{base}/r/{m['public_token']}" if m["public_token"] else None
+    data = pdfs.road_tag_sheet_pdf(m["name"], [dict(p) for p in ps], results_url=results_url)
     fname = (m["name"] or "tags").replace(" ", "_")
     return Response(data, mimetype="application/pdf",
                     headers={"Content-Disposition": f'inline; filename="{fname}-camera-tags.pdf"',
