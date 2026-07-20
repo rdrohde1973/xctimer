@@ -25,7 +25,7 @@ from .phone import bp as phone_bp
 from .waivers import bp as waivers_bp
 from .road import bp as road_bp
 
-APP_VERSION = "1.53.0-cta-cleanup"
+APP_VERSION = "1.54.0-district-section"
 
 LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width, initial-scale=1">
@@ -305,6 +305,29 @@ LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
     <div><b>3 kids</b><span>XC &amp; track athletes</span></div>
     <div><b>1 phone</b><span>is all it takes</span></div>
   </div>
+</div></section>
+
+<section id="district"><div class="wrap">
+  <span class="kicker">🏫 Districts — better together</span>
+  <h2>One platform for the whole district.</h2>
+  <p class="lead">When every school hosts on its own timing system, every meet is a fresh
+  start — retyped rosters, emailed entry sheets, helpers relearning the tools, and gear bought
+  twice. Put the whole district on one platform and each meet gets easier than the last.</p>
+  <div class="grid">
+    <div class="card"><div class="ic">🗂️</div><h3>One roster, entered once</h3>
+      <p>Every school keeps its roster in one place — the host never retypes a visiting team, and bibs print from the same pool at every meet.</p></div>
+    <div class="card"><div class="ic">📶</div><h3>Seeded heats from real marks</h3>
+      <p>Season bests from every district meet feed the draw — heats seed themselves with real times, not guesses.</p></div>
+    <div class="card"><div class="ic">🤝</div><h3>Help that travels</h3>
+      <p>Coaches and parent helpers learn one system. At any school's meet, anyone can tap times, scan bibs, or run a pit — no retraining.</p></div>
+    <div class="card"><div class="ic">✍️</div><h3>Coaches enter their own athletes</h3>
+      <p>Visiting coaches declare their own entries from their phone — no entry sheets emailed to the host the night before.</p></div>
+    <div class="card"><div class="ic">🏅</div><h3>District records &amp; season stats</h3>
+      <p>PRs, progress cards, season points, and a district record board build automatically across every meet — and AI can answer questions about all of it.</p></div>
+    <div class="card"><div class="ic">👨‍👩‍👧</div><h3>One experience for families</h3>
+      <p>The same live results page at every meet — parents learn it once and follow every race, all season, at every school.</p></div>
+  </div>
+  <p style="margin-top:1.6rem"><a class="btn ghost2" href="mailto:admin@xctimer.com?subject=XCTimer%20for%20our%20district">Bring XCTimer to your district</a></p>
 </div></section>
 
 <section id="funrun"><div class="wrap split">
