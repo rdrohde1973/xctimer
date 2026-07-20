@@ -25,7 +25,7 @@ from .phone import bp as phone_bp
 from .waivers import bp as waivers_bp
 from .road import bp as road_bp
 
-APP_VERSION = "1.54.0-district-section"
+APP_VERSION = "1.55.0-orange-i"
 
 LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width, initial-scale=1">
@@ -55,7 +55,7 @@ LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
       border-bottom:1px solid rgba(255,255,255,.08)}
   nav .wrap{display:flex;align-items:center;justify-content:space-between;height:60px}
   .wordmark{font-weight:800;font-size:1.25rem;letter-spacing:-.02em}
-  .wordmark .bx{color:var(--orange)}
+  .wordmark .bx,.wordmark .bi{color:var(--orange)}
   .wordmark .bt{color:#fff}
   .wordmark .bd{color:#7f93a8;font-size:.85em;font-weight:700}
   nav a.signin{font-weight:700;color:#fff;padding:.45rem 1.1rem;border-radius:9px;
@@ -181,7 +181,7 @@ LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
 </style></head><body>
 
 <nav><div class="wrap">
-  <span class="wordmark"><span class="bx">xc</span><span class="bt">timer</span><span class="bd">.com</span></span>
+  <span class="wordmark"><span class="bx">xc</span><span class="bt">t<span class="bi">i</span>mer</span><span class="bd">.com</span></span>
   <a class="signin" href="/login">Sign in</a>
 </div></nav>
 
