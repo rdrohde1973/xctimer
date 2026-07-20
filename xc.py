@@ -2510,9 +2510,11 @@ const DW=/Mobi|iPhone|Android.*Mobile/.test(navigator.userAgent)?640:960;
 let SEEN=new Set(), DET=null, VID=null, CAN=null, CTX=null, RUNNING=false, LOGN=0, CAPMODE='';
 // Whole frame removed: default to Chute scan for tap-then-scan races, Finish line otherwise.
 const RACE_CAP='__CAPMODE__';   // this race's capture_mode ('tap'/'tapselect'/'scan'; '' = whole-event)
-const DEF_MODE=(RACE_CAP==='tap'||RACE_CAP==='tapselect')?'chute':'line';
+const DEF_MODE=MEET?'chute':((RACE_CAP==='tap'||RACE_CAP==='tapselect')?'chute':'line');
 let _sm=localStorage.getItem('camM'+RID); if(_sm==='frame')_sm=null;   // drop stale 'frame' preference
-let MODE=_sm||DEF_MODE,
+// Whole-event camera ALWAYS records on sight (one handheld scanner routes each bib to its
+// own race) — a single crossing-line is meaningless across races with different starts.
+let MODE=MEET?'chute':(_sm||DEF_MODE),
     ORIENT=localStorage.getItem('camO'+RID)||'h',   // 'h' horizontal line / 'v' vertical line
     LINEP=parseFloat(localStorage.getItem('camP'+RID)||'0.55'),
     DIR=parseInt(localStorage.getItem('camD'+RID)||'1',10),
@@ -2531,13 +2533,16 @@ function updUi(){
   document.getElementById('mChute').className = MODE==='chute'?'':'ghost';
   [1,2,3].forEach(function(z){ var el=document.getElementById('z'+z); if(el) el.className=(ZOOM==z?'':'ghost'); });
   applyZoom();
-  document.getElementById('mChute').style.display = MEET?'none':'';   // chute fill is per-race
+  document.getElementById('mChute').style.display = '';   // on-sight scan: meet + per-race
+  if(MEET){ document.getElementById('mChute').textContent = '📷 Scan on sight';
+            document.getElementById('mLine').style.display = 'none'; }   // no line for a multi-race scanner
   document.getElementById('dirbtn').style.display = MODE==='line'?'':'none';
   document.getElementById('orbtn').style.display = MODE==='line'?'':'none';
   document.getElementById('orbtn').textContent = ORIENT==='h'?'⇔ Horizontal':'⇕ Vertical';
   document.getElementById('dirbtn').textContent = 'Cross '+dirArrow();
   var hint;
   if(MODE==='line') hint='Camera must be STILL (tripod). Drag the orange line onto the painted finish line — a runner records the moment their tag crosses it in the arrow ('+dirArrow()+') direction. Use ⇔/⇕ to match how runners cross the frame.';
+  else if(MEET) hint='SCAN ON SIGHT: aim at each finisher — the bib records to whichever race that runner registered for, timed from that race start. Handheld OK, no line to cross. Start each race first.';
   else hint='CHUTE SCAN: a helper taps each runner at the LINE (records time + order); this camera reads each tag on sight and fills the next open place in order — works during the race AND after Stop. Handheld OK. Race must be in “Tap then scan”.';
   document.getElementById('chint').textContent = hint;
 }
