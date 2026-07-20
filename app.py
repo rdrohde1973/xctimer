@@ -25,7 +25,7 @@ from .phone import bp as phone_bp
 from .waivers import bp as waivers_bp
 from .road import bp as road_bp
 
-APP_VERSION = "1.51.1-landing-refresh"
+APP_VERSION = "1.52.0-pocket-section"
 
 LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width, initial-scale=1">
@@ -91,10 +91,13 @@ LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
   h2{font-size:clamp(1.4rem,3.2vw,1.9rem);color:var(--ink);letter-spacing:-.01em;margin:.2em 0 .45em}
   .lead{font-size:1.1rem;color:#4a5766;max-width:62ch}
   .split{display:grid;grid-template-columns:1fr 1fr;gap:2.6rem;align-items:center}
-  /* the difference */
-  .contrast{background:var(--bg);border:1px solid var(--line);border-radius:16px;padding:1.5rem 1.7rem}
-  .contrast .row{display:flex;gap:.7rem;padding:.45rem 0;align-items:flex-start}
-  .x{color:#c0483f;font-weight:800}.ok{color:var(--green);font-weight:800}
+  /* already in your pocket */
+  .pocket{background:var(--bg);border:1px solid var(--line);border-radius:16px;padding:1.4rem 1.6rem}
+  .pocket h3{margin:0 0 .5rem;color:var(--ink);font-size:1.08rem}
+  .pocket .row{display:flex;gap:.7rem;padding:.5rem 0;align-items:flex-start}
+  .pocket .ok{color:var(--green);font-weight:800;flex-shrink:0}
+  .pocket .row b{color:var(--ink)}
+  .pocket .row .was{display:block;color:var(--gray);font-size:.85rem}
   /* features */
   #features{background:var(--bg);border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
   .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:1.1rem;margin-top:1.5rem}
@@ -211,18 +214,21 @@ LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
 
 <section id="diff"><div class="wrap split">
   <div>
-    <h2>Stop hiring a timing company.</h2>
-    <p class="lead">Timing a meet used to mean paying an outside company hundreds of dollars a
-    day — their gear, their staff, their schedule. XCTimer puts the entire meet in your own
-    hands, and any coach can run it.</p>
+    <h2>All the equipment you need is already in your pocket.</h2>
+    <p class="lead">Timing companies haul in trailers of expensive gear — chip mats, readers,
+    cameras, consoles — and bill you for it meet after meet. Your phone already has a camera,
+    a clock, and a screen. XCTimer puts them to work, and any coach can run it.</p>
   </div>
-  <div class="contrast">
-    <div class="row"><span class="x">✕</span><div>Hire a timing company and pay per meet</div></div>
-    <div class="row"><span class="ok">✓</span><div>Run it yourself — no vendor, no invoice</div></div>
-    <div class="row"><span class="x">✕</span><div>Wait on their crew and their timeline</div></div>
-    <div class="row"><span class="ok">✓</span><div>You're in control of your own meet day</div></div>
-    <div class="row"><span class="x">✕</span><div>Just a stopwatch-and-results service</div></div>
-    <div class="row"><span class="ok">✓</span><div>A full meet manager: rosters → results</div></div>
+  <div class="pocket">
+    <h3>📱 One phone replaces all of it</h3>
+    <div class="row"><span class="ok">✓</span><div><b>Robot-vision bib reading</b>
+      <span class="was">instead of chip mats &amp; readers</span></div></div>
+    <div class="row"><span class="ok">✓</span><div><b>Tap-to-time console on the screen</b>
+      <span class="was">instead of a trailer of timing gear</span></div></div>
+    <div class="row"><span class="ok">✓</span><div><b>Live results the whole crowd follows</b>
+      <span class="was">instead of printouts on a fence post</span></div></div>
+    <div class="row"><span class="ok">✓</span><div><b>Helpers join with a QR — no accounts</b>
+      <span class="was">instead of a hired timing crew</span></div></div>
   </div>
 </div></section>
 
