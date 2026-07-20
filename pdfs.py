@@ -27,7 +27,8 @@ def _logo_reader(logo_path):
 
 
 # "Powered by" wordmark logo shown on every sticker (cached ImageReader).
-_BRAND_LOGO_FILE = "/static/branding/xctimerdark.png"
+# Light-background wordmark (orange "xc" + dark "timer"), reads clean on white stickers.
+_BRAND_LOGO_FILE = "/static/branding/xctimer.png"
 _brand_logo_box = {}
 
 
