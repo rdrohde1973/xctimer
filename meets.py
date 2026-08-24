@@ -225,7 +225,7 @@ def list_meets():
     rows = [m for m in rows if can_view_meet(m)]
 
     show_d = p.is_super and did is None
-    show_x = p.is_admin   # super / district admin get a delete X per row
+    show_x = any(can_delete_meet(m) for m in rows)   # delete column if anything is deletable
     trs = []
     for m in rows:
         sport = {"xc": "🏃 XC", "track": "🎽 Track", "road": "🛣 Road"}.get(m["sport"], "🎽 Track")
@@ -280,6 +280,22 @@ def list_meets():
 </form></div>"""
     elif p.is_super and did is None:
         form = '<p class="muted">Pick a district in the header to create a meet.</p>'
+    elif p.role == "coach" and did is not None and p.school_ids():
+        form = f"""
+<div class="card"><h2>🕐 Set up a time trial</h2>
+<p class="muted" style="margin-top:0">A practice time trial for your own team — no other schools,
+no team scoring, kept off official results.</p>
+<form method="post" action="/meets">
+  <input type="hidden" name="time_trial" value="1">
+  <div class="row">
+    <div><label>Name</label><input name="name" placeholder="e.g. Tuesday Mile TT" required></div>
+    <div style="max-width:150px"><label>Sport</label>
+      <select name="sport"><option value="xc">Cross-country</option>
+      <option value="track">Track &amp; Field</option></select></div>
+    <div style="max-width:170px"><label>Date</label><input name="date" type="date" required></div>
+  </div>
+  <button type="submit" style="margin-top:1rem">Create time trial</button>
+</form></div>"""
 
     from .phone import _install_card
     body = (f"<h1>Meets</h1><p class='sub'>Cross-country &amp; track meets.</p>"
@@ -294,8 +310,11 @@ def create_meet():
     did = active_district_id()
     if did is None:
         abort(400)
-    if not p.is_admin:   # only super / district admins create meets
-        abort(403)
+    is_tt = bool(request.form.get("time_trial"))
+    if not p.is_admin:
+        # Coaches may create TIME TRIALS ONLY, for their own team.
+        if not (p.role == "coach" and is_tt):
+            abort(403)
     name = (request.form.get("name") or "").strip()
     allowed_sports = ("xc", "track") + (("road",) if _road_enabled(did) else ())
     sport = request.form.get("sport") if request.form.get("sport") in allowed_sports else "xc"
@@ -313,6 +332,11 @@ def create_meet():
     school_ids = [s for s in school_ids if s in valid]
     if host is not None and host not in valid:
         host = None
+    if not p.is_admin:                 # coach time trial: force own team, ignore submitted schools
+        coach_schools = sorted(p.school_ids())
+        if not coach_schools:
+            conn.close(); abort(403)
+        school_ids, host = coach_schools, coach_schools[0]
     cur = conn.execute(
         "INSERT INTO meets (district_id, sport, name, date, host_school_id, public_token) "
         "VALUES (?,?,?,?,?,?)",
@@ -351,6 +375,8 @@ def can_delete_meet(m):
     org = _meet_organizer_id(m)
     if org is not None:
         return p.is_super or getattr(p, "organizer_id", None) == org
+    if p.role == "coach" and ("time_trial" in m.keys() and m["time_trial"]):
+        return m["host_school_id"] in p.school_ids()
     return p.is_admin and (p.is_super or p.district_id == m["district_id"])
 
 
