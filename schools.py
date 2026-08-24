@@ -259,6 +259,8 @@ def delete_school(sid):
                      "(SELECT id FROM athletes WHERE school_id=?)", (sid,))
         conn.execute("DELETE FROM race_entries WHERE athlete_id IN "
                      "(SELECT id FROM athletes WHERE school_id=?)", (sid,))
+        conn.execute("DELETE FROM meet_bibs WHERE athlete_id IN "
+                     "(SELECT id FROM athletes WHERE school_id=?)", (sid,))
         conn.execute("UPDATE entries SET school_id=NULL WHERE school_id=?", (sid,))
         conn.execute("UPDATE meets SET host_school_id=NULL WHERE host_school_id=?", (sid,))
         conn.execute("DELETE FROM meet_schools WHERE school_id=?", (sid,))
@@ -761,6 +763,8 @@ def end_season(sid):
         conn.execute(f"UPDATE entries SET runner_id=NULL WHERE runner_id IN ({qm})", ids)
         # road event assignments reference athletes (FK) -> drop them
         conn.execute(f"DELETE FROM race_entries WHERE athlete_id IN ({qm})", ids)
+        # per-meet bib numbers reference athletes (FK) -> drop them too
+        conn.execute(f"DELETE FROM meet_bibs WHERE athlete_id IN ({qm})", ids)
         conn.execute(f"DELETE FROM athletes WHERE id IN ({qm})", ids)
     conn.commit()
     conn.close()
