@@ -471,6 +471,8 @@ def migrate(conn):
         conn.execute("ALTER TABLE meets ADD COLUMN team_scoring INTEGER DEFAULT 1")
     if "public_names" not in mcols:     # public results: 'full' | 'initials' | 'bib'
         conn.execute("ALTER TABLE meets ADD COLUMN public_names TEXT")
+    if "time_trial" not in mcols:       # practice time trial, not an official meet
+        conn.execute("ALTER TABLE meets ADD COLUMN time_trial INTEGER DEFAULT 0")
 
     fcols = _column_names(conn, "finishers")
     if "snap_age" not in fcols:          # road races: snapshot age for gender×age grouping

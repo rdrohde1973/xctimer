@@ -955,10 +955,21 @@ def race_eligible(rid):
         # Per-MEET bibs (meet_bibs), not the vestigial athletes.bib — newly rostered athletes
         # have no permanent bib, so the old join returned nothing for them (and stale numbers
         # for others). Must match _snap_for_bib/_athlete_for_bib, which resolve via meet_bibs.
+        # Seed the pick list fastest-first: order by each athlete's best prior time in a
+        # race of THIS name (so repeated time trials / same event compare like-for-like);
+        # athletes with no prior time fall to the bottom, alphabetical. Makes fast kids
+        # appear near the top so they are easy to tap as they cross.
         rows = conn.execute(
-            "SELECT mb.bib, a.name, a.grade, s.name AS sname FROM meet_bibs mb "
+            "SELECT mb.bib, a.name, a.grade, s.name AS sname, "
+            "(SELECT MIN(f.elapsed_seconds) FROM finishers f "
+            "   JOIN races r2 ON r2.id=f.race_id "
+            "   JOIN meet_bibs mb2 ON mb2.meet_id=r2.meet_id AND mb2.bib=f.bib "
+            "  WHERE mb2.athlete_id=a.id AND r2.name=? AND r2.id!=? "
+            "    AND f.elapsed_seconds IS NOT NULL) AS seed "
+            "FROM meet_bibs mb "
             "JOIN athletes a ON a.id=mb.athlete_id JOIN schools s ON s.id=a.school_id "
-            "WHERE mb.meet_id=? AND a.active=1 ORDER BY a.name", (m["id"],)).fetchall()
+            "WHERE mb.meet_id=? AND a.active=1 "
+            "ORDER BY (seed IS NULL), seed, a.name", (r["name"], rid, m["id"])).fetchall()
         for a in rows:
             if a["bib"] in used:
                 continue
@@ -1589,8 +1600,11 @@ def results_page(mid):
                f'<div><b>Public results</b><br>'
                f'<span class="muted">Scan to open the live public results page — share on the big screen '
                f'or a flyer.</span><br><a href="{url}" target="_blank">{escape(url)}</a></div></div>')
+    tt = ('<p class="muted">🕐 <b>Time trial</b> — practice results, not an official meet.</p>'
+          if ("time_trial" in m.keys() and m["time_trial"]) else '')
     body = (f'<p class="muted"><a href="/meets/{mid}">← {escape(m["name"])}</a></p>'
             f'<h1>{escape(m["name"])} — Results</h1>'
+            f'{tt}'
             f'{_xc_tabs(mid, "results", road=(m["sport"]=="road"), organizer=_is_org(m))}'
             f'<div class="row"><a class="btn ghost" href="/r/{m["public_token"]}" target="_blank">'
             f'Public page ↗</a> <a class="btn ghost" href="/meets/{mid}/results.xlsx">Export xlsx</a></div>'
@@ -2224,7 +2238,7 @@ main{{max-width:960px;margin:0 auto;padding:1.4rem 1rem 4rem}}
 </style></head><body>
 <div class="pubhdr">{_host_logo_tag(m)}</div>
 <main><h1>{escape(m['name'])}</h1>
-<p class="sub">🎽 Track · {escape(m['date'] or '')}</p>
+<p class="sub">🎽 Track · {escape(m['date'] or '')}{' · 🕐 Time trial' if ('time_trial' in m.keys() and m['time_trial']) else ''}</p>
 <div id="livebox"></div>
 <div id="timeline" class="tlwrap" style="display:none"></div>
 <div id="resultsbox">{inner}</div></main>

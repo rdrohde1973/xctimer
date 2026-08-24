@@ -229,6 +229,8 @@ def list_meets():
     trs = []
     for m in rows:
         sport = {"xc": "🏃 XC", "track": "🎽 Track", "road": "🛣 Road"}.get(m["sport"], "🎽 Track")
+        if "time_trial" in m.keys() and m["time_trial"]:
+            sport += ' <span style="background:#eaf3fb;color:#12385f;border-radius:6px;padding:.05rem .35rem;font-size:.72rem;font-weight:700">TT</span>' 
         dcol = f'<td>{escape(m["dname"])}</td>' if show_d else ""
         xcol = ""
         if show_x:
@@ -271,6 +273,9 @@ def list_meets():
   <label>Host school</label><select name="host_school_id">{host_opts}</select>
   <label>Attending schools</label>
   <div class="card" style="background:var(--panel2);max-height:180px;overflow:auto">{att or '<span class="muted">Add schools first.</span>'}</div>
+  <label style="display:flex;align-items:center;gap:.5rem;margin-top:.9rem;font-weight:400">
+    <input type="checkbox" name="time_trial" value="1" style="width:auto">
+    🕐 Time trial — practice only (your team, no team scoring, kept off official results)</label>
   <button type="submit" style="margin-top:1rem">Create meet</button>
 </form></div>"""
     elif p.is_super and did is None:
@@ -313,6 +318,8 @@ def create_meet():
         "VALUES (?,?,?,?,?,?)",
         (did, sport, name, date, host, secrets.token_urlsafe(8)))
     mid = cur.lastrowid
+    if request.form.get("time_trial"):
+        conn.execute("UPDATE meets SET time_trial=1, team_scoring=0 WHERE id=?", (mid,))
     for s in set(school_ids) | ({host} if host else set()):
         conn.execute("INSERT OR IGNORE INTO meet_schools (meet_id, school_id) VALUES (?,?)", (mid, s))
     assign_meet_bibs(conn, mid)     # per-meet bibs from 1 for the attending athletes
@@ -739,6 +746,8 @@ def meet_detail(mid):
     back_link = "/events" if is_org else "/meets"
     back_label = "← Events" if is_org else "← Meets"
     sub = f'{sport_label} · {escape(m["date"] or "")}'
+    if "time_trial" in m.keys() and m["time_trial"]:
+        sub += ' · 🕐 <b>Time trial</b> (practice)'
     if not is_org:
         sub += f' · host: {escape(host["name"]) if host else "—"}'
     body = f"""
