@@ -930,6 +930,21 @@ load();
     return shell(g.principal, body, active="meets")
 
 
+def _race_gender(name):
+    """Infer which gender a race is for from its name ("Boys", "Girls 2", "JV Boys").
+
+    Returns "M", "F", or None when the name doesn't say — a mixed/unnamed race
+    (or a road distance like "5K") stays unfiltered. Matches whole words only, so
+    "Women" can never be read as "men".
+    """
+    words = set("".join(c if c.isalpha() else " " for c in (name or "").lower()).split())
+    if words & {"girl", "girls", "women", "womens", "female", "females"}:
+        return "F"
+    if words & {"boy", "boys", "men", "mens", "male", "males"}:
+        return "M"
+    return None
+
+
 @bp.get("/races/<int:rid>/eligible")
 @login_required
 def race_eligible(rid):
@@ -960,7 +975,7 @@ def race_eligible(rid):
         # athletes with no prior time fall to the bottom, alphabetical. Makes fast kids
         # appear near the top so they are easy to tap as they cross.
         rows = conn.execute(
-            "SELECT mb.bib, a.name, a.grade, s.name AS sname, "
+            "SELECT mb.bib, a.name, a.grade, a.gender, s.name AS sname, "
             "(SELECT MIN(f.elapsed_seconds) FROM finishers f "
             "   JOIN races r2 ON r2.id=f.race_id "
             "   JOIN meet_bibs mb2 ON mb2.meet_id=r2.meet_id AND mb2.bib=f.bib "
@@ -970,8 +985,14 @@ def race_eligible(rid):
             "JOIN athletes a ON a.id=mb.athlete_id JOIN schools s ON s.id=a.school_id "
             "WHERE mb.meet_id=? AND a.active=1 "
             "ORDER BY (seed IS NULL), seed, a.name", (r["name"], rid, m["id"])).fetchall()
+        want = _race_gender(r["name"])
         for a in rows:
             if a["bib"] in used:
+                continue
+            # A Girls race lists girls, a Boys race lists boys. Races whose name says
+            # nothing about gender are unfiltered, and so is an athlete with no gender
+            # on file — nobody may become untappable while runners are crossing.
+            if want and a["gender"] and a["gender"] != want:
                 continue
             meta = " · ".join(x for x in (
                 (f'gr {a["grade"]}' if a["grade"] is not None else ""), (a["sname"] or "")) if x)
