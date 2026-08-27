@@ -186,12 +186,18 @@ def setup_section(m, setup):
     ts_toggle = ""
     add = ""
     if setup:
-        chk = "checked" if m["team_scoring"] else ""
-        ts_toggle = (
-            f'<form method="post" action="/meets/{m["id"]}/scoring" style="margin-bottom:.6rem">'
-            f'<label style="display:flex;gap:.5rem;align-items:center">'
-            f'<input type="checkbox" name="team_scoring" style="width:auto" {chk} onchange="this.form.submit()"> '
-            f'<b>Team scoring</b> <span class="muted">— adds team scores (top 5 per school) to results</span></label></form>')
+        # A time trial is practice for ONE team, so team points are meaningless: no toggle
+        # to switch on, and build_results refuses to score teams for it regardless.
+        if "time_trial" in m.keys() and m["time_trial"]:
+            ts_toggle = ('<p class="muted" style="margin-bottom:.6rem">🕐 <b>Time trial</b> — team scoring '
+                         'is off for practice meets, so results show individuals only.</p>')
+        else:
+            chk = "checked" if m["team_scoring"] else ""
+            ts_toggle = (
+                f'<form method="post" action="/meets/{m["id"]}/scoring" style="margin-bottom:.6rem">'
+                f'<label style="display:flex;gap:.5rem;align-items:center">'
+                f'<input type="checkbox" name="team_scoring" style="width:auto" {chk} onchange="this.form.submit()"> '
+                f'<b>Team scoring</b> <span class="muted">— adds team scores (top 5 per school) to results</span></label></form>')
         # One unified capture mode now (tap -> scan or select), so no picker at creation.
         add = (
             f'<form method="post" action="/meets/{m["id"]}/races" class="row" style="margin-top:.8rem">'
@@ -1519,9 +1525,10 @@ def build_results(mid):
     fins = [f for f in _meet_finishers(mid)
             if f["elapsed_seconds"] is not None]
     conn = db.connect()
-    ts = conn.execute("SELECT team_scoring FROM meets WHERE id=?", (mid,)).fetchone()
+    ts = conn.execute("SELECT team_scoring, time_trial FROM meets WHERE id=?", (mid,)).fetchone()
     conn.close()
-    team_on = bool(ts["team_scoring"]) if ts else True
+    # A time trial never scores teams whatever the stored flag says — practice, single team.
+    team_on = (bool(ts["team_scoring"]) and not ts["time_trial"]) if ts else True
     out = {}
     groups = {"M": [], "F": [], None: []}
     for f in fins:
@@ -1781,9 +1788,10 @@ def _team_grade_gender_groups(mid):
     Real jr-high XC runs grade-level races, so teams score per grade + gender —
     not lumped across all grades."""
     conn = db.connect()
-    ts = conn.execute("SELECT team_scoring FROM meets WHERE id=?", (mid,)).fetchone()
+    ts = conn.execute("SELECT team_scoring, time_trial FROM meets WHERE id=?", (mid,)).fetchone()
     conn.close()
-    team_on = bool(ts["team_scoring"]) if ts else True
+    # A time trial never scores teams whatever the stored flag says — practice, single team.
+    team_on = (bool(ts["team_scoring"]) and not ts["time_trial"]) if ts else True
     fins = [f for f in _meet_finishers(mid) if f["elapsed_seconds"] is not None]
     buckets = {}
     for f in fins:
@@ -1902,6 +1910,11 @@ def _public_xc(m, mode):
             f'<tr><th>Rank</th><th>School</th><th>Score</th><th>Top 5 (6th, 7th)</th></tr>'
             f'</thead><tbody>{trows}</tbody></table></div>')
     team = "".join(team_parts) or '<div class="sec"><h2>No complete teams yet (need 5+ per school in a grade)</h2></div>'
+    # A time trial scores no teams, so it gets NO Team tab at all — not an empty one
+    # saying "no complete teams yet", which reads like a meet that failed to score.
+    is_tt = bool(m["time_trial"]) if "time_trial" in m.keys() else False
+    team_tab = '' if is_tt else '<button class="tab" id="t-team" onclick="tab(&#39;team&#39;)">🏆 Team</button>'
+    team_pane = '' if is_tt else f'<div id="v-team" style="display:none">{team}</div>'
 
     sub = escape(m["date"] or "") + (f" · {status}" if status else "")
     return f"""<!doctype html><html lang=en><head><meta charset=utf-8>
@@ -1932,22 +1945,25 @@ def _public_xc(m, mode):
   <div class="tabs">
     <button class="tab on" id="t-overall" onclick="tab('overall')">📋 Overall</button>
     <button class="tab" id="t-grade" onclick="tab('grade')">🎽 Sorted</button>
-    <button class="tab" id="t-team" onclick="tab('team')">🏆 Team</button>
+    {team_tab}
   </div>
   <div id="v-overall">{overall}</div>
   <div id="v-grade" style="display:none">{grade}</div>
-  <div id="v-team" style="display:none">{team}</div>
+  {team_pane}
 </main>
 <footer class="pubfoot">{POWERED_BY_HTML}</footer>
 <script>
 function tab(n){{
   ['overall','grade','team'].forEach(function(k){{
-    document.getElementById('v-'+k).style.display = k===n?'':'none';
-    document.getElementById('t-'+k).className = 'tab'+(k===n?' on':'');
+    const v=document.getElementById('v-'+k), b=document.getElementById('t-'+k);
+    if(!v||!b) return;            // a time trial renders no Team tab
+    v.style.display = k===n?'':'none';
+    b.className = 'tab'+(k===n?' on':'');
   }});
   try{{ sessionStorage.setItem('xctab', n); }}catch(e){{}}
 }}
-try{{ const t=sessionStorage.getItem('xctab'); if(t) tab(t); }}catch(e){{}}
+// a remembered 'team' tab must not blank the page on a meet that has none
+try{{ const t=sessionStorage.getItem('xctab'); if(t&&document.getElementById('v-'+t)) tab(t); }}catch(e){{}}
 // ---- live 'now running' panel (race name + clock only) ----
 const LTOKEN=location.pathname.replace(/^\\/r\\//,'').split('/')[0];
 let LOFFSET=0, LTIMER=null;
@@ -2428,11 +2444,12 @@ def _results_workbook(mid, name_mode):
         for i in g_["individuals"]:
             ws.append([i["place"], fmt_time(i["time"]), None if name_mode else i["bib"],
                        demo.public_ident(i["name"], i["bib"], name_mode), i["school"], i["grade"], i["gender"]])
-        ws.append([])
-        ws.append(["Team Rank", "School", "Score", "Top-5 places"])
-        for t in g_["teams"]:
-            ws.append([t["rank"], t["school"], t["score"],
-                       " + ".join(str(p) for p in t["places"])])
+        if g_["teams"]:          # no empty "Team Rank" block when team scoring is off
+            ws.append([])
+            ws.append(["Team Rank", "School", "Score", "Top-5 places"])
+            for t in g_["teams"]:
+                ws.append([t["rank"], t["school"], t["score"],
+                           " + ".join(str(p) for p in t["places"])])
     if not any_tab:
         wb.create_sheet("Results").append(["No results yet"])
     buf = io.BytesIO()

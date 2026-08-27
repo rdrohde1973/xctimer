@@ -879,6 +879,8 @@ def set_scoring(mid):
     if not can_setup_meet(m):
         abort(403)
     ts = 1 if request.form.get("team_scoring") else 0
+    if "time_trial" in m.keys() and m["time_trial"]:
+        ts = 0      # practice, single team: team points stay off whatever is posted
     conn = db.connect()
     conn.execute("UPDATE meets SET team_scoring=? WHERE id=?", (ts, mid))
     conn.commit()
