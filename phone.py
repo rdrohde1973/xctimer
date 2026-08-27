@@ -270,7 +270,7 @@ def phone_race(rid):
     <button class="bigbtn tap" onclick="rec()">RECORD</button>
   </div>
   <div id="pickbox">
-    <div class="ph" id="pickhint">Tap a finisher above, then pick who it was (or 📷 to scan bibs)</div>
+    <div class="ph" id="pickhint">Tap a name as each runner crosses — or tap FINISHER first, then pick who it was (📷 scans bibs)</div>
     <input id="psearch" autocomplete="off" placeholder="search name…" oninput="renderElig()">
     <div id="plist" class="plist"></div>
   </div>
@@ -330,7 +330,8 @@ function renderElig(){{
   const open=openSlots().length;
   document.getElementById('pickhint').textContent = open
     ? (open+' open slot'+(open>1?'s':'')+' — tap the runner who crossed')
-    : 'Tap a finisher above, then select who it was';
+    : ((STARTED&&!STOPPED) ? 'Tap a name to finish them at the current time'
+                           : 'Tap a finisher above, then select who it was');
   const rows=ELIG.filter(r=>!q||(r.name||'').toLowerCase().indexOf(q)>=0);
   const el=document.getElementById('plist');
   if(!rows.length){{ el.innerHTML='<div class="empty">'+(ELIG.length?'No match.':'Everyone is recorded. 🎉')+'</div>'; return; }}
@@ -341,7 +342,15 @@ function renderElig(){{
 }}
 async function pick(bib){{
   const open=openSlots();
-  if(!open.length){{ buzz([60,60,60]); alert('Tap the finisher first, then select who it was.'); return; }}
+  // No open slot: the NAME is the record. Stamp a finish at the current race time and
+  // assign this runner to it in one tap — /races/<id>/finish falls through to a fresh
+  // finisher when nothing is open, so the tap-then-pick step is not needed to record.
+  if(!open.length){{
+    if(!STARTED||STOPPED){{ buzz([60,60,60]); alert('Race is not running — start it first.'); return; }}
+    try{{ const j=await jpost('/races/'+RID+'/finish',{{bib:bib}}); if(!(j&&j.duplicate)) buzz(35); }}
+    catch(e){{ buzz([60,60,60]); alert(e.message); }}
+    await load(); return;
+  }}
   try{{ await jpost('/finishers/'+open[0].id+'/bib',{{bib:bib}}); buzz(35); }}   // no popup on unregistered
   catch(e){{ alert(e.message); }}
   await load();
