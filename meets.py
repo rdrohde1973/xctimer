@@ -448,8 +448,18 @@ def bibs_locked(m):
 
 
 def _day_url(m, mid):
-    """The meet-day page for this sport (track has its own)."""
-    return f"/meets/{mid}/meet-day" if m["sport"] == "track" else f"{day}"
+    """The meet-day page for this sport (track has its own).
+
+    The XC branch used to read `f"{day}"` — a leftover from the sport-aware refactor
+    (bf5d37c) that referenced a local no longer in scope, so EVERY xc/road walk-up add
+    or delete raised NameError and 500'd before doing anything. Fell back to the roster
+    page in the field, which auto-numbers and does not match the bibs handed out.
+    """
+    if m["sport"] == "track":
+        return f"/meets/{mid}/meet-day"
+    if m["sport"] == "xc":
+        return f"/meets/{mid}/xc-day"
+    return f"/meets/{mid}"      # road/community events have no walk-up meet-day flow
 
 
 @bp.post("/meets/<int:mid>/renumber-bibs")
