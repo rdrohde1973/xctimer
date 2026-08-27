@@ -153,6 +153,28 @@ def assign_meet_bibs(conn, mid):
         nextb += 1
 
 
+def sync_school_meet_bibs(conn, school_id):
+    """Give a school's athletes per-meet bibs after a ROSTER change.
+
+    assign_meet_bibs otherwise runs only at meet setup, so an athlete added (or
+    imported, restored, or switched into a sport) after a meet was built had no
+    per-meet bib and never appeared in the tap-select picker — the meet looked
+    empty even though the roster was full.
+
+    Scope is "meets that have not been run yet" (no finishers), NOT "future
+    meets": a time trial created last week and timed tomorrow is exactly the
+    case this exists for. A meet with results recorded is history — left alone.
+    Additive via assign_meet_bibs, so numbers already handed out never move.
+    """
+    for r in conn.execute(
+            "SELECT m.id FROM meets m JOIN meet_schools ms ON ms.meet_id=m.id "
+            "WHERE ms.school_id=? AND m.sport IN ('xc','track') "
+            "  AND NOT EXISTS (SELECT 1 FROM finishers f JOIN races rc ON rc.id=f.race_id "
+            "                  WHERE rc.meet_id=m.id)",
+            (school_id,)).fetchall():
+        assign_meet_bibs(conn, r[0])
+
+
 def renumber_meet_bibs(conn, mid):
     """Clear and re-assign 1…N from scratch (compacts gaps)."""
     conn.execute("DELETE FROM meet_bibs WHERE meet_id=?", (mid,))

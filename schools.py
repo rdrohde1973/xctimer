@@ -693,6 +693,8 @@ def add_athlete(sid):
         "VALUES (?,?,?,?,?,?,?,?,?)",
         (sid, name, grade, age, gender, dx, dt, dr, road_event),
     )
+    from .meets import sync_school_meet_bibs
+    sync_school_meet_bibs(conn, sid)   # new athlete -> bib in the school's un-run meets
     conn.commit()
     conn.close()
     return redirect(f"/schools/{sid}")
@@ -716,6 +718,9 @@ def athlete_sports(aid):
         return jsonify(error="bad sport"), 400
     conn = db.connect()
     conn.execute(f"UPDATE athletes SET {col}=? WHERE id=?", (1 if data.get("on") else 0, aid))
+    if data.get("on"):
+        from .meets import sync_school_meet_bibs
+        sync_school_meet_bibs(conn, a["school_id"])   # sport switched on -> bib in un-run meets
     conn.commit()
     conn.close()
     return jsonify(ok=True)
@@ -735,6 +740,8 @@ def restore_athlete(aid):
         abort(403)
     conn = db.connect()
     conn.execute("UPDATE athletes SET active=1 WHERE id=?", (aid,))
+    from .meets import sync_school_meet_bibs
+    sync_school_meet_bibs(conn, a["school_id"])   # back on the roster -> back in un-run meets
     conn.commit()
     conn.close()
     return redirect(f"/schools/{a['school_id']}?show=grad")
@@ -1087,6 +1094,9 @@ def import_commit(sid):
              cf["emergency_phone"]),
         )
         added += 1
+    if added:
+        from .meets import sync_school_meet_bibs
+        sync_school_meet_bibs(conn, sid)   # imported athletes -> bibs in un-run meets
     conn.commit()
     conn.close()
     return jsonify(added=added)
