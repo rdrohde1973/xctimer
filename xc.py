@@ -1116,8 +1116,9 @@ def race_untap(rid):
 @bp.post("/races/<int:rid>/finish")
 @login_required
 def race_finish(rid):
-    """Assign a bib. Tap mode: fill the next open (bib-less) slot in order — works
-    even after Stop. Scan mode: record a new finisher with the current race time."""
+    """Assign a bib. EVERY capture mode fills the next open (bib-less) slot in order
+    first — works even after Stop — and records a new finisher at the current race time
+    only when no open slot remains."""
     r, m = _race_or_403(rid, can_record_meet)
     raw = (request.get_json(silent=True) or {}).get("bib")
     try:
@@ -1135,27 +1136,27 @@ def race_finish(rid):
         return jsonify(ok=True, duplicate=True)
     cam_mode = (request.get_json(silent=True) or {}).get("mode")  # noqa: F841 (kept for callers)
     snap = _snap_for_bib(conn, m, bib)
-    # Tap / tap-select ("tap then scan"): the tap already set each finisher's time and
-    # order, so a read just attaches the bib to the next open (bib-less) slot, keeping the
-    # tapped time — even after Stop. When no open slot remains, fall through and record a
-    # new finisher (never drop a read).
-    if r["capture_mode"] != "scan":
-        # Claim the next open slot in ONE statement so two near-simultaneous reads can't
-        # both grab the same slot (which would lose a bib). rowcount=0 => no open slot.
-        cur = conn.execute(
-            "UPDATE finishers SET bib=?, snap_name=?, snap_grade=?, snap_gender=?, snap_school=?, "
-            "snap_age=? WHERE id=(SELECT id FROM finishers WHERE race_id=? AND bib IS NULL "
-            "ORDER BY seq LIMIT 1)", (bib, *snap, rid))
-        if cur.rowcount:
-            remaining = conn.execute("SELECT COUNT(*) FROM finishers WHERE race_id=? AND bib IS NULL",
-                                     (rid,)).fetchone()[0]
-            warn = _road_unassigned_warn(conn, m, rid, bib)
-            conn.commit()
-            conn.close()
-            return jsonify(ok=True, bib=bib, name=snap[0], school=snap[3], remaining=remaining, warn=warn)
-        # No open slot (more scans than taps): fall through and record a new finisher.
-    # Scan mode, or a tap race whose open slots are all filled: record a new finisher at
-    # the current race time (scan-at-finish). Requires the race to be running.
+    # An open (bib-less) slot means a runner ALREADY crossed at a known time — from a tap,
+    # or from an /insert placed for a missed runner — so a read attaches the bib there and
+    # keeps that recorded time, even after Stop. Every capture mode does this, scan
+    # included (2026-08-27): it is how a scan repairs a miss, and it makes one rule for
+    # taps, camera reads, typed bibs and name picks alike. When no open slot remains, fall
+    # through and record a new finisher (never drop a read).
+    # Claim the next open slot in ONE statement so two near-simultaneous reads can't
+    # both grab the same slot (which would lose a bib). rowcount=0 => no open slot.
+    cur = conn.execute(
+        "UPDATE finishers SET bib=?, snap_name=?, snap_grade=?, snap_gender=?, snap_school=?, "
+        "snap_age=? WHERE id=(SELECT id FROM finishers WHERE race_id=? AND bib IS NULL "
+        "ORDER BY seq LIMIT 1)", (bib, *snap, rid))
+    if cur.rowcount:
+        remaining = conn.execute("SELECT COUNT(*) FROM finishers WHERE race_id=? AND bib IS NULL",
+                                 (rid,)).fetchone()[0]
+        warn = _road_unassigned_warn(conn, m, rid, bib)
+        conn.commit()
+        conn.close()
+        return jsonify(ok=True, bib=bib, name=snap[0], school=snap[3], remaining=remaining, warn=warn)
+    # No open slot: record a new finisher at the current race time (scan-at-finish).
+    # Requires the race to be running.
     start = _parse(r["start_time"])
     if not start or r["stop_time"]:
         conn.close()
