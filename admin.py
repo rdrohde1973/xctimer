@@ -350,10 +350,22 @@ def list_users():
     schools = conn.execute(
         "SELECT * FROM schools WHERE district_id=? ORDER BY name", (did,)
     ).fetchall() if did is not None else []
+    # Current school scoping for everyone listed, so the table can show and edit it.
+    user_school_ids, user_school_names = {}, {}
+    if rows:
+        ids = tuple(u["id"] for u in rows)
+        for r in conn.execute(
+            "SELECT us.user_id, s.id, s.name FROM user_schools us "
+            "JOIN schools s ON s.id=us.school_id "
+            f"WHERE us.user_id IN ({','.join('?' * len(ids))}) ORDER BY s.name", ids
+        ).fetchall():
+            user_school_ids.setdefault(r[0], set()).add(r[1])
+            user_school_names.setdefault(r[0], []).append(r[2])
     conn.close()
 
     show_d = p.is_super and did is None
-    hdr = ("<tr><th>User</th><th>Role</th>" + ("<th>District</th>" if show_d else "")
+    hdr = ("<tr><th>User</th><th>Role</th><th>Schools</th>"
+           + ("<th>District</th>" if show_d else "")
            + "<th>Status</th><th>Last login</th><th>MFA</th><th></th></tr>")
 
     def _fmt_login(iso):
@@ -398,6 +410,28 @@ def list_users():
                 f'style="width:auto;padding:.3rem .5rem">{opts}</select></form>')
         else:
             role_cell = f'<span class="pill">{escape(u["role"].replace("_"," "))}</span>'
+        # Schools: only coach/timer are school-scoped. Changing a role never assigns a
+        # school (/users/<id>/role only ever clears them), so this is the one place an
+        # existing user can be given one. Editable only with a district in context,
+        # since that is where the option list comes from.
+        if u["role"] in ("coach", "timer"):
+            cur = user_school_ids.get(u["id"], set())
+            if schools:
+                s_opts = "".join(
+                    f'<option value="{s["id"]}" {"selected" if s["id"] in cur else ""}>'
+                    f'{escape(s["name"])}</option>' for s in schools)
+                schools_cell = (
+                    f'<form class="inline" method="post" action="/users/{u["id"]}/schools">'
+                    f'<select name="school_ids" multiple size="3" '
+                    f'style="width:auto;padding:.3rem .5rem">{s_opts}</select> '
+                    f'<button class="ghost" type="submit">Save</button></form>')
+            else:
+                _names = ", ".join(user_school_names.get(u["id"], []))
+                schools_cell = (
+                    f'<span class="muted">{escape(_names) if _names else "none"}</span><br>'
+                    f'<span class="muted">pick a district to edit</span>')
+        else:
+            schools_cell = '<span class="muted">&mdash;</span>'
         # Per-user MFA opt-in. Toggle persists now; enforcement (email code) ships later.
         mfa_on = "mfa_enabled" in u.keys() and u["mfa_enabled"]
         mfa_cell = (
@@ -410,6 +444,7 @@ def list_users():
             f'<tr><td><b>{escape(u["name"] or "")}</b><br>'
             f'<span class="muted">{escape(u["email"])}</span></td>'
             f'<td>{role_cell}</td>'
+            f'<td>{schools_cell}</td>'
             f'{dcol}<td>{status}</td>'
             f'<td>{_fmt_login(u["last_login"])}</td>'
             f'<td>{mfa_cell}</td>'
@@ -588,6 +623,50 @@ def change_role(uid):
         conn.commit()
         conn.close()
     return redirect("/users?msg=Role+updated")
+
+
+@bp.post("/users/<int:uid>/schools")
+@role_required("super_admin", "district_admin")
+def change_user_schools(uid):
+    """Set which schools a coach/timer is scoped to.
+
+    Role and school scoping are separate concerns: change_role() only ever DELETEs
+    user_schools, and create_user() is the only other writer, so before this route a
+    user who was promoted or demoted into a coach seat could never be given a school
+    without touching the database by hand.
+    """
+    p = g.principal
+    conn = db.connect()
+    u = conn.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone()
+    conn.close()
+    if not u:
+        abort(404)
+    if u["district_id"] is not None:
+        require_district(u["district_id"])
+    # Never touch a super admin, and only school-scoped roles have schools at all.
+    if u["role"] == "super_admin" or u["role"] not in ("coach", "timer"):
+        abort(403)
+    if u["role"] not in _creatable_roles(p):
+        abort(403)
+    school_ids = [int(x) for x in request.form.getlist("school_ids") if x.isdigit()]
+    # Guard: every chosen school must belong to THIS USER's district, not the viewer's.
+    if school_ids:
+        conn = db.connect()
+        ok = conn.execute(
+            f"SELECT COUNT(*) FROM schools WHERE district_id=? AND id IN "
+            f"({','.join('?' * len(school_ids))})", (u["district_id"], *school_ids)
+        ).fetchone()[0]
+        conn.close()
+        if ok != len(school_ids):
+            abort(400)
+    conn = db.connect()
+    conn.execute("DELETE FROM user_schools WHERE user_id=?", (uid,))
+    for sid in school_ids:
+        conn.execute("INSERT OR IGNORE INTO user_schools (user_id, school_id) VALUES (?,?)",
+                     (uid, sid))
+    conn.commit()
+    conn.close()
+    return redirect("/users?msg=Schools+updated")
 
 
 @bp.post("/users/<int:uid>/mfa")
