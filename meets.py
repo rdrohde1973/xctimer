@@ -370,8 +370,17 @@ def create_meet():
         conn.execute("INSERT OR IGNORE INTO meet_schools (meet_id, school_id) VALUES (?,?)", (mid, s))
     assign_meet_bibs(conn, mid)     # per-meet bibs from 1 for the attending athletes
     if sport == "xc":
-        # Auto-create the two standard heats (like the reference XC app).
-        for hn in ("Boys", "Girls"):
+        # Auto-create the standard heats (like the reference XC app). A time trial is a
+        # single practice race for one team, so it gets ONE heat rather than a Boys/Girls
+        # split -- the coach can rename it or add more in setup.
+        #
+        # "Time Trial" is deliberately a STABLE default name: the tap-select picker seeds
+        # fastest-first from each athlete's best prior time in a race of the SAME name, so
+        # keeping the name constant makes consecutive trials compare like-for-like. It also
+        # names no gender, so _race_gender() leaves the picker unfiltered -- correct for a
+        # mixed squad running together.
+        heat_names = ("Time Trial",) if is_tt else ("Boys", "Girls")
+        for hn in heat_names:
             conn.execute("INSERT INTO races (meet_id, name, capture_mode) VALUES (?,?,?)",
                          (mid, hn, "tapselect"))   # unified default: tap -> scan or select
     elif sport == "road":
