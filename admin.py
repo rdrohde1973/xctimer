@@ -366,7 +366,7 @@ def list_users():
     show_d = p.is_super and did is None
     hdr = ("<tr><th>User</th><th>Role</th><th>Schools</th>"
            + ("<th>District</th>" if show_d else "")
-           + "<th>Status</th><th>Last login</th><th>MFA</th><th></th></tr>")
+           + "<th>Status</th><th>MFA</th><th></th></tr>")
 
     def _fmt_login(iso):
         if not iso:
@@ -376,7 +376,9 @@ def list_users():
             if dt.tzinfo is None:
                 dt = dt.replace(tzinfo=timezone.utc)
             dt = dt.astimezone(_MT)
-            return f'<span class="muted">{escape(dt.strftime("%b %-d, %-I:%M %p %Z"))}</span>'
+            return (f'<span class="muted" title="'
+                    f'{escape(dt.strftime("%b %-d, %Y at %-I:%M %p %Z"))}">'
+                    f'{escape(dt.strftime("%b %-d"))}</span>')
         except Exception:  # noqa: BLE001
             return f'<span class="muted">{escape(str(iso)[:16])}</span>'
     trs = []
@@ -387,16 +389,18 @@ def list_users():
             status += ' <span class="pill">demo</span>'
         dcol = f'<td>{escape(u["dname"] or "—")}</td>' if show_d else ""
         # Pending users get a fresh setup invite; active users get a login/reset link.
-        resend_label = "Resend invite" if not u["password_hash"] else "Send login link"
+        resend_label = "Invite" if not u["password_hash"] else "Login link"
         resend = (f'<form class="inline" method="post" action="/users/{u["id"]}/resend">'
                   f'<button class="ghost" type="submit">{resend_label}</button></form> ')
         # Demo accounts are shareable showcase logins — let an admin set a known password.
         if "is_demo" in u.keys() and u["is_demo"]:
             resend += (
                 f'<form class="inline" method="post" action="/users/{u["id"]}/demo-password">'
-                f'<input name="password" placeholder="demo password" required '
-                f'style="width:auto;padding:.35rem .5rem">'
-                f'<button class="ghost" type="submit">Set password</button></form> ')
+                f'<input name="password" placeholder="pw" required '
+                f'title="Set a shareable password for this demo account" '
+                f'style="width:7ch;padding:.2rem .3rem;font-size:.8rem">'
+                f'<button class="ghost" type="submit" '
+                f'title="Set this demo account\'s password">Set</button></form> ')
         # Role: editable dropdown when this admin may manage this user's role, else a pill.
         # Never editable for super admins or for your own account (no self-lockout).
         assignable = _creatable_roles(p)
@@ -430,8 +434,8 @@ def list_users():
             else:
                 _names = ", ".join(user_school_names.get(u["id"], []))
                 schools_cell = (
-                    f'<span class="muted">{escape(_names) if _names else "none"}</span><br>'
-                    f'<span class="muted">pick a district to edit</span>')
+                    f'<span class="muted" title="Pick a district in the header to edit">'
+                    f'{escape(_names) if _names else "none"}</span>')
         else:
             schools_cell = '<span class="muted">&mdash;</span>'
         # Per-user MFA opt-in. Toggle persists now; enforcement (email code) ships later.
@@ -443,19 +447,19 @@ def list_users():
             f'title="Two-factor sign-in (email code). Enforcement coming soon.">'
             f'{"🔒 On" if mfa_on else "Off"}</button></form>')
         trs.append(
-            f'<tr><td><b>{escape(u["name"] or "")}</b><br>'
-            f'<span class="muted">{escape(u["email"])}</span></td>'
+            f'<tr><td><b>{escape(u["name"] or "")}</b>'
+            f'<span class="muted u-mail" title="{escape(u["email"])}">'
+            f'{escape(u["email"])}</span></td>'
             f'<td>{role_cell}</td>'
             f'<td>{schools_cell}</td>'
-            f'{dcol}<td>{status}</td>'
-            f'<td>{_fmt_login(u["last_login"])}</td>'
+            f'{dcol}<td>{status} {_fmt_login(u["last_login"])}</td>'
             f'<td>{mfa_cell}</td>'
-            f'<td style="text-align:right">{resend}'
+            f'<td><div class="acts">{resend}'
             f'<form class="inline" method="post" action="/users/{u["id"]}/delete" '
             f'onsubmit="return confirm(\'Delete {escape(u["email"])}?\')">'
-            f'<button class="danger" type="submit">Delete</button></form></td></tr>'
+            f'<button class="danger" type="submit">Delete</button></form></div></td></tr>'
         )
-    table = (f'<div class="card"><table>{hdr}{"".join(trs)}</table></div>'
+    table = (f'<div class="card"><table class="dense">{hdr}{"".join(trs)}</table></div>'
              if rows else '<div class="card muted">No users yet.</div>')
 
     # Create form. Super admins pick the target district right in the form (so they
@@ -534,7 +538,7 @@ def list_users():
                 ' <span class="muted">Showing every user across all districts.</span>')
     body = f"<h1>Users</h1><p class='sub'>{sub}</p>{table}{form}"
     return shell(p, body, active="users", msg=request.args.get("msg"),
-                 err=request.args.get("err"),
+                 err=request.args.get("err"), wide=True,
                  active_district=did, districts=_districts_for_switcher())
 
 

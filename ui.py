@@ -57,6 +57,7 @@ border-radius:999px;font-size:.72rem;color:var(--mut);text-transform:capitalize}
 .dsw select{background:var(--panel2);color:var(--fg);border:1px solid var(--line);
 border-radius:8px;padding:.3rem .5rem;font:inherit}
 main{max-width:1000px;margin:0 auto;padding:1.4rem 1rem 4rem}
+main.wide{max-width:1340px}
 h1{font-size:1.5rem;margin:.2em 0 .1em;letter-spacing:-.01em}
 h2{font-size:1.1rem;margin:1.6em 0 .5em;color:var(--fg)}
 .sub{color:var(--mut);margin:.1em 0 1.4em}
@@ -76,6 +77,15 @@ button:hover,.btn:hover{background:var(--accd);text-decoration:none}
 button.ghost,.btn.ghost{background:transparent;color:var(--mut);border:1px solid var(--line)}
 button.danger{background:transparent;color:var(--err);border:1px solid var(--line)}
 .inline{display:inline}
+/* dense admin tables: one line per row, nothing wraps into a tall stack */
+table.dense th,table.dense td{padding:.3rem .5rem;white-space:nowrap;vertical-align:middle}
+table.dense td .muted{font-size:.8rem}
+table.dense select{width:auto;padding:.2rem .35rem;font-size:.85rem}
+table.dense button{padding:.2rem .45rem;font-size:.8rem;line-height:1.3}
+table.dense .acts{display:flex;gap:.3rem;justify-content:flex-end;align-items:center}
+table.dense .acts form{display:inline;margin:0}
+table.dense .u-mail{margin-left:.5rem;display:inline-block;max-width:13ch;
+overflow:hidden;text-overflow:ellipsis;vertical-align:bottom}
 .msg{padding:.6rem .8rem;border-radius:8px;margin:0 0 1rem;font-size:.9rem}
 .msg.ok{background:rgba(63,191,127,.12);color:var(--ok);border:1px solid rgba(63,191,127,.3)}
 .msg.err{background:rgba(240,98,91,.12);color:var(--err);border:1px solid rgba(240,98,91,.3)}
@@ -213,13 +223,17 @@ def _brand(principal, href=None, app=False):
 
 
 def shell(principal, body, *, active="", active_district=None, districts=None,
-          msg=None, err=None, title=None, bare=False):
+          msg=None, err=None, title=None, bare=False, wide=False):
     """Full authenticated page with header, nav, and district switcher.
 
     bare=True renders only the brand icon in the header (no nav / switcher /
     account / sign-out) — used by the phone timing app so there's no way out to
     the rest of the UI.
+
+    wide=True widens the content column past the usual 1000px, for dense admin
+    tables that would otherwise scroll sideways inside their card.
     """
+    main_cls = ' class="wide"' if wide else ""
     role = principal.role
     if bare:
         return f"""<!doctype html><html lang=en><head><meta charset=utf-8>
@@ -314,7 +328,7 @@ def shell(principal, body, *, active="", active_district=None, districts=None,
   <div class="sp"></div>
   {switch}{who}{logout}
 </header>
-<main>{_flashes(msg, err)}{body}</main>
+<main{main_cls}>{_flashes(msg, err)}{body}</main>
 {chat}
 <script>{JS}</script>
 </body></html>"""
