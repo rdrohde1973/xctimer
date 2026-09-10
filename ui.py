@@ -78,7 +78,8 @@ button.ghost,.btn.ghost{background:transparent;color:var(--mut);border:1px solid
 button.danger{background:transparent;color:var(--err);border:1px solid var(--line)}
 .inline{display:inline}
 /* dense admin tables: one line per row, nothing wraps into a tall stack */
-table.dense th,table.dense td{padding:.18rem .5rem;white-space:nowrap;vertical-align:middle}
+table.dense th,table.dense td{padding:.08rem .5rem;white-space:nowrap;vertical-align:middle}
+table.dense select,table.dense button,table.dense input{line-height:1.15}
 table.dense th{padding-top:.3rem;padding-bottom:.3rem}
 /* a wide page is a dense admin page: give the heading block less air */
 main.wide h1{margin:.1em 0 .05em}
