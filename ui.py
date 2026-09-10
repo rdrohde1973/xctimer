@@ -186,14 +186,20 @@ def _flashes(msg=None, err=None):
 
 
 def home_url(principal):
-    """Where the brand/logo and post-login land: coaches & timers have no
-    dashboard, so they go to Meets; admins get the dashboard."""
+    """Where the brand/logo and post-login land.
+
+    Coaches start on their Roster: it is the page they actually maintain, and the
+    one that has to be right before a meet. Timers have no dashboard and exist to
+    run a race, so they still land on Meets; admins get the dashboard.
+    """
     if getattr(principal, "meet_scope", None):
         return "/phone"
     role = getattr(principal, "role", None)
     if role == "race_director":
         return "/events"
-    return "/meets" if role in ("coach", "timer") else "/dashboard"
+    if role == "coach":
+        return "/schools"          # the coach's "Roster" tab
+    return "/meets" if role == "timer" else "/dashboard"
 
 
 def _brand(principal, href=None, app=False):
