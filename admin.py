@@ -415,16 +415,18 @@ def list_users():
         # existing user can be given one. Editable only with a district in context,
         # since that is where the option list comes from.
         if u["role"] in ("coach", "timer"):
-            cur = user_school_ids.get(u["id"], set())
+            # A coach belongs to exactly one school (or none), so this is a plain
+            # dropdown -- same submit-on-change shape as the Role cell next to it.
+            _cur = sorted(user_school_ids.get(u["id"], ()))
+            cur = _cur[0] if _cur else None
             if schools:
-                s_opts = "".join(
-                    f'<option value="{s["id"]}" {"selected" if s["id"] in cur else ""}>'
+                s_opts = '<option value="">&mdash; none &mdash;</option>' + "".join(
+                    f'<option value="{s["id"]}" {"selected" if s["id"] == cur else ""}>'
                     f'{escape(s["name"])}</option>' for s in schools)
                 schools_cell = (
                     f'<form class="inline" method="post" action="/users/{u["id"]}/schools">'
-                    f'<select name="school_ids" multiple size="3" '
-                    f'style="width:auto;padding:.3rem .5rem">{s_opts}</select> '
-                    f'<button class="ghost" type="submit">Save</button></form>')
+                    f'<select name="school_id" onchange="this.form.submit()" '
+                    f'style="width:auto;padding:.3rem .5rem">{s_opts}</select></form>')
             else:
                 _names = ", ".join(user_school_names.get(u["id"], []))
                 schools_cell = (
@@ -484,9 +486,9 @@ def list_users():
 
     if not p.is_super or all_districts():
         school_block = (
-            f'<label>Schools <span class="muted">— coach/timer scope, hold ⌘/Ctrl to '
-            f'multi-select</span></label>'
-            f'<select name="school_ids" id="u_schools" multiple size="4">{school_opts}</select>'
+            f'<label>School <span class="muted">— coach/timer scope</span></label>'
+            f'<select name="school_id" id="u_schools">'
+            f'<option value="">&mdash; none &mdash;</option>{school_opts}</select>'
             if school_opts else
             '<p class="muted">Add schools first to scope coaches/timers.</p>'
         )
@@ -498,8 +500,10 @@ def list_users():
   if(!d||!sel) return;
   function sync(){
     Array.prototype.forEach.call(sel.options,function(o){
+      if(!o.value){ o.hidden=false; return; }   // keep the "none" choice available
       var hide = o.getAttribute('data-d')!==d.value;
-      o.hidden=hide; if(hide) o.selected=false;
+      o.hidden=hide;
+      if(hide && o.selected){ o.selected=false; sel.value=''; }
     });
   }
   d.addEventListener('change',sync); sync();
@@ -557,8 +561,10 @@ def create_user_route():
     role = (request.form.get("role") or "").strip()
     if role not in _creatable_roles(p) or "@" not in email:
         abort(400)
-    school_ids = [int(x) for x in request.form.getlist("school_ids") if x.isdigit()]
-    # Only coaches/timers are school-scoped; ignore any schools for admins.
+    # One school per coach: the form posts a single school_id ("" meaning none).
+    _sid = (request.form.get("school_id") or "").strip()
+    school_ids = [int(_sid)] if _sid.isdigit() else []
+    # Only coaches/timers are school-scoped; ignore any school for admins.
     if role not in ("coach", "timer"):
         school_ids = []
     # Guard: chosen schools must belong to this district.
@@ -628,7 +634,10 @@ def change_role(uid):
 @bp.post("/users/<int:uid>/schools")
 @role_required("super_admin", "district_admin")
 def change_user_schools(uid):
-    """Set which schools a coach/timer is scoped to.
+    """Set which school a coach/timer is scoped to.
+
+    A coach belongs to at most ONE school, so this replaces their row outright rather
+    than merging: the DELETE below is what enforces it, whatever the form posts.
 
     Role and school scoping are separate concerns: change_role() only ever DELETEs
     user_schools, and create_user() is the only other writer, so before this route a
@@ -648,8 +657,10 @@ def change_user_schools(uid):
         abort(403)
     if u["role"] not in _creatable_roles(p):
         abort(403)
-    school_ids = [int(x) for x in request.form.getlist("school_ids") if x.isdigit()]
-    # Guard: every chosen school must belong to THIS USER's district, not the viewer's.
+    # One school per coach: a single school_id, "" (or absent) meaning no school.
+    _sid = (request.form.get("school_id") or "").strip()
+    school_ids = [int(_sid)] if _sid.isdigit() else []
+    # Guard: the chosen school must belong to THIS USER's district, not the viewer's.
     if school_ids:
         conn = db.connect()
         ok = conn.execute(
