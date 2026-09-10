@@ -751,8 +751,9 @@ def restore_athlete(aid):
 @login_required
 def end_season(sid):
     """End-of-season cleanup (data minimization): permanently delete this school's
-    athletes and their personal data. Meet results/times are kept — they carry name
-    snapshots, so records and history survive. Irreversible; requires typed confirm."""
+    athletes and their personal data, and forget last season's roster sheet link.
+    Meet results/times are kept — they carry name snapshots, so records and history
+    survive. Irreversible; requires typed confirm."""
     s = _load_school_or_403(sid)
     if g.principal.is_demo:
         abort(403)
@@ -773,9 +774,17 @@ def end_season(sid):
         # per-meet bib numbers reference athletes (FK) -> drop them too
         conn.execute(f"DELETE FROM meet_bibs WHERE athlete_id IN ({qm})", ids)
         conn.execute(f"DELETE FROM athletes WHERE id IN ({qm})", ids)
+    # Last season's roster sheet goes with last season's roster. Leaving the link in
+    # place invites a coach to hit "Pull sheet" and re-import the athletes just
+    # deleted. Outside the `if ids` block on purpose: an already-empty roster can
+    # still be holding a stale link.
+    had_sheet = conn.execute("SELECT sheet_url FROM schools WHERE id=?", (sid,)).fetchone()[0]
+    conn.execute("UPDATE schools SET sheet_url=NULL WHERE id=?", (sid,))
     conn.commit()
     conn.close()
-    return redirect(f"/schools/{sid}?msg=Cleared+{n}+athlete(s)+and+their+personal+data.+Results+kept.")
+    sheet_note = "+Roster+sheet+link+cleared." if (had_sheet or "").strip() else ""
+    return redirect(f"/schools/{sid}?msg=Cleared+{n}+athlete(s)+and+their+personal+data."
+                    f"+Results+kept.{sheet_note}")
 
 
 @bp.post("/athletes/<int:aid>/delete")
