@@ -2569,6 +2569,20 @@ const STATEURL = MEET ? '/meets/'+RID+'/camera-state' : '/races/'+RID+'/state';
 // Bigger detection canvas on desktops (more pixels per tag); phones stay lean.
 const DW=/Mobi|iPhone|Android.*Mobile/.test(navigator.userAgent)?640:960;
 let SEEN=new Set(), DET=null, VID=null, CAN=null, CTX=null, RUNNING=false, LOGN=0, CAPMODE='';
+let LASTSTART, LASTCOUNT=-1;
+// SEEN stops one tag in front of the lens being posted on every frame. It must be
+// dropped whenever the server's record for this race goes BACKWARDS, or a reset
+// leaves the camera refusing to read numbers the server has already forgotten.
+function noteReset(startMs, count){
+  const restarted = (startMs !== undefined && LASTSTART !== undefined && startMs !== LASTSTART);
+  const shrank = (LASTCOUNT >= 0 && count < LASTCOUNT);
+  if(restarted || shrank){
+    SEEN.clear();
+    log('↺ race reset — every number can be read again');
+  }
+  if(startMs !== undefined) LASTSTART = startMs;
+  LASTCOUNT = count;
+}
 // Whole frame removed: default to Chute scan for tap-then-scan races, Finish line otherwise.
 const RACE_CAP='__CAPMODE__';   // this race's capture_mode ('tap'/'tapselect'/'scan'; '' = whole-event)
 const DEF_MODE=MEET?'chute':((RACE_CAP==='tap'||RACE_CAP==='tapselect')?'chute':'line');
@@ -2659,6 +2673,7 @@ async function poll(){
         : '⏸ no race running — start one from the console/phone';
       document.getElementById('cclock').style.display='none';
       let tot=0; (s.races||[]).forEach(function(r){ tot+=r.count; });
+      noteReset(undefined, tot);
       document.getElementById('ccount').textContent=tot;
       renderRaces(s);
     } else {
@@ -2666,6 +2681,7 @@ async function poll(){
       const open=(s.finishers||[]).filter(function(f){return f.bib==null;}).length;
       // Chute scan keeps filling tapped slots for a started race (even if you've stopped the clock).
       RUNNING = (MODE==='chute') ? s.started : (s.started&&!s.stopped);
+      noteReset(s.start_ms || null, s.finishers.length);
       document.getElementById('ccount').textContent=s.finishers.length;
       if(MODE==='chute'){
         const bad = (CAPMODE!=='tap'&&CAPMODE!=='tapselect');
