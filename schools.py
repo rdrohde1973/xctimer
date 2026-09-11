@@ -1101,6 +1101,21 @@ def import_sheet(sid):
     return jsonify(athletes=athletes)
 
 
+def _sport_flag(v):
+    """Read a roster sheet's sport column into 1/0, where BLANK means yes.
+
+    An athlete imported with the flag off gets no per-meet bib (assign_meet_bibs
+    filters on it), so they silently never reach a meet while the roster looks
+    full. A blank cell is far more often "the coach didn't fill this in" than
+    "this runner does not do cross country", so only an explicit no turns it off.
+    """
+    if v is None or v == "":
+        return 1
+    if isinstance(v, str):
+        return 0 if v.strip().lower() in ("no", "n", "false", "0", "-", "\u2013") else 1
+    return 1 if v else 0
+
+
 def _name_key(n):
     """Normalized roster-matching form: case, punctuation and spacing folded away."""
     s = "".join(ch if (ch.isalnum() or ch.isspace()) else " " for ch in str(n or "").lower())
@@ -1172,12 +1187,9 @@ def import_commit(sid):
         cf = {k: (str(r.get(k)).strip() if r.get(k) else None) for k in
               ("dob", "email", "phone", "parent_name", "parent_email", "parent_phone",
                "emergency_name", "emergency_phone")}
-        # Sports: honor Cross Country / Track columns; default to BOTH when neither given.
-        dx, dt = r.get("does_xc"), r.get("does_track")
-        if dx is None and dt is None:
-            dx = dt = 1
-        else:
-            dx, dt = (1 if dx else 0), (1 if dt else 0)
+        # Sports: honor Cross Country / Track columns, but a blank means YES — see
+        # _sport_flag. Only an explicit no keeps an athlete out of that sport.
+        dx, dt = _sport_flag(r.get("does_xc")), _sport_flag(r.get("does_track"))
         road_event = (str(r.get("event") or r.get("road_event") or "").strip() or None)
         dr = 1 if (r.get("does_road") or road_event) else 0  # having an event implies road
         conn.execute(

@@ -312,8 +312,9 @@ _ROSTER_SYS = (
     '"parent_phone": <string or null>, "emergency_name": <string or null>, '
     '"emergency_phone": <string or null>}. '
     "For does_xc/does_track: read columns like 'Cross Country'/'XC' and 'Track' — a Yes, "
-    "Y, X, TRUE, ✓, or the sport's name means true; No/blank means false; use null only "
-    "when there is no such column at all. "
+    "Y, X, TRUE, ✓, or the sport's name means true; an explicit No, N, or FALSE means "
+    "false; a BLANK cell means null, and use null too when there is no such column at "
+    "all. Never turn a blank into false. "
     "Include the dob/contact/parent/emergency fields ONLY when clearly present in the "
     "source (matching column headers like Date of Birth/DOB, Email, Phone, "
     "Parent/Guardian, Emergency Contact); otherwise use null — never invent them. "
