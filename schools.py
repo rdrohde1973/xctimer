@@ -10,6 +10,7 @@
 Access: super_admin (any), district_admin (own district), coach (own schools).
 Timers get no roster access.
 """
+import difflib
 import io
 import json
 import os
@@ -574,11 +575,46 @@ async function sheetImport(){{
   catch(e){{ document.getElementById('preview').innerHTML =
     '<p class="msg err">'+esc(e.message)+'</p>'; }}
 }}
-async function commitImport(){{
-  try{{ const j = await jpost('/schools/{sid}/import/commit', {{athletes: PARSED}});
-    location.href = '/schools/{sid}'; }}
+async function commitImport(only){{
+  // `only` = names a human has just confirmed are genuinely new; second pass.
+  const body = only
+    ? {{athletes: PARSED.filter(a => only.indexOf(a.name) >= 0), confirm_similar: true}}
+    : {{athletes: PARSED}};
+  try{{
+    const j = await jpost('/schools/{sid}/import/commit', body);
+    if(j.needs_confirm && j.needs_confirm.length){{ askAboutSimilar(j); return; }}
+    let m = j.added + (j.added===1 ? ' athlete imported' : ' athletes imported');
+    if(j.skipped) m += ' · ' + j.skipped + ' already on the roster, skipped';
+    location.href = '/schools/{sid}?msg=' + encodeURIComponent(m); }}
   catch(e){{ alert(e.message); }}
 }}
+function askAboutSimilar(j){{
+  // Anything here was NOT imported. Two real athletes can have near-identical
+  // names, so the call is the coach's, not ours.
+  let h = '<div class="msg warn"><b>' + j.needs_confirm.length + ' name'
+    + (j.needs_confirm.length===1?'':'s') + ' close to someone already on the roster</b>'
+    + '<p style="margin:.4rem 0 .6rem">Tick anyone who is genuinely a different athlete. '
+    + 'Unticked names are not imported.</p>';
+  for(let i=0;i<j.needs_confirm.length;i++){{
+    const n = j.needs_confirm[i];
+    h += '<label style="display:block;margin:.2rem 0"><input type="checkbox" class="simchk"'
+      + ' style="width:auto;margin-right:.5rem" value="' + esc(n.name) + '">'
+      + esc(n.name) + ' <span class="muted">looks like</span> ' + esc(n.looks_like) + '</label>';
+  }}
+  h += '<button type="button" style="margin-top:.7rem" onclick="confirmSimilar()">'
+    + 'Import ticked</button> <button type="button" class="ghost" style="margin-top:.7rem"'
+    + ' onclick="skipSimilar()">Skip them all</button></div>';
+  const done = j.added + ' imported' + (j.skipped ? ', ' + j.skipped + ' already on the roster' : '');
+  document.getElementById('preview').innerHTML =
+    h + '<p class="muted">' + esc(done) + ' so far.</p>';
+}}
+function confirmSimilar(){{
+  const names = Array.prototype.slice.call(document.querySelectorAll('.simchk'))
+    .filter(c => c.checked).map(c => c.value);
+  if(!names.length){{ skipSimilar(); return; }}
+  commitImport(names);
+}}
+function skipSimilar(){{ location.href = '/schools/{sid}'; }}
 </script>
 
 <div class="card" style="border:1px solid #b5451f">
@@ -604,6 +640,7 @@ history. This can't be undone, so export anything you want to keep first.</p>
   <button type="submit" style="margin-top:.8rem">Save changes</button>
 </form></div>"""
     return shell(g.principal, body, active="schools", err=request.args.get("err"),
+                 msg=request.args.get("msg"),
                  active_district=active_district_id(), districts=_districts_for_switcher())
 
 
@@ -1064,6 +1101,34 @@ def import_sheet(sid):
     return jsonify(athletes=athletes)
 
 
+def _name_key(n):
+    """Normalized roster-matching form: case, punctuation and spacing folded away."""
+    s = "".join(ch if (ch.isalnum() or ch.isspace()) else " " for ch in str(n or "").lower())
+    return " ".join(s.split())
+
+
+def _closest_name(key, existing):
+    """The existing roster name that is probably the SAME person, or None.
+
+    Catches a misspelling ("Jonh Smith"), a gained/lost middle initial, and a
+    swapped "Last, First" — cases where importing would quietly create a second
+    copy of a runner already on the roster. Never used to skip anything on its
+    own: whatever this flags goes back to a human to confirm, because two real
+    athletes genuinely can have near-identical names.
+    """
+    if not key:
+        return None
+    toks = set(key.split())
+    best, best_score = None, 0.0
+    for ek in existing:
+        if toks and set(ek.split()) == toks:      # same words, different order
+            return ek
+        score = difflib.SequenceMatcher(None, key, ek).ratio()
+        if score > best_score:
+            best, best_score = ek, score
+    return best if best_score >= 0.86 else None
+
+
 @bp.post("/schools/<int:sid>/import/commit")
 @login_required
 def import_commit(sid):
@@ -1071,12 +1136,33 @@ def import_commit(sid):
     rows = (request.get_json(silent=True) or {}).get("athletes", [])
     if not isinstance(rows, list):
         return jsonify(error="bad payload"), 400
+    # Set by the client on the second pass, once a human has confirmed the near-matches.
+    confirm_similar = bool((request.get_json(silent=True) or {}).get("confirm_similar"))
     added = 0
+    skipped = []          # exact matches: already on the roster
+    needs_confirm = []    # near matches: {name, looks_like}
     conn = db.connect()
+    # Match against ACTIVE athletes only — an inactive walk-up from a previous meet day
+    # should not block the real roster entry. `by_key` also grows as we go, so a sheet
+    # that lists the same runner twice only imports them once.
+    by_key = {}
+    for _r in conn.execute("SELECT name FROM athletes WHERE school_id=? AND active=1",
+                           (sid,)).fetchall():
+        by_key[_name_key(_r[0])] = _r[0]
     for r in rows:
         name = str((r or {}).get("name", "")).strip()
         if not name:
             continue
+        key = _name_key(name)
+        if key in by_key:                       # exact (case/spacing/punctuation-insensitive)
+            skipped.append(name)
+            continue
+        if not confirm_similar:
+            near = _closest_name(key, by_key.keys())
+            if near:
+                needs_confirm.append({"name": name, "looks_like": by_key[near]})
+                continue
+        by_key[key] = name
         grade = r.get("grade")
         grade = int(grade) if isinstance(grade, int) or (isinstance(grade, str) and grade.isdigit()) else None
         age = r.get("age")
@@ -1108,7 +1194,9 @@ def import_commit(sid):
         sync_school_meet_bibs(conn, sid)   # imported athletes -> bibs in un-run meets
     conn.commit()
     conn.close()
-    return jsonify(added=added)
+    # skipped_names is a capped sample; the count is the number that matters.
+    return jsonify(added=added, skipped=len(skipped), skipped_names=skipped[:25],
+                   needs_confirm=needs_confirm)
 
 
 # ------------------------------- PDFs -------------------------------

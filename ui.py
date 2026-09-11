@@ -95,6 +95,7 @@ overflow:hidden;text-overflow:ellipsis;vertical-align:bottom}
 .msg{padding:.6rem .8rem;border-radius:8px;margin:0 0 1rem;font-size:.9rem}
 .msg.ok{background:rgba(63,191,127,.12);color:var(--ok);border:1px solid rgba(63,191,127,.3)}
 .msg.err{background:rgba(240,98,91,.12);color:var(--err);border:1px solid rgba(240,98,91,.3)}
+.msg.warn{background:rgba(240,178,75,.12);color:var(--warn);border:1px solid rgba(240,178,75,.35)}
 .muted{color:var(--dim);font-size:.85rem}
 .authwrap{min-height:100vh;display:grid;place-items:center;padding:1rem}
 .authcard{width:100%;max-width:380px;background:var(--panel);border:1px solid var(--line);
