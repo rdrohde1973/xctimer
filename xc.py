@@ -955,7 +955,11 @@ def _race_gender(name):
 @login_required
 def race_eligible(rid):
     """Runners who can still be selected for this race (tap-then-select mode):
-    registered/rostered and not yet recorded with a bib in this race."""
+    holding a bib for this meet and not yet recorded with a bib in this race.
+
+    Includes INACTIVE athletes on purpose — that is what a meet-day walk-up is, and
+    they need to be pickable by name like anyone else.
+    """
     r, m = _race_or_403(rid, can_record_meet)
     conn = db.connect()
     used = {row[0] for row in conn.execute(
@@ -989,7 +993,11 @@ def race_eligible(rid):
             "    AND f.elapsed_seconds IS NOT NULL) AS seed "
             "FROM meet_bibs mb "
             "JOIN athletes a ON a.id=mb.athlete_id JOIN schools s ON s.id=a.school_id "
-            "WHERE mb.meet_id=? AND a.active=1 "
+            # No a.active filter: walk-ups are created INACTIVE so they stay out of
+            # auto-numbering, but they hold a meet_bibs row for this meet and must be
+            # selectable by name at the line. The inner join on meet_bibs + this
+            # meet_id is already the right eligibility test.
+            "WHERE mb.meet_id=? "
             "ORDER BY (seed IS NULL), seed, a.name", (r["name"], rid, m["id"])).fetchall()
         want = _race_gender(r["name"])
         for a in rows:
