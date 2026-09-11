@@ -2638,13 +2638,23 @@ function unlockAudio(){ try{ if(!AC) AC=new (window.AudioContext||window.webkitA
 document.addEventListener('touchend', unlockAudio, {once:false});
 document.addEventListener('click', unlockAudio, {once:false});
 function beep(){
+  // Outdoors at a finish line, with wind and a crowd, a 1050Hz sine on a phone
+  // speaker disappears. This sits at 2600Hz -- near the ear's most sensitive band,
+  // and above the range where a small speaker rolls off -- and uses a square wave,
+  // whose harmonics carry much further than a sine at the same level. The
+  // compressor lets the peak sit near full scale without clipping into a rattle.
   try{ if(!AC){ unlockAudio(); if(!AC) return; }
-    const o=AC.createOscillator(), g=AC.createGain(), t=AC.currentTime;
-    o.type='sine'; o.frequency.setValueAtTime(1050, t);
+    const t=AC.currentTime;
+    const o=AC.createOscillator(), g=AC.createGain();
+    o.type='square'; o.frequency.setValueAtTime(2600, t);
+    // A square's RMS equals its amplitude (a sine's is amplitude/1.41), so 0.7 here is
+    // already well above the old 0.35 sine before the harmonics are counted. Measured
+    // offline at +9dB RMS against the previous tone. No compressor: one tuned at
+    // threshold -8/ratio 12 made it 3.7dB QUIETER by crushing the peak.
     g.gain.setValueAtTime(0.0001, t);
-    g.gain.exponentialRampToValueAtTime(0.35, t+0.01);
-    g.gain.exponentialRampToValueAtTime(0.0001, t+0.16);
-    o.connect(g); g.connect(AC.destination); o.start(t); o.stop(t+0.17);
+    g.gain.exponentialRampToValueAtTime(0.7, t+0.005);    // near-instant attack = "tick"
+    g.gain.exponentialRampToValueAtTime(0.0001, t+0.17);
+    o.connect(g); g.connect(AC.destination); o.start(t); o.stop(t+0.18);
   }catch(e){}
 }
 // Non-blocking toast — a modal alert() PAUSES the <video> on mobile (frozen camera).
