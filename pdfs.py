@@ -76,7 +76,7 @@ def _qr_image(text):
 
 
 # Athlete/timing instructions on the meet-day bib-list cover — sport-specific.
-# Cross country: one race, finish chute, scan in, hand back the sticker.
+# Cross country: one race, finish chute, scan in. Runners keep their sticker.
 _COVER_INSTRUCTIONS_XC = [
     "Place your sticker on the front of your jersey, centered on your chest.",
     "Need a blank sticker? Check in at the timing tent before your race begins.",
@@ -84,7 +84,6 @@ _COVER_INSTRUCTIONS_XC = [
     "give it to the timer at the finish.",
     "When you cross the finish line, stay in a single-file line and walk to the timing "
     "tent in the exact order you finished.",
-    "Once you have been scanned in, remove your sticker and hand it to the timing crew.",
 ]
 # Track: multiple events across the day — keep the sticker on the whole time.
 _COVER_INSTRUCTIONS_TRACK = [

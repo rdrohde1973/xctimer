@@ -764,10 +764,15 @@ def xc_meet_day(mid):
             f'<div class="card"><b>Print:</b> {road_sticker_controls(mid, self_serve=ss)} '
             '<span class="muted">Event logo on each. Use Avery 5163 (2"×4") sticker sheets.</span></div>')
     else:
+        from .meets import aruco_only
+        _ao = aruco_only()          # coaches: ArUco only, no QR sheet to pick by mistake
+        _qr = ("" if _ao else
+               f'<a class="btn ghost" href="/meets/{mid}/stickers.pdf" target="_blank">'
+               f'Stickers — QR</a> ')
+        _lbl = "Stickers" if _ao else "Stickers — ArUco"
         print_bar = (
-            f'<div class="card"><b>Print:</b> '
-            f'<a class="btn ghost" href="/meets/{mid}/stickers.pdf" target="_blank">Stickers — QR</a> '
-            f'<a class="btn ghost" href="/meets/{mid}/stickers.pdf?code=aruco" target="_blank">Stickers — ArUco</a> '
+            f'<div class="card"><b>Print:</b> {_qr}'
+            f'<a class="btn ghost" href="/meets/{mid}/stickers.pdf?code=aruco" target="_blank">{_lbl}</a> '
             f'<a class="btn ghost" href="/meets/{mid}/biblist.pdf" target="_blank">Bib lists</a>'
             f'<br><span class="muted" style="font-size:.85rem">Use Avery 5163 (2"×4") sticker sheets.</span></div>')
     walkup = "" if _is_org(m) else _walkup_card(m, mid)

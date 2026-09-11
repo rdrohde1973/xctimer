@@ -448,6 +448,17 @@ def delete_meet(mid):
     return redirect(f"/events?org={org}" if org is not None else "/meets")
 
 
+def aruco_only():
+    """True when the current principal may only print ArUco sticker sheets.
+
+    Coaches time by camera and the camera reads ArUco. A QR sheet handed out by
+    mistake cannot be scanned at the line, and the mistake only surfaces once the
+    stickers are on jerseys — so the choice is removed rather than explained.
+    Admins, who print for other people's meets, keep both.
+    """
+    return getattr(getattr(g, "principal", None), "role", None) == "coach"
+
+
 def bibs_locked(m):
     """True once the meet's bib↔runner mapping is locked for printing."""
     try:
@@ -690,10 +701,15 @@ def meet_detail(mid):
 
     hs = (f' <a class="btn ghost" href="/meets/{mid}/heatsheets.pdf">Heat sheets</a>'
           if not is_xc else "")
-    # All meets print Avery 5163 (2×4), with a QR or camera-readable ArUco code of the bib.
+    # All meets print Avery 5163 (2×4), with a QR or camera-readable ArUco code of the
+    # bib — except a coach, who gets ArUco only (see aruco_only).
+    _ao = aruco_only()
+    _qr = ("" if _ao else
+           f'<a class="btn ghost" href="/meets/{mid}/stickers.pdf">Stickers — QR</a> ')
+    _lbl = "Stickers" if _ao else "Stickers — ArUco"
     sticker_btns = (
-        f'<a class="btn ghost" href="/meets/{mid}/stickers.pdf">Stickers — QR</a> '
-        f'<a class="btn ghost" href="/meets/{mid}/stickers.pdf?code=aruco">Stickers — ArUco</a> ')
+        f'{_qr}'
+        f'<a class="btn ghost" href="/meets/{mid}/stickers.pdf?code=aruco">{_lbl}</a> ')
     if is_org:
         print_bar = ""
     else:
@@ -1029,7 +1045,9 @@ def meet_stickers(mid):
     if not can_view_meet(m):
         abort(403)
     template = "5163"             # the only sticker sheet we print now
-    code = "aruco" if request.args.get("code") == "aruco" else None
+    # A coach prints ArUco whatever the URL says — the link is gone from their view,
+    # but the route is the thing that actually enforces it.
+    code = "aruco" if (request.args.get("code") == "aruco" or aruco_only()) else None
     groups = _sticker_groups(mid, with_events=(m["sport"] == "track"),
                              fill_to=pdfs.per_page(template), code=code,
                              extra_blanks=pdfs.per_page(template))   # + one logo-less blank sheet
@@ -1077,7 +1095,7 @@ def school_meet_stickers(mid, sid):
     if not can_view_meet(m):
         abort(403)
     template = "5163"             # the only sticker sheet we print now
-    code = "aruco" if request.args.get("code") == "aruco" else None
+    code = "aruco" if (request.args.get("code") == "aruco" or aruco_only()) else None
     groups = _sticker_groups(mid, with_events=(m["sport"] == "track"),
                              fill_to=pdfs.per_page(template), only_sid=sid, code=code)
     base = os.environ.get("XC_PUBLIC_URL", request.host_url.rstrip("/"))

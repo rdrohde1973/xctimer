@@ -963,6 +963,13 @@ def assign_page(mid):
                   '</div>')
     relay_block = ""
 
+    from .meets import aruco_only
+    _ao = aruco_only()              # coaches: ArUco only, same rule as the xc packet
+    _tqr = ("" if _ao else
+            f'<a class="btn ghost" href="/meets/{mid}/school/{sid}/stickers.pdf">'
+            f'Stickers — QR</a>')
+    _tlbl = "Stickers" if _ao else "Stickers — ArUco"
+
     body = f"""
 <p class="muted"><a href="/meets">← Meets</a></p>
 <h1>{escape(m['name'])}</h1>{_track_tabs(mid, 'assign')}
@@ -970,8 +977,8 @@ def assign_page(mid):
   <b style="margin-right:.2rem">School:</b> {picker}</div>
 <div class="card" style="display:flex;flex-wrap:wrap;gap:.45rem;align-items:center">
   <b style="margin-right:.2rem">🖨 {escape(school['name'])} packet:</b>
-  <a class="btn ghost" href="/meets/{mid}/school/{sid}/stickers.pdf">Stickers — QR</a>
-  <a class="btn ghost" href="/meets/{mid}/school/{sid}/stickers.pdf?code=aruco">Stickers — ArUco</a>
+  {_tqr}
+  <a class="btn ghost" href="/meets/{mid}/school/{sid}/stickers.pdf?code=aruco">{_tlbl}</a>
   <a class="btn ghost" href="/meets/{mid}/school/{sid}/biblist.pdf">Bib list + events</a>
   <span class="muted" style="font-size:.85rem;flex-basis:100%">Use Avery 5163 (2"×4") sticker sheets.</span></div>
 <div class="card">
