@@ -585,6 +585,7 @@ async function commitImport(only){{
     if(j.needs_confirm && j.needs_confirm.length){{ askAboutSimilar(j); return; }}
     let m = j.added + (j.added===1 ? ' athlete imported' : ' athletes imported');
     if(j.skipped) m += ' · ' + j.skipped + ' already on the roster, skipped';
+    if(j.repeats) m += ' · ' + j.repeats + ' listed more than once in your sheet';
     location.href = '/schools/{sid}?msg=' + encodeURIComponent(m); }}
   catch(e){{ alert(e.message); }}
 }}
@@ -604,7 +605,9 @@ function askAboutSimilar(j){{
   h += '<button type="button" style="margin-top:.7rem" onclick="confirmSimilar()">'
     + 'Import ticked</button> <button type="button" class="ghost" style="margin-top:.7rem"'
     + ' onclick="skipSimilar()">Skip them all</button></div>';
-  const done = j.added + ' imported' + (j.skipped ? ', ' + j.skipped + ' already on the roster' : '');
+  const done = j.added + ' imported'
+    + (j.skipped ? ', ' + j.skipped + ' already on the roster' : '')
+    + (j.repeats ? ', ' + j.repeats + ' repeated in your sheet' : '');
   document.getElementById('preview').innerHTML =
     h + '<p class="muted">' + esc(done) + ' so far.</p>';
 }}
@@ -1154,23 +1157,32 @@ def import_commit(sid):
     # Set by the client on the second pass, once a human has confirmed the near-matches.
     confirm_similar = bool((request.get_json(silent=True) or {}).get("confirm_similar"))
     added = 0
-    skipped = []          # exact matches: already on the roster
+    skipped = []          # exact matches against the EXISTING roster
+    repeats = []          # this sheet listed the same runner more than once
     needs_confirm = []    # near matches: {name, looks_like}
     conn = db.connect()
     # Match against ACTIVE athletes only — an inactive walk-up from a previous meet day
-    # should not block the real roster entry. `by_key` also grows as we go, so a sheet
-    # that lists the same runner twice only imports them once.
-    by_key = {}
+    # should not block the real roster entry.
+    #
+    # `existing` is frozen at what the roster held BEFORE this import; `by_key` also
+    # grows as rows are accepted. Keeping them apart is what lets "already on the
+    # roster" and "listed twice in your sheet" be reported as the different things they
+    # are — lumping them together told a coach their roster contained someone it did not.
+    existing = {}
     for _r in conn.execute("SELECT name FROM athletes WHERE school_id=? AND active=1",
                            (sid,)).fetchall():
-        by_key[_name_key(_r[0])] = _r[0]
+        existing[_name_key(_r[0])] = _r[0]
+    by_key = dict(existing)
     for r in rows:
         name = str((r or {}).get("name", "")).strip()
         if not name:
             continue
         key = _name_key(name)
-        if key in by_key:                       # exact (case/spacing/punctuation-insensitive)
+        if key in existing:                     # exact (case/spacing/punctuation-insensitive)
             skipped.append(name)
+            continue
+        if key in by_key:                       # already accepted earlier in THIS sheet
+            repeats.append(name)
             continue
         if not confirm_similar:
             near = _closest_name(key, by_key.keys())
@@ -1206,8 +1218,9 @@ def import_commit(sid):
         sync_school_meet_bibs(conn, sid)   # imported athletes -> bibs in un-run meets
     conn.commit()
     conn.close()
-    # skipped_names is a capped sample; the count is the number that matters.
+    # *_names are capped samples; the counts are the numbers that matter.
     return jsonify(added=added, skipped=len(skipped), skipped_names=skipped[:25],
+                   repeats=len(repeats), repeat_names=repeats[:25],
                    needs_confirm=needs_confirm)
 
 
