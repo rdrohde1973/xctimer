@@ -838,14 +838,22 @@ def delete_athlete(aid):
         s = conn.execute("SELECT * FROM schools WHERE id=?", (a["school_id"],)).fetchone()
         if not _can_access_school(s):
             abort(403)
-        # An athlete who has competed is referenced by meet entries + waivers (FKs). A bare
-        # DELETE hits a FK constraint and, left unclosed, leaks a WRITE-LOCKED connection —
-        # which cascaded into a site-wide "database is locked" outage. Detach entries (their
-        # results keep name snapshots) and drop waivers first, then delete. try/finally
-        # guarantees the connection is released even if anything above raises.
+        # FOUR tables carry a FK to athletes: entries, athlete_waivers, race_entries and
+        # meet_bibs. A bare DELETE hits a FK constraint and, left unclosed, leaks a
+        # WRITE-LOCKED connection — which once cascaded into a site-wide "database is
+        # locked" outage. Detach entries (their results keep name snapshots) and drop the
+        # rest first, then delete. try/finally guarantees the connection is released even
+        # if anything above raises.
+        #
+        # meet_bibs was MISSED here when end_season and delete_school were fixed for it,
+        # so deleting any athlete entered in a meet 500'd — which blocked a coach for two
+        # days while she tried to reconcile a roster before a meet. Per-meet bibs are
+        # meet-scoped scratch data: dropping them frees the number, and the remaining bibs
+        # keep theirs (use Renumber to close the gap).
         conn.execute("DELETE FROM athlete_waivers WHERE athlete_id=?", (aid,))
         conn.execute("UPDATE entries SET runner_id=NULL WHERE runner_id=?", (aid,))
         conn.execute("DELETE FROM race_entries WHERE athlete_id=?", (aid,))
+        conn.execute("DELETE FROM meet_bibs WHERE athlete_id=?", (aid,))
         conn.execute("DELETE FROM athletes WHERE id=?", (aid,))
         conn.commit()
     finally:

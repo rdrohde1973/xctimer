@@ -25,7 +25,7 @@ from .phone import bp as phone_bp
 from .waivers import bp as waivers_bp
 from .road import bp as road_bp
 
-APP_VERSION = "1.80.0-louder-scan-tone"
+APP_VERSION = "1.81.0-fix-delete-athlete"
 
 LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width, initial-scale=1">
