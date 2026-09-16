@@ -539,9 +539,34 @@ def walkup_route(mid):
     gender = (request.form.get("gender") or "").strip().upper()
     gender = gender if gender in ("M", "F") else None
     conn = db.connect()
-    if conn.execute("SELECT 1 FROM meet_bibs WHERE meet_id=? AND bib=?", (mid, bib)).fetchone():
-        conn.close()
-        return redirect(f"{day}?werr=taken&b={bib}")
+    displaced = None
+    held = conn.execute(
+        "SELECT mb.athlete_id, a.name, a.active, s.name AS sname FROM meet_bibs mb "
+        "JOIN athletes a ON a.id=mb.athlete_id JOIN schools s ON s.id=a.school_id "
+        "WHERE mb.meet_id=? AND mb.bib=?", (mid, bib)).fetchone()
+    if held:
+        # A number that has already crossed the line is off limits: reassigning it
+        # would rewrite somebody's recorded place.
+        if conn.execute("SELECT 1 FROM finishers f JOIN races r ON r.id=f.race_id "
+                        "WHERE r.meet_id=? AND f.bib=? LIMIT 1", (mid, bib)).fetchone():
+            conn.close()
+            return redirect(f"{day}?werr=recorded&b={bib}")
+        if (request.form.get("override") or "") != "1":
+            # First attempt: bounce back naming the holder, echoing everything they
+            # typed so the confirm button can resubmit it without retyping at the line.
+            conn.close()
+            from urllib.parse import urlencode
+            return redirect("%s?%s" % (day, urlencode({
+                "werr": "taken", "b": bib, "wh": held["name"], "whs": held["sname"],
+                "wn": name, "ws": sid_raw,
+                "wg": "" if grade is None else grade, "wx": gender or ""})))
+        # Confirmed. Free the number. A displaced WALK-UP (inactive) exists only for
+        # this meet, so remove them outright rather than leave an orphan row; a
+        # rostered athlete keeps their roster entry and just loses this bib.
+        conn.execute("DELETE FROM meet_bibs WHERE meet_id=? AND bib=?", (mid, bib))
+        if not held["active"]:
+            conn.execute("DELETE FROM athletes WHERE id=?", (held["athlete_id"],))
+        displaced = held["name"]
     if sid_raw == "unattached":
         row = conn.execute("SELECT id FROM schools WHERE district_id=? AND name='Unattached' LIMIT 1",
                            (m["district_id"],)).fetchone()
@@ -563,6 +588,9 @@ def walkup_route(mid):
                  (mid, aid, bib, bib))
     conn.commit()
     conn.close()
+    if displaced:
+        from urllib.parse import urlencode
+        return redirect("%s?%s" % (day, urlencode({"wok": bib, "wover": displaced})))
     return redirect(f"{day}?wok={bib}")
 
 

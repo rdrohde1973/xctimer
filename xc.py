@@ -682,13 +682,34 @@ def _walkup_card(m, mid):
     werr, wok = request.args.get("werr"), request.args.get("wok")
     msg = ""
     if wok:
-        msg = f'<p style="color:#1a7f37;font-weight:600;margin:.2rem 0">✓ Bib #{escape(wok)} assigned.</p>'
+        over = request.args.get("wover")
+        took = (f' <span class="muted">— taken from {escape(over)}</span>') if over else ""
+        msg = (f'<p style="color:#1a7f37;font-weight:600;margin:.2rem 0">'
+               f'✓ Bib #{escape(wok)} assigned.{took}</p>')
     elif werr == "taken":
-        msg = (f'<p style="color:var(--err);font-weight:600;margin:.2rem 0">⚠ Bib '
-               f'#{escape(request.args.get("b", ""))} is already assigned.</p>')
-    elif werr in ("input", "school", "locked"):
+        # The number is in use. Offer it anyway, but name the holder first — this
+        # takes a number off a real runner, so it must never happen silently.
+        b = escape(request.args.get("b", ""))
+        holder = escape(request.args.get("wh", "another runner"))
+        hsch = escape(request.args.get("whs", ""))
+        keep = {"bib": request.args.get("b", ""), "name": request.args.get("wn", ""),
+                "school_id": request.args.get("ws", ""), "grade": request.args.get("wg", ""),
+                "gender": request.args.get("wx", "")}
+        hidden = "".join(f'<input type="hidden" name="{k}" value="{escape(v)}">'
+                         for k, v in keep.items())
+        who = escape(keep["name"]) or "this runner"
+        msg = (f'<div class="msg warn"><b>⚠ Bib #{b} belongs to {holder}'
+               f'{" · " + hsch if hsch else ""}.</b>'
+               f'<p style="margin:.35rem 0 .6rem">Only continue if {holder} is <b>not running</b>. '
+               f'They lose #{b} for this meet and {who} wears it instead.</p>'
+               f'<form method="post" action="/meets/{mid}/walkup" class="inline">{hidden}'
+               f'<input type="hidden" name="override" value="1">'
+               f'<button class="danger" type="submit">Give #{b} to {who}</button></form></div>')
+    elif werr in ("input", "school", "locked", "recorded"):
         note = {"input": "Enter a bib number and a name.", "school": "Pick a school.",
-                "locked": "Lock the bibs first."}[werr]
+                "locked": "Lock the bibs first.",
+                "recorded": ("That bib already has a recorded time, so it can't be "
+                             "reassigned. Use a spare number.")}[werr]
         msg = f'<p style="color:var(--err);font-weight:600;margin:.2rem 0">⚠ {note}</p>'
     sopts = "".join(f'<option value="{s["id"]}">{escape(s["name"])}</option>' for s in schools)
     sopts += '<option value="unattached">Unattached (won\'t score)</option>'
