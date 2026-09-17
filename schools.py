@@ -1088,6 +1088,9 @@ def import_parse(sid):
     try:
         text = ai.extract_text(f.filename, f.read())
         athletes = ai.normalize_roster(text)
+    except ai.RosterParseError as e:
+        return jsonify(error=f"Could not read the roster: {e}. Nothing was imported - "
+                             "please try again."), 400
     except Exception as e:  # noqa: BLE001
         return jsonify(error=f"Could not parse: {e}"), 400
     return jsonify(athletes=athletes)
@@ -1100,10 +1103,16 @@ def import_sheet(sid):
     url = (request.get_json(silent=True) or {}).get("url", "")
     try:
         text = ai.fetch_google_sheet_text(url)
-        athletes = ai.normalize_roster(text)
     except Exception as e:  # noqa: BLE001
         return jsonify(error=f"Could not read sheet: {e}. Make sure the sheet is shared "
                              "as 'Anyone with the link — Viewer'."), 400
+    try:
+        athletes = ai.normalize_roster(text)
+    except ai.RosterParseError as e:
+        return jsonify(error=f"Could not read the roster: {e}. Nothing was imported - "
+                             "please try again."), 400
+    except Exception as e:  # noqa: BLE001
+        return jsonify(error=f"Could not read the roster: {e}"), 400
     # Remember the sheet per school so re-syncs are one click next time.
     conn = db.connect()
     conn.execute("UPDATE schools SET sheet_url=? WHERE id=?", (url.strip(), sid))

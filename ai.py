@@ -320,7 +320,9 @@ _ROSTER_SYS = (
     "Parent/Guardian, Emergency Contact); otherwise use null — never invent them. "
     "Normalize names to 'First Last' with proper capitalization. Infer gender only "
     "if explicit (a column, or M/F/Boys/Girls). Skip header rows, coaches, blanks, "
-    "and totals. If a grade is given as 9th/Fr/Freshman etc., map to the integer."
+    "and totals. If a grade is given as 9th/Fr/Freshman etc., map to the integer. "
+    "Keep the output compact: OMIT every key whose value would be null. An athlete "
+    'with only a name, grade and gender is {"name": "Ann Lee", "grade": 8, "gender": "F"}.'
 )
 
 # Optional contact fields carried through import when the source has them.
@@ -328,15 +330,97 @@ _CONTACT_FIELDS = ("dob", "email", "phone", "parent_name", "parent_email",
                    "parent_phone", "emergency_name", "emergency_phone")
 
 
-def normalize_roster(raw_text, *, max_chars=20000):
-    """Return a list of {name, grade, gender} dicts parsed from raw roster text."""
+# The roster is read in chunks so no single answer can outgrow max_tokens. Before this,
+# one call carried the whole roster at max_tokens=8000: ~75 athletes filled it, the JSON
+# was cut off mid-array, _find_json_array() returned [], and the coach saw "No athletes
+# found." for a perfectly good 86-row sheet (Lehi, 2026-09-15).
+_ROSTER_CHUNK_LINES = 40
+_ROSTER_CHUNK_CHARS = 8000
+_ROSTER_MAX_TOKENS = 16000   # safe for a non-streaming request; a chunk uses a fraction
+_ROSTER_WORKERS = 4          # chunks run concurrently: the tunnel drops a request at ~100s
+
+
+class RosterParseError(RuntimeError):
+    """The roster could not be read. Shown to the coach -- never swallowed into []."""
+
+
+def normalize_roster(raw_text):
+    """Return a list of athlete dicts parsed from raw roster text, however long.
+
+    Chunks after the first are sent the file's first line as column context (it is
+    usually the header), so a mid-file chunk still knows which column is which.
+    """
     text = (raw_text or "").strip()
     if not text:
         return []
-    if len(text) > max_chars:
-        text = text[:max_chars]
-    out = claude_chat(_ROSTER_SYS, text, max_tokens=8000)
-    return _parse_json_array(out)
+    lines = [ln for ln in text.split("\n") if ln.strip()]
+    jobs = [(chunk, None if i == 0 else lines[0])
+            for i, chunk in enumerate(_roster_chunks(lines))]
+    if len(jobs) == 1:
+        parts = [_roster_chunk(*jobs[0])]
+    else:
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=min(_ROSTER_WORKERS, len(jobs))) as pool:
+            parts = list(pool.map(lambda job: _roster_chunk(*job), jobs))
+    # No de-duplication here, on purpose: two different athletes can share a name, grade
+    # and sex, and dropping one would be exactly the silent loss this code replaced. If
+    # a model ever echoes the context line, the import reports that row as "listed more
+    # than once" and imports it a single time.
+    return [r for part in parts for r in _clean_roster_rows(part)]
+
+
+def _roster_chunks(lines):
+    chunk, size = [], 0
+    for ln in lines:
+        if chunk and (len(chunk) >= _ROSTER_CHUNK_LINES
+                      or size + len(ln) > _ROSTER_CHUNK_CHARS):
+            yield chunk
+            chunk, size = [], 0
+        chunk.append(ln)
+        size += len(ln) + 1
+    if chunk:
+        yield chunk
+
+
+def _roster_chunk(lines, context_line):
+    """Read one chunk. Halves and retries if the answer is cut off by max_tokens."""
+    body = "\n".join(lines)
+    if context_line is not None:
+        body = ("COLUMN CONTEXT - the first line of this file, repeated only so you can "
+                "tell what each column means. Do NOT output it:\n" + context_line
+                + "\n\nROWS:\n" + body)
+    msg = _client().messages.create(model=CLAUDE_MODEL, max_tokens=_ROSTER_MAX_TOKENS,
+                                    system=_ROSTER_SYS,
+                                    messages=[{"role": "user", "content": body}])
+    if msg.stop_reason == "max_tokens":
+        if len(lines) == 1:
+            raise RosterParseError("one roster row was too long to read")
+        mid = len(lines) // 2
+        right_ctx = context_line if context_line is not None else lines[0]
+        return _roster_chunk(lines[:mid], context_line) + _roster_chunk(lines[mid:], right_ctx)
+    if msg.stop_reason not in ("end_turn", "stop_sequence"):
+        raise RosterParseError("the roster reader stopped early (%s)" % msg.stop_reason)
+    out = "".join(b.text for b in msg.content if getattr(b, "type", None) == "text")
+    return _strict_json_array(out)
+
+
+def _strict_json_array(s):
+    """Like _find_json_array, but an unusable answer is an error rather than []."""
+    s = (s or "").strip()
+    if s.startswith("```"):
+        s = s.split("```", 2)[1]
+        if s.startswith("json"):
+            s = s[4:]
+    a, b = s.find("["), s.rfind("]")
+    if a == -1 or b == -1:
+        raise RosterParseError("the roster reader did not return a list")
+    try:
+        rows = json.loads(s[a:b + 1])
+    except json.JSONDecodeError as e:
+        raise RosterParseError("the roster reader returned malformed data (%s)" % e.msg)
+    if not isinstance(rows, list):
+        raise RosterParseError("the roster reader did not return a list")
+    return rows
 
 
 def _find_json_array(s):
@@ -357,7 +441,10 @@ def _find_json_array(s):
 
 
 def _parse_json_array(s):
-    rows = _find_json_array(s)
+    return _clean_roster_rows(_find_json_array(s))
+
+
+def _clean_roster_rows(rows):
     clean = []
     for r in rows:
         if not isinstance(r, dict):
@@ -382,6 +469,12 @@ def _parse_json_array(s):
         event = r.get("event")
         event = str(event).strip() if isinstance(event, (str, int)) and str(event).strip() else None
         row = {"name": name, "grade": grade, "age": age, "gender": gender, "event": event}
+        # Carry the sport flags through as True/False/None. They used to be dropped right
+        # here, so an explicit "No" in a Cross Country column never reached the import and
+        # every uploaded athlete landed in both sports. None still means yes downstream.
+        for k in ("does_xc", "does_track"):
+            v = r.get(k)
+            row[k] = v if isinstance(v, bool) else None
         for k in _CONTACT_FIELDS:
             v = r.get(k)
             row[k] = str(v).strip() if isinstance(v, (str, int)) and str(v).strip() else None
