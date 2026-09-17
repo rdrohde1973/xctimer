@@ -894,7 +894,7 @@ function syncUI(){{
   const slot=document.getElementById('slot');
   if(scan){{ slot.textContent=''; }}
   else {{ const nx=FIN.find(f=>f.bib==null);
-    slot.textContent = OPEN? (OPEN+' open — next #'+nx.seq+' @ '+fmt(nx.elapsed)) : 'no open slots'; }}
+    slot.textContent = OPEN? (OPEN+' open — next #'+(FIN.indexOf(nx)+1)+' @ '+fmt(nx.elapsed)) : 'no open slots'; }}
 }}
 function tick(){{
   const c=document.getElementById('clock');
@@ -910,15 +910,23 @@ function render(){{
     : ('Tapped <b>'+FIN.length+'</b> · Scanned <b>'+scanned+'</b> · Open <b>'+open+'</b>');
   if(!FIN.length){{ document.getElementById('rows').innerHTML=
     '<tr><td colspan=7 class="muted">No finishers yet.</td></tr>'; return; }}
+  // Keep a bib being typed: redrawing rebuilds the input, which used to drop focus and
+  // the half-typed number. The box saves on BLUR whenever its value differs from the
+  // server's (data-orig) -- not on 'change', which a browser never fires for a value
+  // restored by code, so a restored bib would otherwise be silently lost.
+  const act=document.activeElement;
+  const keep=(act&&act.tagName==='INPUT'&&act.closest('#rows'))
+    ? {{id:act.closest('tr').dataset.id, v:act.value, s:act.selectionStart}} : null;
   let h='';
-  FIN.forEach(f=>{{
+  FIN.forEach((f,i)=>{{
     const nm = f.name? esc(f.name) : (f.bib?'':'<span class=muted>—</span>');
     const name = f.dq? ('<s>'+nm+' (DQ)</s>') : nm;
     h+='<tr draggable="true" data-id="'+f.id+'" ondragstart="dstart(event,'+f.id+')"'
      +' ondragover="dover(event,this)" ondragleave="this.classList.remove(\\'drag-over\\')"'
      +' ondrop="ddrop(event,'+f.id+')" ondragend="dend()">'
-     +'<td class="grip">⠿</td><td>'+f.seq+'</td>'
-     +'<td><input value="'+(f.bib??'')+'" style="width:64px" onchange="setBib('+f.id+',this.value)"></td>'
+     +'<td class="grip">⠿</td><td>'+(i+1)+'</td>'
+     +'<td><input value="'+(f.bib??'')+'" data-orig="'+(f.bib??'')+'" style="width:64px" inputmode="numeric" autocomplete="off"'
+     +' onkeydown="if(event.keyCode===13)this.blur()" onblur="if(this.value!==this.dataset.orig)setBib('+f.id+',this.value)"></td>'
      +'<td>'+name+'</td><td>'+esc(f.school||'')+'</td>'
      +'<td style="font-variant-numeric:tabular-nums">'+fmt(f.elapsed)+'</td>'
      +'<td style="text-align:right;white-space:nowrap">'
@@ -926,7 +934,12 @@ function render(){{
      +'<button class="ghost" onclick="dq('+f.id+')">'+(f.dq?'un-DQ':'DQ')+'</button> '
      +'<button class="danger" onclick="del('+f.id+')">✕</button></td></tr>';
   }});
+  // Chrome fires blur on an input as it is removed, which would save a half-typed bib
+  // (14 on the way to 144, and 14 is a real runner). The box being replaced must not save.
+  if(keep) act.onblur=null;
   document.getElementById('rows').innerHTML=h;
+  if(keep){{ const el=document.querySelector('#rows tr[data-id="'+keep.id+'"] input');
+    if(el){{ el.focus(); el.value=keep.v; try{{ el.setSelectionRange(keep.s,keep.s); }}catch(e){{}} }} }}
 }}
 async function startRace(){{
   const body={{}};
@@ -939,8 +952,12 @@ async function recordBib(){{ const el=document.getElementById('bib'); const v=el
   try{{ const j=await jpost('/races/'+RID+'/finish',{{bib:v}});
     if(j&&j.warn) alert('⚠ '+j.warn); el.value=''; el.focus(); load(); }}
   catch(e){{ alert(e.message); el.select(); }} }}
-async function ins(id){{ if(!confirm('Insert an open place here? Everyone from this place down moves one place later. Then type the missed bib into the new blank row.'))return;
-  await jpost('/races/'+RID+'/insert',{{before:id}}); load(); }}
+async function ins(id){{ if(!confirm('Open this place for a missed runner? The runners from here down each slide one place later into the tapped times below - no times change. Then type the missed bib into the blank row.'))return;
+  const at=FIN.findIndex(f=>f.id===id);
+  try{{ const j=await jpost('/races/'+RID+'/insert',{{before:id}}); if(j&&j.warn) alert('⚠ '+j.warn); }}
+  catch(e){{ alert(e.message); }}
+  await load();
+  const box=document.querySelector('#rows tr:nth-child('+(at+1)+') input'); if(box) box.focus(); }}
 async function insEnd(){{ await jpost('/races/'+RID+'/insert',{{}}); load(); }}
 async function setBib(id,v){{ try{{ const j=await jpost('/finishers/'+id+'/bib',{{bib:v}}); if(j&&j.warn) alert('⚠ '+j.warn); }}catch(e){{ alert(e.message); }} load(); }}
 async function dq(id){{ await jpost('/finishers/'+id+'/dq',{{}}); load(); }}
@@ -955,7 +972,9 @@ async function ddrop(e,overId){{ e.preventDefault();
   dend(); await jpost('/races/'+RID+'/reorder',{{order}}); load(); }}
 function dend(){{ dragging=false; dragId=null; }}
 setInterval(tick,75);
-setInterval(()=>{{ if(!dragging)load(); }},2000);
+// Never poll-redraw while a bib is being typed (it cut people off every 2 seconds).
+function editingBib(){{ const a=document.activeElement; return !!(a&&a.tagName==='INPUT'&&a.closest('#rows')); }}
+setInterval(()=>{{ if(!dragging&&!editingBib())load(); }},2000);
 load();
 </script>
 """
@@ -1337,42 +1356,65 @@ def race_reorder(rid):
 @bp.post("/races/<int:rid>/insert")
 @login_required
 def race_insert(rid):
-    """Insert an OPEN place for a missed runner. `before` = finisher id to insert ahead
-    of (its place P); omit to append at the end. Every finisher keeps its own recorded
-    time; those from place P down move one place later (seq += 1). The new open slot gets
-    a time interpolated between its neighbours so ordering stays consistent — the timer
-    then types the missed bib into it."""
+    """Open a place for a runner who was missed or scanned out of order.
+
+    Times belong to their SLOTS: they were tapped at the line and are right. What is
+    wrong is which runner sits in which slot. So nothing is invented -- the runners
+    from the chosen place down each slide one slot later, stopping at the next OPEN
+    (tapped but unscanned) slot below, and the chosen place is left open for the
+    missed bib. Runners below that open slot do not move. Same fixed-slot model as
+    race_reorder: seq/elapsed/finish_time stay put, the runner payload moves.
+
+    Only when there is no open slot below does the last runner need somewhere to go:
+    a new final slot with an estimated time (last + 1s), flagged in `warn`.
+    `before` omitted = append an open place at the end (estimated time, as before).
+    """
     r, m = _race_or_403(rid, can_record_meet)
     before = (request.get_json(silent=True) or {}).get("before")
     conn = db.connect()
-    rows = conn.execute("SELECT id, seq, elapsed_seconds FROM finishers WHERE race_id=? ORDER BY seq",
-                        (rid,)).fetchall()
-    if before is not None:
-        target = next((f for f in rows if f["id"] == before), None)
-        if not target:
-            conn.close()
-            return jsonify(error="unknown finisher"), 400
-        p = target["seq"]
+    rows = conn.execute("SELECT * FROM finishers WHERE race_id=? ORDER BY seq", (rid,)).fetchall()
+    if before is None:
+        last = rows[-1] if rows else None
+        seq = (last["seq"] + 1) if last else 1
+        est = (last["elapsed_seconds"] + 1.0) if last and last["elapsed_seconds"] is not None else 0.0
+        conn.execute("INSERT INTO finishers (race_id, seq, finish_time, elapsed_seconds) VALUES (?,?,?,?)",
+                     (rid, seq, None, est))
+        conn.commit()
+        conn.close()
+        return jsonify(ok=True, seq=seq)
+    k = next((i for i, f in enumerate(rows) if f["id"] == before), None)
+    if k is None:
+        conn.close()
+        return jsonify(error="unknown finisher"), 400
+    if rows[k]["bib"] is None:                      # already an open place: nothing to shift
+        conn.close()
+        return jsonify(ok=True, already_open=True)
+    slots = [(f["seq"], f["elapsed_seconds"], f["finish_time"]) for f in rows]
+    ids = [f["id"] for f in rows]
+    j = next((i for i in range(k + 1, len(rows)) if rows[i]["bib"] is None), None)
+    warn = None
+    if j is not None:
+        # The open slot below moves up to place k; runners k..j-1 slide down one slot.
+        order = ids[:k] + [ids[j]] + ids[k:j] + ids[j + 1:]
     else:
-        p = (rows[-1]["seq"] + 1) if rows else 1
-    prev_t = next((f["elapsed_seconds"] for f in reversed(rows)
-                   if f["seq"] < p and f["elapsed_seconds"] is not None), None)
-    nxt_t = next((f["elapsed_seconds"] for f in rows
-                  if f["seq"] >= p and f["elapsed_seconds"] is not None), None)
-    if prev_t is None and nxt_t is None:
-        new_t = 0.0
-    elif prev_t is None:
-        new_t = max(0.0, nxt_t / 2)
-    elif nxt_t is None:
-        new_t = prev_t + 1.0
-    else:
-        new_t = (prev_t + nxt_t) / 2
-    conn.execute("UPDATE finishers SET seq = seq + 1 WHERE race_id=? AND seq >= ?", (rid, p))
-    conn.execute("INSERT INTO finishers (race_id, seq, finish_time, elapsed_seconds) VALUES (?,?,?,?)",
-                 (rid, p, None, new_t))
+        last = rows[-1]
+        est = (last["elapsed_seconds"] + 1.0) if last["elapsed_seconds"] is not None else None
+        new_id = conn.execute(
+            "INSERT INTO finishers (race_id, seq, finish_time, elapsed_seconds) VALUES (?,?,?,?)",
+            (rid, last["seq"] + 1, None, est)).lastrowid
+        slots.append((last["seq"] + 1, est, None))
+        order = ids[:k] + [new_id] + ids[k:]
+        who = last["snap_name"] or ("bib %s" % last["bib"])
+        warn = ("There was no open place below to slide into, so %s moved to a new last place "
+                "with an estimated time of %s. Check that time before publishing results."
+                % (who, fmt_hms(est)))
+    for i, fid in enumerate(order):
+        seq, elapsed, ftime = slots[i]
+        conn.execute("UPDATE finishers SET seq=?, elapsed_seconds=?, finish_time=? WHERE id=?",
+                     (seq, elapsed, ftime, fid))
     conn.commit()
     conn.close()
-    return jsonify(ok=True, seq=p)
+    return jsonify(ok=True, warn=warn)
 
 
 # ------------------------------- scoring -------------------------------
