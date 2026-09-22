@@ -68,12 +68,19 @@ def progress(aid):
         "JOIN events e ON e.id=me.event_id JOIN meets m ON m.id=me.meet_id "
         "WHERE en.runner_id=? AND (r.mark_seconds IS NOT NULL OR r.mark_metric IS NOT NULL) "
         "ORDER BY m.date", (aid,)).fetchall()
-    # XC performances (match by bib within the athlete's school, same district)
+    # XC performances, resolved through the PER-MEET bib map. This used to match on
+    # athletes.bib — the vestigial single-bib column, NULL for every athlete since bibs
+    # became per-meet — so the page said "No results recorded yet" for everyone who had
+    # ever raced. meet_bibs ties an athlete to the number they wore at that specific
+    # meet, which is how every other lookup (athlete_by_meet_bib, results) does it.
     xc_rows = conn.execute(
         "SELECT m.name AS meet, m.date, ra.name AS race, f.elapsed_seconds, f.dq "
-        "FROM finishers f JOIN races ra ON ra.id=f.race_id JOIN meets m ON m.id=ra.meet_id "
-        "WHERE f.bib=? AND f.snap_school=? AND m.district_id=? AND f.elapsed_seconds IS NOT NULL "
-        "ORDER BY m.date", (a["bib"], a["sname"], a["district_id"])).fetchall()
+        "FROM meet_bibs mb "
+        "JOIN races ra ON ra.meet_id=mb.meet_id "
+        "JOIN finishers f ON f.race_id=ra.id AND f.bib=mb.bib "
+        "JOIN meets m ON m.id=ra.meet_id "
+        "WHERE mb.athlete_id=? AND f.elapsed_seconds IS NOT NULL "
+        "ORDER BY m.date", (aid,)).fetchall()
 
     # Season points (track): sum the points-table value at each placed finish
     import json as _json
@@ -214,11 +221,16 @@ def _athlete_focus(conn, did, school_ids, question, mode):
             "JOIN meets m ON m.id=me.meet_id WHERE en.runner_id=? "
             "AND (r.mark_seconds IS NOT NULL OR r.mark_metric IS NOT NULL) "
             "ORDER BY e.sort, m.date", (a["id"],)).fetchall()
+        # Same per-meet bib resolution as the progress page — matching on the vestigial
+        # athletes.bib meant AI Insights told every coach their XC runners had no results.
         xc = conn.execute(
             "SELECT m.name AS meet, m.date, ra.name AS race, f.elapsed_seconds "
-            "FROM finishers f JOIN races ra ON ra.id=f.race_id JOIN meets m ON m.id=ra.meet_id "
-            "WHERE f.bib=? AND f.snap_school=? AND m.district_id=? AND f.elapsed_seconds IS NOT NULL "
-            "ORDER BY m.date", (a["bib"], a["sname"], a["district_id"])).fetchall()
+            "FROM meet_bibs mb "
+            "JOIN races ra ON ra.meet_id=mb.meet_id "
+            "JOIN finishers f ON f.race_id=ra.id AND f.bib=mb.bib "
+            "JOIN meets m ON m.id=ra.meet_id "
+            "WHERE mb.athlete_id=? AND f.elapsed_seconds IS NOT NULL "
+            "ORDER BY m.date", (a["id"],)).fetchall()
         out.append(f"ATHLETE FOCUS — {who} ({a['sname']}):")
         if not trk and not xc:
             out.append("  (no results recorded yet)")
