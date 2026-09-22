@@ -827,12 +827,9 @@ def meet_detail(mid):
                   'can run this meet</span>')
     if setup:
         boxes = "".join(
-            f'<label style="display:flex;gap:.5rem;align-items:center;font-size:.95rem;'
-            f'padding:.12rem 0">'
+            f'<label style="display:flex;gap:.5rem;align-items:center;font-size:.95rem">'
             f'<input type="checkbox" name="school_ids" value="{s["id"]}" style="width:auto" '
-            f'{"checked" if s["id"] in att_ids else ""}>{escape(s["name"])}'
-            f'<span style="margin-left:auto;text-align:right;white-space:nowrap">'
-            f'{_counts(s["id"], s["id"] in att_ids)}</span></label>' for s in all_sch)
+            f'{"checked" if s["id"] in att_ids else ""}>{escape(s["name"])}</label>' for s in all_sch)
         hopts = '<option value="">— none —</option>' + "".join(
             f'<option value="{s["id"]}" {"selected" if s["id"]==m["host_school_id"] else ""}>'
             f'{escape(s["name"])}</option>' for s in all_sch)
@@ -860,17 +857,16 @@ def meet_detail(mid):
                 f'<button type="submit" style="margin-top:1rem">💾 Save meet setup</button>'
                 f'</form></div>')
     else:
-        pills = ("".join(
-            f'<div style="display:flex;gap:.6rem;align-items:center;padding:.15rem 0">'
-            f'<span class="pill">{escape(s["name"])}</span>'
-            f'<span style="margin-left:auto;white-space:nowrap">{_counts(s["id"], True)}</span>'
-            f'</div>' for s in att) or '<span class="muted">None</span>')
+        pills = ("".join(f'<span class="pill">{escape(s["name"])}</span> ' for s in att) or
+                 '<span class="muted">None</span>')
         summary = f'<p class="muted">Host: {escape(host["name"]) if host else "—"}</p>'
         if not is_xc:
             summary += _sport.settings_fields(m, False)
         setup_card = f'<div class="card"><h2>Schools at this meet</h2>{pills}{summary}</div>'
 
     # Roster readiness — the host school's answer to "has everyone sent theirs in yet?".
+    # Shown to every school in the meet: the host tracks who still owes a roster, and a
+    # visiting coach can confirm their own runners actually landed.
     roster_card = ""
     if not is_org and att:
         trs, ready = [], 0
