@@ -879,10 +879,17 @@ def meet_detail(mid):
             n = e["n"] if e else 0
             if n:
                 ready += 1
+                short = eligible_by.get(s["id"], 0) - n
+                # The Boys/Girls columns already carry the split; this column says only
+                # whether anything is missing.
+                note = (f'<span class="muted">{short} on their roster not entered</span>'
+                        if short > 0 else '<span style="color:var(--ok)">✓</span>')
+            else:
+                note = _counts(s["id"], True)      # the warning explaining why there is none
             pill = ' <span class="pill">host</span>' if s["id"] == m["host_school_id"] else ""
             trs.append(f'<tr><td><b>{escape(s["name"])}</b>{pill}</td>'
                        f'<td>{e["b"] if e else 0}</td><td>{e["g"] if e else 0}</td>'
-                       f'<td>{_counts(s["id"], True)}</td></tr>')
+                       f'<td><b>{n}</b></td><td>{note}</td></tr>')
         tb = sum(r["b"] for r in entered_by.values())
         tg = sum(r["g"] for r in entered_by.values())
         tt = sum(r["n"] for r in entered_by.values())
@@ -891,10 +898,10 @@ def meet_detail(mid):
         roster_card = (
             f'<div class="card"><h2>Rosters</h2>'
             f'<p class="muted" style="margin:-.4rem 0 .7rem">{head}</p>'
-            f'<table><tr><th>School</th><th>Boys</th><th>Girls</th><th>Entered</th></tr>'
+            f'<table><tr><th>School</th><th>Boys</th><th>Girls</th><th>Total</th><th></th></tr>'
             f'{"".join(trs)}'
             f'<tr><td><b>All schools</b></td><td><b>{tb}</b></td><td><b>{tg}</b></td>'
-            f'<td><b>{tt}</b></td></tr></table></div>')
+            f'<td><b>{tt}</b></td><td></td></tr></table></div>')
 
     # (No-login timer QR moved to the Meet-day page; it auto-generates there.)
     section = _sport.setup_section(m, setup)
