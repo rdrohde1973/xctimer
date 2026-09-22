@@ -718,7 +718,52 @@ def meet_detail(mid):
                            (m["district_id"],)).fetchall()
     host = conn.execute("SELECT name FROM schools WHERE id=?", (m["host_school_id"],)).fetchone() \
         if m["host_school_id"] else None
+    # Who has actually entered runners? "Entered" = holding a bib for THIS meet.
+    # `eligible` is a school's active roster for this sport; the two differing is the
+    # tell-tale for athletes not marked for the sport, who never get a bib.
+    _flag = "does_track" if m["sport"] == "track" else "does_xc"
+    entered_by = {r["sid"]: r for r in conn.execute(
+        """SELECT a.school_id AS sid,
+             SUM(CASE WHEN a.gender='M' THEN 1 ELSE 0 END) AS b,
+             SUM(CASE WHEN a.gender='F' THEN 1 ELSE 0 END) AS g,
+             SUM(CASE WHEN a.gender IS NULL OR a.gender NOT IN ('M','F') THEN 1 ELSE 0 END) AS u,
+             COUNT(*) AS n
+           FROM meet_bibs mb JOIN athletes a ON a.id=mb.athlete_id
+           WHERE mb.meet_id=? GROUP BY a.school_id""", (mid,)).fetchall()}
+    # Two different questions: is there a roster at all, and is any of it marked for
+    # THIS sport? A roster nobody marked for cross country looks identical to no roster
+    # from the meet's side -- but the fix is completely different, so say which it is.
+    eligible_by, roster_by = {}, {}
+    for r in conn.execute(
+        f"""SELECT a.school_id AS sid, COUNT(*) AS anyone,
+                   SUM(CASE WHEN a.{_flag}=1 THEN 1 ELSE 0 END) AS n
+            FROM athletes a JOIN schools s ON s.id=a.school_id
+            WHERE s.district_id=? AND a.active=1
+            GROUP BY a.school_id""", (m["district_id"],)).fetchall():
+        eligible_by[r["sid"]] = r["n"] or 0
+        roster_by[r["sid"]] = r["anyone"] or 0
     conn.close()
+
+    def _counts(sid, attending):
+        """Inline summary for one school: entered numbers, or why there are none."""
+        e = entered_by.get(sid)
+        sport = "track" if _flag == "does_track" else "cross country"
+        if e and e["n"]:
+            b, g = e["b"], e["g"]
+            unk = f' <span class="muted">+{e["u"]} no sex</span>' if e["u"] else ""
+            return (f'<b>{e["n"]}</b> <span class="muted">{b} boy{"" if b == 1 else "s"} · '
+                    f'{g} girl{"" if g == 1 else "s"}</span>{unk}')
+        if not attending:
+            roster = roster_by.get(sid, 0)
+            return (f'<span class="muted">roster {roster}</span>' if roster
+                    else '<span class="muted">no roster</span>')
+        if roster_by.get(sid, 0) and not eligible_by.get(sid, 0):
+            return (f'<span style="color:var(--warn)">⚠ roster added, but nobody is marked '
+                    f'for {sport}</span>')
+        if eligible_by.get(sid, 0):
+            return '<span style="color:var(--warn)">⚠ roster added, nobody entered</span>'
+        return '<span style="color:var(--warn)">⚠ no roster yet</span>'
+
 
     att_ids = {s["id"] for s in att}
     setup = can_setup_meet(m)
@@ -782,9 +827,12 @@ def meet_detail(mid):
                   'can run this meet</span>')
     if setup:
         boxes = "".join(
-            f'<label style="display:flex;gap:.5rem;align-items:center;font-size:.95rem">'
+            f'<label style="display:flex;gap:.5rem;align-items:center;font-size:.95rem;'
+            f'padding:.12rem 0">'
             f'<input type="checkbox" name="school_ids" value="{s["id"]}" style="width:auto" '
-            f'{"checked" if s["id"] in att_ids else ""}>{escape(s["name"])}</label>' for s in all_sch)
+            f'{"checked" if s["id"] in att_ids else ""}>{escape(s["name"])}'
+            f'<span style="margin-left:auto;text-align:right;white-space:nowrap">'
+            f'{_counts(s["id"], s["id"] in att_ids)}</span></label>' for s in all_sch)
         hopts = '<option value="">— none —</option>' + "".join(
             f'<option value="{s["id"]}" {"selected" if s["id"]==m["host_school_id"] else ""}>'
             f'{escape(s["name"])}</option>' for s in all_sch)
@@ -812,12 +860,41 @@ def meet_detail(mid):
                 f'<button type="submit" style="margin-top:1rem">💾 Save meet setup</button>'
                 f'</form></div>')
     else:
-        pills = ("".join(f'<span class="pill">{escape(s["name"])}</span> ' for s in att) or
-                 '<span class="muted">None</span>')
+        pills = ("".join(
+            f'<div style="display:flex;gap:.6rem;align-items:center;padding:.15rem 0">'
+            f'<span class="pill">{escape(s["name"])}</span>'
+            f'<span style="margin-left:auto;white-space:nowrap">{_counts(s["id"], True)}</span>'
+            f'</div>' for s in att) or '<span class="muted">None</span>')
         summary = f'<p class="muted">Host: {escape(host["name"]) if host else "—"}</p>'
         if not is_xc:
             summary += _sport.settings_fields(m, False)
         setup_card = f'<div class="card"><h2>Schools at this meet</h2>{pills}{summary}</div>'
+
+    # Roster readiness — the host school's answer to "has everyone sent theirs in yet?".
+    roster_card = ""
+    if not is_org and att:
+        trs, ready = [], 0
+        for s in att:
+            e = entered_by.get(s["id"])
+            n = e["n"] if e else 0
+            if n:
+                ready += 1
+            pill = ' <span class="pill">host</span>' if s["id"] == m["host_school_id"] else ""
+            trs.append(f'<tr><td><b>{escape(s["name"])}</b>{pill}</td>'
+                       f'<td>{e["b"] if e else 0}</td><td>{e["g"] if e else 0}</td>'
+                       f'<td>{_counts(s["id"], True)}</td></tr>')
+        tb = sum(r["b"] for r in entered_by.values())
+        tg = sum(r["g"] for r in entered_by.values())
+        tt = sum(r["n"] for r in entered_by.values())
+        head = ("Every school has entered runners." if ready == len(att) else
+                f"{ready} of {len(att)} schools have entered runners.")
+        roster_card = (
+            f'<div class="card"><h2>Rosters</h2>'
+            f'<p class="muted" style="margin:-.4rem 0 .7rem">{head}</p>'
+            f'<table><tr><th>School</th><th>Boys</th><th>Girls</th><th>Entered</th></tr>'
+            f'{"".join(trs)}'
+            f'<tr><td><b>All schools</b></td><td><b>{tb}</b></td><td><b>{tg}</b></td>'
+            f'<td><b>{tt}</b></td></tr></table></div>')
 
     # (No-login timer QR moved to the Meet-day page; it auto-generates there.)
     section = _sport.setup_section(m, setup)
@@ -829,6 +906,7 @@ def meet_detail(mid):
     else:
         # XC: heats above the schools card; track keeps its meet-setup form first.
         mid_block = f"{section}\n{setup_card}" if is_xc else f"{setup_card}\n{section}"
+        mid_block = f"{mid_block}\n{roster_card}"
 
     edit_card = ""
     if setup:
