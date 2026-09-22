@@ -705,8 +705,9 @@ def event_settings(mid):
 def participant_stickers(mid):
     m = _event_or_403(mid, can_view_meet)
     template = "5163"          # same Avery sheet as Track / XC
-    # Self-serve events are ArUco-only (camera tap-then-scan) — never emit QR bibs for them.
-    code = "aruco" if (request.args.get("code") == "aruco" or is_web_event(m)) else None
+    # ArUco only, for every event — the finish camera cannot read a QR bib, and the
+    # route (not the button) is what stops a stale ?code= from printing one.
+    code = "aruco"
     try:
         spares = int(request.args.get("spares", "0"))
     except (TypeError, ValueError):

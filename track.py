@@ -963,12 +963,8 @@ def assign_page(mid):
                   '</div>')
     relay_block = ""
 
-    from .meets import aruco_only
-    _ao = aruco_only()              # coaches: ArUco only, same rule as the xc packet
-    _tqr = ("" if _ao else
-            f'<a class="btn ghost" href="/meets/{mid}/school/{sid}/stickers.pdf">'
-            f'Stickers — QR</a>')
-    _tlbl = "Stickers" if _ao else "Stickers — ArUco"
+    _tqr = ""                       # ArUco only, same rule as the xc packet
+    _tlbl = "Stickers"
 
     body = f"""
 <p class="muted"><a href="/meets">← Meets</a></p>

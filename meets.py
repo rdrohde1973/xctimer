@@ -197,11 +197,9 @@ def road_sticker_controls(mid, self_serve=False):
     Self-serve events time by tap-then-scan (camera reads ArUco), so they get
     ArUco tags only — no QR bibs."""
     a = f"/meets/{mid}/participants/stickers.pdf"
-    if self_serve:
-        buttons = f'<button class="ghost" name="code" value="aruco">Print bib tags (ArUco)</button>'
-    else:
-        buttons = (f'<button class="ghost" name="code" value="">Stickers — QR</button>'
-                   f'<button class="ghost" name="code" value="aruco">Stickers — ArUco</button>')
+    # ArUco only — the camera cannot read a QR bib (see aruco_only).
+    buttons = (f'<button class="ghost" name="code" value="aruco">'
+               f'{"Print bib tags (ArUco)" if self_serve else "Print stickers"}</button>')
     return (f'<form action="{a}" method="get" target="_blank" '
             f'style="display:inline-flex;gap:.5rem;align-items:center;flex-wrap:wrap;margin:0">'
             f'{buttons}'
@@ -449,14 +447,17 @@ def delete_meet(mid):
 
 
 def aruco_only():
-    """True when the current principal may only print ArUco sticker sheets.
+    """True when only ArUco sticker sheets may be printed — which is now always.
 
-    Coaches time by camera and the camera reads ArUco. A QR sheet handed out by
-    mistake cannot be scanned at the line, and the mistake only surfaces once the
-    stickers are on jerseys — so the choice is removed rather than explained.
-    Admins, who print for other people's meets, keep both.
+    The finish-line camera reads ArUco and nothing else: no QR scanner remains
+    anywhere in the app, and a bib's QR only ever encoded the bib number as plain
+    text, so a QR sheet is a sheet that cannot be scanned. The mistake surfaces
+    only once the stickers are on jerseys, so the choice is removed rather than
+    explained. Kept as a function because the sticker ROUTES call it to enforce
+    the rule against a stale bookmark or a hand-typed ?code= — deleting a button
+    is not enforcement. Flip this to a condition if QR bibs ever come back.
     """
-    return getattr(getattr(g, "principal", None), "role", None) == "coach"
+    return True
 
 
 def bibs_locked(m):
@@ -775,14 +776,9 @@ def meet_detail(mid):
     hs = (f' <a class="btn ghost" href="/meets/{mid}/heatsheets.pdf">Heat sheets</a>'
           if not is_xc else "")
     # All meets print Avery 5163 (2×4), with a QR or camera-readable ArUco code of the
-    # bib — except a coach, who gets ArUco only (see aruco_only).
-    _ao = aruco_only()
-    _qr = ("" if _ao else
-           f'<a class="btn ghost" href="/meets/{mid}/stickers.pdf">Stickers — QR</a> ')
-    _lbl = "Stickers" if _ao else "Stickers — ArUco"
+    # bib — ArUco only, for everybody now (see aruco_only).
     sticker_btns = (
-        f'{_qr}'
-        f'<a class="btn ghost" href="/meets/{mid}/stickers.pdf?code=aruco">{_lbl}</a> ')
+        f'<a class="btn ghost" href="/meets/{mid}/stickers.pdf?code=aruco">Stickers</a> ')
     if is_org:
         print_bar = ""
     else:
