@@ -174,9 +174,23 @@ def create_user(email, role, *, district_id=None, organizer_id=None, name=None, 
 
 
 def issue_reset_token(user_id):
-    token = secrets.token_urlsafe(32)
-    expires = _iso(_now() + timedelta(hours=RESET_TTL_HOURS))
+    """Issue a set-a-password link, and pick its lifetime from what it actually is.
+
+    A user with no password_hash has never accepted their invite, so this link IS
+    the invite and gets the same week that the original one did. Resends used to
+    hand those people the RESET_TTL_HOURS window meant for replacing a password an
+    account already has -- a coach who opened the mail the next morning found a
+    dead link, which is how several invites quietly lapsed before anyone noticed.
+    The short window still applies to a real reset, where it is a security property:
+    the account is live, so a stale link in an inbox is worth something to a thief.
+    Decided here rather than at the call sites so no caller can get it wrong.
+    """
     conn = db.connect()
+    row = conn.execute("SELECT password_hash FROM users WHERE id=?", (user_id,)).fetchone()
+    invite = row is not None and not row["password_hash"]
+    token = secrets.token_urlsafe(32)
+    expires = _iso(_now() + (timedelta(days=SETUP_TTL_DAYS) if invite
+                             else timedelta(hours=RESET_TTL_HOURS)))
     conn.execute(
         "UPDATE users SET setup_token=?, token_expires=? WHERE id=?",
         (token, expires, user_id),
