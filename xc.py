@@ -165,7 +165,7 @@ def setup_section(m, setup):
     rows = []
     for r in races:
         status = "ended" if r["stop_time"] else ("running" if r["start_time"] else "not started")
-        # Setup shows config actions only; Time/Camera live on the Race-day tab.
+        # Setup shows config actions only; Time lives on the Race-day tab (camera: phone only).
         act = ""
         if setup:
             nm = _json.dumps(r["name"])
@@ -245,7 +245,7 @@ def _road_setup_section(m, setup, races, counts, _json, rename_js):
                        '<span class="muted">No age groups set — add them below '
                        '(paste from another event).</span>')
         nassigned = assigned_count.get(r["id"], 0)
-        # Setup shows config actions only; Time/Camera/Reset live on the Race-day tab.
+        # Setup shows config actions only; Time/Reset live on the Race-day tab (camera: phone only).
         act = ""
         override = ""
         if setup:
@@ -758,8 +758,8 @@ def xc_meet_day(mid):
         rows.append(
             f'<tr><td><b>{escape(r["name"])}</b></td><td>{r["capture_mode"]}</td>'
             f'<td>{status}</td><td>{counts.get(r["id"], 0)}</td>'
-            f'<td style="text-align:right"><a class="btn" href="/races/{r["id"]}/console">⏱ Time</a> '
-            f'<a class="btn ghost" href="/races/{r["id"]}/camera">📷 Camera</a></td></tr>')
+            f'<td style="text-align:right"><a class="btn" href="/races/{r["id"]}/console">⏱ Time</a>'
+            f'</td></tr>')
     noun = "Races" if _is_org(m) else ("Events" if m["sport"] == "road" else "Heats")
     tbl = (f'<div class="card"><h2>{noun} — tap to time</h2><table><tr><th>{noun[:-1]}</th><th>Mode</th>'
            f'<th>Status</th><th>Finishers</th><th></th></tr>{"".join(rows)}</table></div>'
