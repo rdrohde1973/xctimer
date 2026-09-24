@@ -291,6 +291,8 @@ def roster(sid):
         where.append("does_track=1")
     elif sport == "road" and road_on:
         where.append("does_road=1")
+    elif sport == "champ":
+        where.append("does_champ=1")
     conn = db.connect()
     ath = conn.execute(
         f"SELECT * FROM athletes WHERE {' AND '.join(where)} "
@@ -317,6 +319,7 @@ def roster(sid):
             continue
         dis = "disabled" if ro else ""
         xc = "checked" if a["does_xc"] else ""
+        ch = "checked" if ("does_champ" in a.keys() and a["does_champ"]) else ""
         tr = "checked" if a["does_track"] else ""
         rd = "checked" if ("does_road" in a.keys() and a["does_road"]) else ""
         aid = a["id"]
@@ -335,6 +338,8 @@ def roster(sid):
             f'<td>{a["gender"] or ""}</td>'
             f'<td style="text-align:center"><input type="checkbox" style="width:auto" {xc} {dis} '
             f'onchange="tog({aid},\'xc\',this)"></td>'
+            f'<td style="text-align:center"><input type="checkbox" style="width:auto" {ch} {dis} '
+            f'title="Picked for the championship" onchange="tog({aid},\'champ\',this)"></td>'
             f'<td style="text-align:center"><input type="checkbox" style="width:auto" {tr} {dis} '
             f'onchange="tog({aid},\'track\',this)"></td>'
             + (f'<td style="text-align:center"><input type="checkbox" style="width:auto" {rd} {dis} '
@@ -348,7 +353,9 @@ def roster(sid):
     else:
         road_head = '<th style="text-align:center">Road</th>' if road_on else ""
         head = ('<tr><th>Name</th><th>Gr</th><th>Sex</th>'
-                '<th style="text-align:center">XC</th><th style="text-align:center">Track</th>'
+                '<th style="text-align:center">XC</th>'
+                '<th style="text-align:center" title="Picked for the championship">Champ</th>'
+                '<th style="text-align:center">Track</th>'
                 f'{road_head}<th></th></tr>'
                 if ath else "")
         empty = "No athletes here yet — add or import below."
@@ -364,8 +371,11 @@ def roster(sid):
                  f'style="{"background:var(--panel2);color:var(--fg)" if grad_view else ""}">'
                  f'🎓 Graduated ({grad_count})</a>' if grad_count or grad_view else "")
     road_chip = _f("🛣 Road", "road") if road_on else ""
+    champ_chip = (_f("🏆 Champ", "champ") +
+                  (f'<a class="btn ghost" href="/schools/{sid}/champ">✨ Suggest champ picks</a>'
+                   if not grad_view else ""))
     filt = (f'<div class="row" style="margin:.2rem 0 1rem;gap:.4rem">'
-            f'{_f("All", "all")}{_f("🏃 XC", "xc")}{_f("🎽 Track", "track")}{road_chip}'
+            f'{_f("All", "all")}{_f("🏃 XC", "xc")}{champ_chip}{_f("🎽 Track", "track")}{road_chip}'
             f'<span style="flex:1"></span>{grad_link}</div>')
 
     logo_img = (f'<img src="{escape(s["logo_path"])}" alt="" style="height:42px;width:42px;'
@@ -753,7 +763,8 @@ def athlete_sports(aid):
     if not _can_access_school(s) or g.principal.is_demo:
         abort(403)
     data = request.get_json(silent=True) or {}
-    col = {"xc": "does_xc", "track": "does_track", "road": "does_road"}.get(data.get("sport"))
+    col = {"xc": "does_xc", "track": "does_track", "road": "does_road",
+           "champ": "does_champ"}.get(data.get("sport"))
     if not col:
         return jsonify(error="bad sport"), 400
     conn = db.connect()
@@ -761,6 +772,15 @@ def athlete_sports(aid):
     if data.get("on"):
         from .meets import sync_school_meet_bibs
         sync_school_meet_bibs(conn, a["school_id"])   # sport switched on -> bib in un-run meets
+    elif col == "does_champ":
+        # Un-picked: take them back out of any championship that has not been run, or
+        # the coach's change of mind never reaches the sticker sheet. A meet with results
+        # is history and is left alone.
+        conn.execute(
+            "DELETE FROM meet_bibs WHERE athlete_id=? AND meet_id IN ("
+            "  SELECT m.id FROM meets m WHERE m.championship=1 AND NOT EXISTS ("
+            "    SELECT 1 FROM finishers f JOIN races rc ON rc.id=f.race_id WHERE rc.meet_id=m.id))",
+            (aid,))
     conn.commit()
     conn.close()
     return jsonify(ok=True)
@@ -1323,3 +1343,148 @@ async function lookup(){
 </script>"""
     return shell(p, body, active="meets", active_district=active_district_id(),
                  districts=_districts_for_switcher())
+
+
+# ------------------------------- championship picks -------------------------------
+def _fmt_mmss(s):
+    if s is None:
+        return ""
+    return "%d:%04.1f" % (int(s // 60), s % 60)
+
+
+@bp.get("/schools/<int:sid>/champ")
+@login_required
+def champ_suggest(sid):
+    """Suggested championship picks for one school. Nothing is saved from this page
+    until the coach presses Apply -- every pick is a checkbox they can change first."""
+    from . import champ
+    s = _load_school_or_403(sid)
+    use_llm = request.args.get("ai") != "0"
+    res = champ.suggest(sid, use_llm=use_llm)
+    ro = g.principal.is_demo
+
+    def row(p, tag, checked):
+        res_txt = " · ".join(f'{escape(r["meet"])} {_fmt_mmss(r["t"])}' for r in p["results"]) or "—"
+        return (f'<tr><td style="text-align:center"><input type="checkbox" name="pick" '
+                f'value="{p["aid"]}" style="width:auto" {"checked" if checked else ""} '
+                f'{"disabled" if ro else ""} onchange="cnt()"></td>'
+                f'<td><b>{escape(p["name"])}</b>{" <span class=muted>(picked now)</span>" if p.get("picked_now") else ""}</td>'
+                f'<td style="white-space:nowrap"><b>{_fmt_mmss(p["rating"]) or "—"}</b></td>'
+                f'<td style="text-align:center">{p["n"]}</td>'
+                f'<td class="muted" style="font-size:.85rem">{res_txt}</td>'
+                f'<td>{tag}</td></tr>')
+
+    cards = []
+    for c in res["categories"]:
+        tu = c["tossup"]
+        tossup_ids = {p["aid"] for p in tu["zone"]} if tu else set()
+        trs = []
+        for p, kind in c["picks"]:
+            tag = ('<span class="pill" style="background:#2e9e5b;color:#fff">Pick</span>'
+                   if kind == "clear" else
+                   f'<span class="pill" style="background:#e8622a;color:#fff">Toss-up pick</span>')
+            trs.append(row(p, tag, True))
+        for p in c["alternates"]:
+            tag = ('<span class="pill">Toss-up — left out</span>' if p["aid"] in tossup_ids
+                   else '<span class="pill">Alternate</span>')
+            trs.append(row(p, tag, False))
+        shown = {p["aid"] for p, _ in c["picks"]} | {p["aid"] for p in c["alternates"]}
+        rest = [p for p in c["ranked"] if p["aid"] not in shown]
+        for p in rest:
+            trs.append(row(p, '<span class="muted">slower</span>', False))
+        for p in c["unranked"]:
+            trs.append(row(p, '<span class="pill" style="background:var(--warn);color:#000">No XC result yet</span>', False))
+        why = ""
+        if tu:
+            who = "AI review" if tu["by"] == "AI review" else "head-to-head record"
+            reason = escape(tu.get("reason", "")) if tu["by"] == "AI review" else (
+                "Too close to call on adjusted time, so the order comes from who beat whom "
+                "when they ran the same race.")
+            why = (f'<div class="msg" style="border-left:3px solid #e8622a;padding:.4rem .7rem;margin:.3rem 0 .6rem">'
+                   f'<b>Close call — {tu["slots"]} of {len(tu["zone"])} decided by {who}.</b> {reason}</div>')
+        cards.append(
+            f'<div class="card" data-cat="{c["grade"]}{c["gender"]}"><h2 style="display:flex;justify-content:space-between">'
+            f'<span>{c["label"]}</span><span class="muted" style="font-size:.9rem" id="n{c["grade"]}{c["gender"]}"></span></h2>'
+            f'{why}<table><tr><th></th><th>Runner</th><th title="Typical time on an average course">Adjusted</th>'
+            f'<th>Races</th><th>Results</th><th></th></tr>{"".join(trs)}</table></div>')
+    if res["uncategorised"]:
+        trs = "".join(
+            f'<tr><td style="text-align:center"><input type="checkbox" name="pick" value="{a["id"]}" '
+            f'style="width:auto" {"checked" if a["does_champ"] else ""} {"disabled" if ro else ""}></td>'
+            f'<td><b>{escape(a["name"])}</b></td><td class="muted">missing grade or sex — fix on the roster</td></tr>'
+            for a in res["uncategorised"])
+        cards.append(f'<div class="card"><h2>Can\'t be placed in a category</h2><table>{trs}</table></div>')
+
+    course_rows = "".join(
+        f'<tr><td>{escape(c["meet"])}</td><td>{escape(c["race"])}</td><td>{escape(c["date"] or "")}</td>'
+        f'<td style="text-align:right">{"+" if c["pct"] >= 0 else ""}{c["pct"]:.1f}%</td></tr>'
+        for c in res["courses"])
+    note = (f'<div class="msg warn">{escape(res["llm_note"])}</div>' if res["llm_note"] else "")
+    ai_link = (f'<a href="/schools/{sid}/champ?ai=0">skip AI review</a>' if use_llm
+               else f'<a href="/schools/{sid}/champ">run AI review of close calls</a>')
+    apply_btn = ("" if ro else
+                 '<button type="submit" onclick="return confirm(\'Replace this school\\\'s championship '
+                 'picks with the boxes ticked on this page?\')">✓ Apply these picks</button>')
+    body = f"""
+<p class="muted"><a href="/schools/{sid}?sport=champ">← {escape(s['name'])} roster</a></p>
+<h1>🏆 Championship picks — {escape(s['name'])}</h1>
+<div class="card"><p style="margin:0">Suggested <b>{champ.PICKS} per grade &amp; gender</b>, fastest first.
+<b>Adjusted</b> is each runner's typical time on an average course: every course's difficulty is
+learned from runners who raced more than one ({res['bridges']} of them), so a time on a hilly
+course is not held against anyone. Only close calls near the cut go to AI
+review, weighing head-to-head results and recent form. <b>Nothing is saved until you press Apply</b> —
+tick or untick anyone first. The Champ box on the roster still works afterwards.</p>
+<p class="muted" style="margin:.5rem 0 0;font-size:.85rem">{ai_link}</p></div>
+{note}
+<form method="post" action="/schools/{sid}/champ/apply">
+{"".join(cards)}
+<div class="card" style="position:sticky;bottom:0;display:flex;gap:1rem;align-items:center;flex-wrap:wrap">
+  {apply_btn}<span class="muted" id="total"></span></div>
+</form>
+<details class="card"><summary>How hard was each course?</summary>
+<table><tr><th>Meet</th><th>Race</th><th>Date</th><th>vs average course</th></tr>{course_rows}</table>
+<p class="muted" style="font-size:.85rem">Positive = slower than an average course. Learned from runners
+who ran more than one of these races.</p></details>
+<script>
+function cnt(){{
+  let total=0;
+  document.querySelectorAll('.card[data-cat]').forEach(function(c){{
+    const n=c.querySelectorAll('input[name=pick]:checked').length; total+=n;
+    const el=document.getElementById('n'+c.dataset.cat);
+    if(el){{ el.textContent=n+' / {champ.PICKS} selected'; el.style.color = n>{champ.PICKS} ? 'var(--err)' : ''; }}
+  }});
+  document.getElementById('total').textContent=total+' runners selected';
+}}
+cnt();
+</script>"""
+    return shell(g.principal, body, active="schools")
+
+
+@bp.post("/schools/<int:sid>/champ/apply")
+@login_required
+def champ_apply(sid):
+    """Save the coach's picks: exactly the ticked boxes, for this school only."""
+    _load_school_or_403(sid)
+    if g.principal.is_demo:
+        abort(403)
+    want = {int(x) for x in request.form.getlist("pick") if x.isdigit()}
+    conn = db.connect()
+    mine = {r[0] for r in conn.execute(
+        "SELECT id FROM athletes WHERE school_id=? AND active=1", (sid,)).fetchall()}
+    want &= mine                                  # never touch another school's runners
+    dropped = [a for a in mine if a not in want]
+    conn.execute("UPDATE athletes SET does_champ=0 WHERE school_id=?", (sid,))
+    for a in want:
+        conn.execute("UPDATE athletes SET does_champ=1 WHERE id=?", (a,))
+    # Keep any championship that hasn't been run in step with the picks.
+    for a in dropped:
+        conn.execute(
+            "DELETE FROM meet_bibs WHERE athlete_id=? AND meet_id IN ("
+            "  SELECT m.id FROM meets m WHERE m.championship=1 AND NOT EXISTS ("
+            "    SELECT 1 FROM finishers f JOIN races rc ON rc.id=f.race_id WHERE rc.meet_id=m.id))",
+            (a,))
+    from .meets import sync_school_meet_bibs
+    sync_school_meet_bibs(conn, sid)
+    conn.commit()
+    conn.close()
+    return redirect(f"/schools/{sid}?sport=champ")

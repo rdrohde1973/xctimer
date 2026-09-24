@@ -132,10 +132,13 @@ def assign_meet_bibs(conn, mid):
     """Append per-meet bib numbers (1…N) for eligible athletes of the meet's
     attending schools, in add order. Existing numbers are kept; only new athletes
     get appended. School (XC/track) meets only — road events use participants."""
-    m = conn.execute("SELECT sport FROM meets WHERE id=?", (mid,)).fetchone()
+    m = conn.execute("SELECT * FROM meets WHERE id=?", (mid,)).fetchone()
     if not m or m["sport"] not in ("xc", "track"):
         return
     flag = "does_xc" if m["sport"] == "xc" else "does_track"
+    # A championship enters only the runners each school picked -- 7 per grade x
+    # gender -- not the whole XC roster, which is what a normal meet prints.
+    champ = " AND a.does_champ=1" if ("championship" in m.keys() and m["championship"]) else ""
     have = {r[0] for r in conn.execute(
         "SELECT athlete_id FROM meet_bibs WHERE meet_id=?", (mid,)).fetchall()}
     nextb = (conn.execute("SELECT COALESCE(MAX(bib),0) FROM meet_bibs WHERE meet_id=?",
@@ -143,7 +146,7 @@ def assign_meet_bibs(conn, mid):
     ath = conn.execute(
         f"SELECT a.id FROM athletes a JOIN meet_schools ms ON ms.school_id=a.school_id "
         f"JOIN schools s ON s.id=a.school_id "
-        f"WHERE ms.meet_id=? AND a.active=1 AND a.{flag}=1 "
+        f"WHERE ms.meet_id=? AND a.active=1 AND a.{flag}=1{champ} "
         f"ORDER BY s.name, a.name, a.id", (mid,)).fetchall()
     for r in ath:
         if r["id"] in have:
@@ -296,6 +299,10 @@ def list_meets():
   <label style="display:flex;align-items:center;gap:.5rem;margin-top:.9rem;font-weight:400">
     <input type="checkbox" name="time_trial" value="1" style="width:auto">
     🕐 Time trial — practice only (your team, no team scoring, kept off official results)</label>
+  <label style="display:flex;align-items:center;gap:.5rem;margin-top:.5rem;font-weight:400">
+    <input type="checkbox" name="championship" value="1" style="width:auto">
+    🏆 Championship — only runners marked <b>Champ</b> on their roster, raced as six
+    grade × gender heats (7th/8th/9th Girls and Boys)</label>
   <button type="submit" style="margin-top:1rem">Create meet</button>
 </form></div>"""
     elif p.is_super and did is None:
@@ -364,6 +371,10 @@ def create_meet():
     mid = cur.lastrowid
     if request.form.get("time_trial"):
         conn.execute("UPDATE meets SET time_trial=1, team_scoring=0 WHERE id=?", (mid,))
+    is_champ = sport == "xc" and bool(request.form.get("championship")) and not is_tt
+    if is_champ:
+        # Set BEFORE assign_meet_bibs below: it reads this to enter only Champ picks.
+        conn.execute("UPDATE meets SET championship=1 WHERE id=?", (mid,))
     for s in set(school_ids) | ({host} if host else set()):
         conn.execute("INSERT OR IGNORE INTO meet_schools (meet_id, school_id) VALUES (?,?)", (mid, s))
     assign_meet_bibs(conn, mid)     # per-meet bibs from 1 for the attending athletes
@@ -377,7 +388,12 @@ def create_meet():
         # keeping the name constant makes consecutive trials compare like-for-like. It also
         # names no gender, so _race_gender() leaves the picker unfiltered -- correct for a
         # mixed squad running together.
-        heat_names = ("Time Trial",) if is_tt else ("Boys", "Girls")
+        # A championship runs each grade x gender as its own race, 7 per school in each.
+        # The grade and gender are both read back out of these names (_race_grade /
+        # _race_gender), so the pick list and the all-heats camera route correctly.
+        heat_names = (("Time Trial",) if is_tt else
+                      ("7th Girls", "7th Boys", "8th Girls", "8th Boys", "9th Girls", "9th Boys")
+                      if is_champ else ("Boys", "Girls"))
         for hn in heat_names:
             conn.execute("INSERT INTO races (meet_id, name, capture_mode) VALUES (?,?,?)",
                          (mid, hn, "tapselect"))   # unified default: tap -> scan or select

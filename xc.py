@@ -1065,6 +1065,28 @@ def _race_gender(name):
     return None
 
 
+def _race_grade(name):
+    """Infer which grade a race is for from its name ("7th Girls", "Grade 8 Boys").
+
+    Returns an int, or None when the name doesn't say. Needs the word grade, or an
+    ordinal next to a gender word -- so "Girls 2", "2nd Heat" and "5K" are never grades.
+    """
+    import re
+    s = (name or "").lower()
+    m = re.search(r"\bgr(?:ade)?\.?\s*(\d{1,2})\b", s)
+    if m:                                   # said outright: "Grade 4 Girls" is grade 4
+        g = int(m.group(1))
+        return g if 1 <= g <= 12 else None
+    # An ordinal counts only beside a gender word ("7th Girls"), and only as a grade a
+    # school XC meet actually runs. "2nd Heat", "5th heat" and "1st Heat Boys" are heat
+    # numbers -- reading them as grades would silently empty that heat's pick list.
+    if _race_gender(name):
+        m = re.search(r"\b(\d{1,2})(?:st|nd|rd|th)\b", s)
+        if m and 5 <= int(m.group(1)) <= 12:
+            return int(m.group(1))
+    return None
+
+
 @bp.get("/races/<int:rid>/eligible")
 @login_required
 def race_eligible(rid):
@@ -1114,8 +1136,14 @@ def race_eligible(rid):
             "WHERE mb.meet_id=? "
             "ORDER BY (seed IS NULL), seed, a.name", (r["name"], rid, m["id"])).fetchall()
         want = _race_gender(r["name"])
+        want_gr = _race_grade(r["name"])
         for a in rows:
             if a["bib"] in used:
+                continue
+            # A championship heat is one grade: the 7th Girls picker must not list 8th
+            # and 9th graders too. Same escape hatch as gender -- a runner with no grade
+            # on file stays pickable rather than becoming untappable at the line.
+            if want_gr and a["grade"] and a["grade"] != want_gr:
                 continue
             # A Girls race lists girls, a Boys race lists boys. Races whose name says
             # nothing about gender are unfiltered, and so is an athlete with no gender
@@ -3155,8 +3183,12 @@ def camera_record(mid):
         # in any heat — the same two escape hatches race_eligible uses, so nobody becomes
         # unscannable while runners are crossing.
         want = a["gender"]
+        gr = a["grade"] if "grade" in a.keys() else None
+        # Gender AND grade: a championship runs three Girls heats, and without the grade a
+        # girl would match all three and be refused as ambiguous.
         cand = [h for h in heats
-                if not _race_gender(h["name"]) or not want or _race_gender(h["name"]) == want]
+                if (not _race_gender(h["name"]) or not want or _race_gender(h["name"]) == want)
+                and (not _race_grade(h["name"]) or not gr or _race_grade(h["name"]) == gr)]
         live = [h for h in cand if h["start_time"] and not h["stop_time"]]
         if len(live) == 1:
             r = live[0]

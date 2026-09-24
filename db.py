@@ -482,6 +482,16 @@ def migrate(conn):
     if "age_brackets" not in rcols:      # road events: per-event age-group override (JSON list)
         conn.execute("ALTER TABLE races ADD COLUMN age_brackets TEXT")
 
+    if "does_champ" not in _column_names(conn, "athletes"):
+        # Picked for the championship. Default OFF, unlike does_xc: a championship
+        # takes 7 per school per grade x gender, so being on it is a selection, not
+        # the normal state of a runner.
+        conn.execute("ALTER TABLE athletes ADD COLUMN does_champ INTEGER DEFAULT 0")
+    if "championship" not in _column_names(conn, "meets"):
+        # Entry comes from does_champ rather than does_xc, and the meet runs six
+        # grade x gender heats instead of Boys/Girls.
+        conn.execute("ALTER TABLE meets ADD COLUMN championship INTEGER DEFAULT 0")
+
     if "locked_at" not in _column_names(conn, "races"):
         # Results locked in. Reset exists for false starts and testing, which happen
         # before anyone has crossed; once a race has actually run, one stray tap on
