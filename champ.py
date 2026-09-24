@@ -234,12 +234,17 @@ _SYS = (
     "after removing how hard each course was), how many races it rests on, every raw "
     "result with its date and the course-adjusted equivalent, and head-to-head records "
     "against the others in the group from races they ran together.\n\n"
-    "Weigh the evidence like an experienced coach. A head-to-head win in the same race is "
-    "strong evidence because it involves no course adjustment at all. Recent form matters "
-    "more than early-season results. A rating built on one race is less certain than one "
-    "built on three. Choose exactly the number of runners asked for, using only the ids "
-    "given, and give each group a one or two sentence reason a coach could read out to a "
-    "parent. Do not invent results.")
+    "Weigh the evidence like an experienced coach. Finishing ahead of someone in the same "
+    "race is strong evidence because it involves no course adjustment at all, and the most "
+    "recent shared race matters most. Recent form matters more than early-season results. "
+    "A rating built on one race is less certain than one built on three. When one race is "
+    "flagged as out of line with a runner's others, consider that it may have been an off "
+    "day that drags their average down rather than their true level.\n\n"
+    "Choose exactly the number of runners asked for, using only the ids given. Then write "
+    "each group a reason of one or two sentences that a coach could read to a parent. "
+    "Every time and every who-beat-whom you mention must match the evidence exactly; check "
+    "each one before you write it, and never describe a race as supporting your choice if "
+    "the runner you left out finished ahead in it.")
 
 _SCHEMA = {
     "type": "object",
@@ -261,15 +266,55 @@ def _mmss(s):
     return "%d:%04.1f" % (int(s // 60), s % 60)
 
 
+OFF_DAY = 0.08   # a race this far (8%) from a runner's other adjusted times is out of line
+
+
+def _off_days(p):
+    """Indexes of results out of line with the runner's others (needs 3+ to tell which)."""
+    adj = [r["adj"] for r in p["results"]]
+    if len(adj) < 3:
+        return set()
+    # Median of ALL their races: with three or more, one bad race cannot move it. (The
+    # median of the OTHER races, tried first, averages the outlier into the baseline
+    # when there are only three, and then flags the good races too.)
+    srt = sorted(adj)
+    n = len(srt)
+    mid = srt[n // 2] if n % 2 else (srt[n // 2 - 1] + srt[n // 2]) / 2
+    return {i for i, a in enumerate(adj) if abs(a - mid) / mid > OFF_DAY}
+
+
 def _evidence(cat):
     tu = cat["tossup"]
-    lines = [f'GROUP "{cat["label"]}": choose {tu["slots"]} of these {len(tu["zone"])}.']
-    for p in tu["zone"]:
+    zone = tu["zone"]
+    lines = [f'GROUP "{cat["label"]}": choose {tu["slots"]} of these {len(zone)}.']
+    for p in zone:
+        off = _off_days(p)
         res = "; ".join(f'{r["date"]} {r["meet"]} ({r["race"]}): {_mmss(r["t"])} '
-                        f'= {_mmss(r["adj"])} adjusted' for r in p["results"])
-        h2h = "; ".join(f"vs {nm}: won {w}, lost {l}" for nm, (w, l) in p.get("h2h", {}).items())
-        lines.append(f'- id {p["aid"]}, {p["name"]}: adjusted {_mmss(p["rating"])} over '
-                     f'{p["n"]} race(s). Results: {res}. Head-to-head: {h2h or "none"}.')
+                        f'= {_mmss(r["adj"])} adjusted'
+                        + (" [OUT OF LINE with their other races]" if i in off else "")
+                        for i, r in enumerate(p["results"]))
+        spread = ""
+        if len(p["results"]) == 2:
+            a, b = (r["adj"] for r in p["results"])
+            if abs(a - b) / min(a, b) > OFF_DAY:
+                spread = " Their two races differ by more than 8%, so one may be an off day."
+        lines.append(f'- id {p["aid"]}, {p["name"]}: average adjusted {_mmss(p["rating"])} over '
+                     f'{p["n"]} race(s).{spread} Results: {res}.')
+    # Head-to-head race by race, newest first -- a season total like "1-1" hides WHO won
+    # the most recent meeting, which is the thing a coach weighs most.
+    shared = defaultdict(list)
+    for p in zone:
+        for r in p["results"]:
+            shared[(r["date"] or "", r["meet"], r["race"])].append((r["t"], p["name"]))
+    meets = sorted((k for k, v in shared.items() if len(v) >= 2), reverse=True)
+    if meets:
+        lines.append("Races where these runners met (newest first):")
+        for n, k in enumerate(meets):
+            order = ", ".join(f"{nm} {_mmss(t)}" for t, nm in sorted(shared[k]))
+            lines.append(f'  {k[0]} {k[1]} ({k[2]}){" — most recent" if n == 0 else ""}: '
+                         f'finished in this order: {order}')
+    else:
+        lines.append("None of these runners have raced each other.")
     return "\n".join(lines)
 
 
@@ -284,8 +329,12 @@ def _resolve_with_llm(school_id, tossups):
         from . import ai
         import anthropic
         try:
+            # Adaptive thinking: weighing times, dates and head-to-heads is exactly the
+            # reasoning that goes wrong without it -- the first live run, thinking off,
+            # wrote a reason that contradicted its own numbers.
             msg = ai._client().messages.create(
                 model=ai.CLAUDE_MODEL, max_tokens=16000, system=_SYS,
+                thinking={"type": "adaptive"},
                 messages=[{"role": "user", "content": prompt}],
                 output_config={"format": {"type": "json_schema", "schema": _SCHEMA}})
         except (anthropic.APIConnectionError, anthropic.RateLimitError,
