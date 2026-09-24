@@ -162,12 +162,16 @@ def phone_home():
                     f'<a class="heat" href="/phone/race/{r["id"]}">'
                     f'<span class="hn">{escape(r["name"])} <small>· {escape(r["capture_mode"])}</small></span>'
                     f'<span class="st {cls}">{lbl}</span></a>')
-            # Community event with >1 race: one camera at the line scans them all, routing
-            # each bib to the race that runner registered for (same as the desktop button).
-            if m["organizer_id"] and len(races) > 1:
+            # >1 race: one camera at the line scans them all. A community entrant is
+            # routed to the race they registered for; at a school meet the heat is
+            # chosen by the runner's gender, so the crew never has to remember to
+            # switch from Boys to Girls mid-meet (which cost Sage Canyon a Girls start).
+            if len(races) > 1:
+                lbl = ("📷 Scan all races — one camera" if m["organizer_id"]
+                       else "📷 Scan all heats — one camera")
                 heats.append(
                     f'<a class="heat" href="/meets/{m["id"]}/camera?phone=1">'
-                    f'<span class="hn">📷 Scan all races — one camera</span>'
+                    f'<span class="hn">{lbl}</span>'
                     f'<span class="st go">camera</span></a>')
             inner = "".join(heats) or f'<div class="heat empty">No {noun} yet — add them in meet setup.</div>'
         else:

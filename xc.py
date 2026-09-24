@@ -1780,10 +1780,18 @@ tbody tr:nth-child(even) td{background:#f8fafb}
   main{padding:.6rem}
   .tabs{gap:.35rem;margin:.3rem 0 .9rem}
   .tab{padding:.6rem .25rem;font-size:.85rem}
-  .sec{border-radius:10px;margin-bottom:.8rem}
+  .sec{border-radius:10px;margin-bottom:.8rem;overflow-x:auto}
   .sec h2{font-size:.92rem;padding:.5rem .7rem}
   th{padding:.35rem .45rem;font-size:.6rem}
   td{padding:.45rem .45rem;font-size:.86rem}
+  /* Portrait phone: the colgroup widths come from the longest name/school in the whole
+     meet, so the fixed table ran wider than the card and `overflow:hidden` simply cut
+     the last column off. Auto layout lets the row fit and long names wrap instead. */
+  .sec table{table-layout:auto!important;width:100%}
+  .sec col{width:auto!important}
+  .sec .nm,.sec .sc{white-space:normal;overflow-wrap:anywhere;word-break:break-word}
+  .sec .tm{white-space:nowrap;width:1%}
+  .sec .pl{width:1%}
 }
 """
 
@@ -1801,22 +1809,26 @@ def _pub_rows(individuals, mode, show_grade):
         grcell = f'<td>{i["grade"] or ""}</td>' if show_grade else ""
         out.append(
             f'<tr><td class="pl">{pl}</td>'
-            f'<td>{escape(disp)}{dq}</td><td>{escape(i["school"] or "")}</td>'
-            f'{grcell}<td class="tm">{fmt_hms(i["time"])}</td></tr>')
+            f'<td class="tm">{fmt_hms(i["time"])}</td>'
+            f'<td class="nm">{escape(disp)}{dq}</td>'
+            f'<td class="sc">{escape(i["school"] or "")}</td>'
+            f'{grcell}</tr>')
     return "".join(out)
 
 
 def _pub_table(label, individuals, mode, show_grade, maxname=0, maxschool=0):
-    head = ('<tr><th>Pl</th><th>Name</th><th>School</th>'
-            + ('<th>Gr</th>' if show_grade else '') + '<th>Time</th></tr>')
+    # Time sits straight after the place: it is what a spectator opened the page for, and
+    # in that slot no length of name or school can push it off a portrait phone screen.
+    head = ('<tr><th>Pl</th><th>Time</th><th>Name</th><th>School</th>'
+            + ('<th>Gr</th>' if show_grade else '') + '</tr>')
     # Fixed layout + a shared colgroup (widths from the meet-wide longest name/school) so
     # every section's columns line up, not just within one section.
     cols = ['<col style="width:2.6rem">',                                    # Pl
+            '<col style="width:6.8rem">',                                    # Time
             f'<col style="width:{maxname}ch">' if maxname else '<col>',      # Name
             f'<col style="width:{maxschool}ch">' if maxschool else '<col>']  # School
     if show_grade:
         cols.append('<col style="width:2.8rem">')                           # Gr
-    cols.append('<col style="width:6.8rem">')                               # Time
     colgroup = '<colgroup>' + "".join(cols) + '</colgroup>'
     return (f'<div class="sec"><h2>{escape(label)}</h2>'
             f'<table style="table-layout:fixed">{colgroup}<thead>{head}</thead>'
@@ -2949,7 +2961,9 @@ def meet_camera(mid):
     bib is routed to the race that participant is registered for. Community events
     only (participants carry a race); no need to pick a race."""
     m = load_meet(mid)
-    if not can_record_meet(m) or not _is_org(m):
+    # School meets get this too now: at Sage Canyon the crew did not realise the camera
+    # was bound to one heat, so the Girls race went unscanned until someone switched it.
+    if not can_record_meet(m):
         abort(403)
     phone = request.args.get("phone") == "1" or bool(getattr(g.principal, "meet_scope", None))
     back = "/phone" if phone else f"/meets/{mid}"
@@ -2998,7 +3012,7 @@ def camera_record(mid):
     a finisher there (if that race is currently running). Returns ok=False + a reason
     the camera page shows in its log — never a hard error, so timing keeps flowing."""
     m = load_meet(mid)
-    if not can_record_meet(m) or not _is_org(m):
+    if not can_record_meet(m):
         abort(403)
     raw = (request.get_json(silent=True) or {}).get("bib")
     try:
@@ -3006,16 +3020,52 @@ def camera_record(mid):
     except (TypeError, ValueError):
         return jsonify(ok=False, reason="bad bib")
     conn = db.connect()
-    p = conn.execute("SELECT race_id FROM participants WHERE meet_id=? AND bib=?",
-                     (mid, bib)).fetchone()
-    if not p:
-        conn.close()
-        return jsonify(ok=False, bib=bib, reason=f"Bib {bib} not registered")
-    rid = p["race_id"]
-    r = conn.execute("SELECT * FROM races WHERE id=? AND meet_id=?", (rid, mid)).fetchone() if rid else None
-    if not r:
-        conn.close()
-        return jsonify(ok=False, bib=bib, reason=f"Bib {bib} has no race")
+    if _is_org(m):
+        # Community event: the participant signed up for a specific race, so it is on them.
+        p = conn.execute("SELECT race_id FROM participants WHERE meet_id=? AND bib=?",
+                         (mid, bib)).fetchone()
+        if not p:
+            conn.close()
+            return jsonify(ok=False, bib=bib, reason=f"Bib {bib} not registered")
+        rid = p["race_id"]
+        r = conn.execute("SELECT * FROM races WHERE id=? AND meet_id=?",
+                         (rid, mid)).fetchone() if rid else None
+        if not r:
+            conn.close()
+            return jsonify(ok=False, bib=bib, reason=f"Bib {bib} has no race")
+    else:
+        # School meet: nobody registers for a heat, so pick it the way the tap-select
+        # list already does — the runner's gender against the heat's name — and then
+        # insist on a RUNNING heat, so a scan can never land in one that has not begun.
+        from .meets import athlete_by_meet_bib
+        a = athlete_by_meet_bib(conn, mid, bib)
+        if not a:
+            conn.close()
+            return jsonify(ok=False, bib=bib, reason=f"Bib {bib} not in this meet")
+        heats = conn.execute("SELECT * FROM races WHERE meet_id=? ORDER BY id", (mid,)).fetchall()
+        # An unnamed/mixed heat takes anyone, and a runner with no gender on file may go
+        # in any heat — the same two escape hatches race_eligible uses, so nobody becomes
+        # unscannable while runners are crossing.
+        want = a["gender"]
+        cand = [h for h in heats
+                if not _race_gender(h["name"]) or not want or _race_gender(h["name"]) == want]
+        live = [h for h in cand if h["start_time"] and not h["stop_time"]]
+        if len(live) == 1:
+            r = live[0]
+        elif not live:
+            conn.close()
+            nm = cand[0]["name"] if cand else "No heat"
+            return jsonify(ok=False, bib=bib, name=a["name"], race=nm,
+                           reason=f"{nm} not running")
+        else:
+            # Two heats they could belong to are both live (e.g. JV and Varsity Boys):
+            # guessing would put a runner in the wrong race, so say so and let the
+            # timer scan from that heat's own camera instead.
+            conn.close()
+            return jsonify(ok=False, bib=bib, name=a["name"],
+                           reason="%s could be in %s — scan from the heat"
+                                  % (a["name"], " or ".join(h["name"] for h in live)))
+        rid = r["id"]
     if not r["start_time"] or r["stop_time"]:
         conn.close()
         return jsonify(ok=False, bib=bib, race=r["name"], reason=f"{r['name']} not running")
