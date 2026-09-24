@@ -542,7 +542,7 @@ def walkup_route(mid):
     conn = db.connect()
     displaced = None
     held = conn.execute(
-        "SELECT mb.athlete_id, a.name, a.active, s.name AS sname FROM meet_bibs mb "
+        "SELECT mb.athlete_id, mb.walkup, a.name, a.active, s.name AS sname FROM meet_bibs mb "
         "JOIN athletes a ON a.id=mb.athlete_id JOIN schools s ON s.id=a.school_id "
         "WHERE mb.meet_id=? AND mb.bib=?", (mid, bib)).fetchone()
     if held:
@@ -561,11 +561,13 @@ def walkup_route(mid):
                 "werr": "taken", "b": bib, "wh": held["name"], "whs": held["sname"],
                 "wn": name, "ws": sid_raw,
                 "wg": "" if grade is None else grade, "wx": gender or ""})))
-        # Confirmed. Free the number. A displaced WALK-UP (inactive) exists only for
-        # this meet, so remove them outright rather than leave an orphan row; a
-        # rostered athlete keeps their roster entry and just loses this bib.
+        # Confirmed. Free the number. A walk-up added at THIS meet who never crossed the
+        # line was almost certainly a mistake typed moments ago, so remove the athlete
+        # too rather than leave a phantom on the roster; anyone else (rostered, or a
+        # walk-up who already has a result) keeps their roster entry and loses the bib.
+        was_walkup = bool(held["walkup"]) or not held["active"]
         conn.execute("DELETE FROM meet_bibs WHERE meet_id=? AND bib=?", (mid, bib))
-        if not held["active"]:
+        if was_walkup:
             conn.execute("DELETE FROM athletes WHERE id=?", (held["athlete_id"],))
         displaced = held["name"]
     if sid_raw == "unattached":
@@ -581,11 +583,37 @@ def walkup_route(mid):
     else:
         conn.close()
         return redirect(f"{day}?werr=school")
+    # Is this somebody the school already has? On 2026-09-23 seven Pleasant Grove
+    # runners were rostered too late to appear on the printed stickers, so the tent
+    # entered four of them as walk-ups on blank numbers -- creating a second copy of
+    # each kid, with the result hanging off the copy. Catch that BEFORE writing, and
+    # say which bib the existing runner is already carrying, which is the fact that
+    # would have stopped it. Never decides on its own: a real pair of same-named
+    # runners exists, so it asks and takes "yes, different person" for an answer.
+    if (request.form.get("dupok") or "") != "1":
+        from .schools import _closest_name, _name_key
+        roster = {r["id"]: r["name"] for r in conn.execute(
+            "SELECT id, name FROM athletes WHERE school_id=? AND active=1", (sid,)).fetchall()}
+        keys = {_name_key(n): i for i, n in roster.items()}
+        hit = _closest_name(_name_key(name), set(keys))
+        if hit:
+            twin_id = keys[hit]
+            twin = roster[twin_id]
+            tb = conn.execute("SELECT bib FROM meet_bibs WHERE meet_id=? AND athlete_id=?",
+                              (mid, twin_id)).fetchone()
+            conn.close()
+            from urllib.parse import urlencode
+            return redirect("%s?%s" % (day, urlencode({
+                "werr": "dup", "b": bib, "wd": twin, "wdb": "" if not tb else tb["bib"],
+                "wn": name, "ws": sid_raw,
+                "wg": "" if grade is None else grade, "wx": gender or ""})))
     flag = "does_xc" if m["sport"] == "xc" else "does_track"
+    # active=1: a walk-up ran for this school, so they belong on its roster like anyone
+    # else. What is special is the meet ENTRY, flagged on meet_bibs below.
     aid = conn.execute(
-        f"INSERT INTO athletes (school_id, name, grade, gender, {flag}, active) VALUES (?,?,?,?,1,0)",
+        f"INSERT INTO athletes (school_id, name, grade, gender, {flag}, active) VALUES (?,?,?,?,1,1)",
         (sid, name, grade, gender)).lastrowid
-    conn.execute("INSERT INTO meet_bibs (meet_id, athlete_id, bib, seq) VALUES (?,?,?,?)",
+    conn.execute("INSERT INTO meet_bibs (meet_id, athlete_id, bib, seq, walkup) VALUES (?,?,?,?,1)",
                  (mid, aid, bib, bib))
     conn.commit()
     conn.close()

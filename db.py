@@ -482,6 +482,14 @@ def migrate(conn):
     if "age_brackets" not in rcols:      # road events: per-event age-group override (JSON list)
         conn.execute("ALTER TABLE races ADD COLUMN age_brackets TEXT")
 
+    mbcols = _column_names(conn, "meet_bibs")
+    if "walkup" not in mbcols:
+        # Walk-ups used to be marked by athletes.active=0, which also kept them off the
+        # school roster. They belong ON the roster (they ran for that school), so the
+        # "added at the line" fact moved here, where it belongs: it is true of this
+        # MEET ENTRY, not of the person.
+        conn.execute("ALTER TABLE meet_bibs ADD COLUMN walkup INTEGER DEFAULT 0")
+
     if "participants" in {r[0] for r in conn.execute(
             "SELECT name FROM sqlite_master WHERE type='table'").fetchall()}:
         if "paid" not in _column_names(conn, "participants"):  # payment groundwork

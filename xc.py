@@ -670,10 +670,13 @@ def _walkup_card(m, mid):
     schools = conn.execute(
         "SELECT s.id, s.name FROM schools s JOIN meet_schools ms ON ms.school_id=s.id "
         "WHERE ms.meet_id=? ORDER BY s.name", (mid,)).fetchall()
+    # mb.walkup, not a.active: walk-ups are real roster members now, so "added at the
+    # line" is a fact about this meet entry. a.active=0 still counts, for the ones
+    # created before v1.92.0.
     walkups = conn.execute(
         "SELECT mb.bib, a.name, s.name AS sname FROM meet_bibs mb "
         "JOIN athletes a ON a.id=mb.athlete_id JOIN schools s ON s.id=a.school_id "
-        "WHERE mb.meet_id=? AND a.active=0 ORDER BY mb.bib", (mid,)).fetchall()
+        "WHERE mb.meet_id=? AND (mb.walkup=1 OR a.active=0) ORDER BY mb.bib", (mid,)).fetchall()
     conn.close()
     if not bibs_locked(m):
         return ('<div class="card"><h2>Walk-ups</h2>'
@@ -705,6 +708,29 @@ def _walkup_card(m, mid):
                f'<form method="post" action="/meets/{mid}/walkup" class="inline">{hidden}'
                f'<input type="hidden" name="override" value="1">'
                f'<button class="danger" type="submit">Give #{b} to {who}</button></form></div>')
+    elif werr == "dup":
+        # Someone with this name is already on that roster. Usually the same kid, entered
+        # at the line because their sticker was never printed -- so show the bib they
+        # already hold, which is the thing that resolves it on the spot.
+        b = escape(request.args.get("b", ""))
+        twin = escape(request.args.get("wd", "someone"))
+        twinbib = escape(request.args.get("wdb", ""))
+        keep = {"bib": request.args.get("b", ""), "name": request.args.get("wn", ""),
+                "school_id": request.args.get("ws", ""), "grade": request.args.get("wg", ""),
+                "gender": request.args.get("wx", "")}
+        hidden = "".join(f'<input type="hidden" name="{k}" value="{escape(v)}">'
+                         for k, v in keep.items())
+        who = escape(keep["name"]) or "this runner"
+        has = (f'<b>already entered in this meet with bib #{twinbib}</b>' if twinbib
+               else "on this school's roster but not entered in this meet")
+        msg = (f'<div class="msg warn"><b>⚠ {twin} is {has}.</b>'
+               f'<p style="margin:.35rem 0 .6rem">If that is the same runner, use '
+               f'{"#" + twinbib if twinbib else "their roster entry"} instead of a new number — '
+               f'adding {who} again puts them on the roster twice and splits their results. '
+               f'Only continue if this is a different person with a similar name.</p>'
+               f'<form method="post" action="/meets/{mid}/walkup" class="inline">{hidden}'
+               f'<input type="hidden" name="dupok" value="1">'
+               f'<button class="danger" type="submit">Add {who} anyway</button></form></div>')
     elif werr in ("input", "school", "locked", "recorded"):
         note = {"input": "Enter a bib number and a name.", "school": "Pick a school.",
                 "locked": "Lock the bibs first.",
