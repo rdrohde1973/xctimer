@@ -282,6 +282,16 @@ def roster(sid):
     road_on = _road_enabled(s["district_id"])
     sport = request.args.get("sport", "all")
     grad_view = request.args.get("show") == "grad"
+    # Sort: Name / Gr / Sex, from the Sort buttons or the column headers; the active one
+    # again reverses it. Blank grades/sexes always sink to the bottom, and name breaks
+    # ties so a grade or sex group reads alphabetically. Whitelisted -- never raw SQL.
+    sort = request.args.get("sort", "name")
+    sort = sort if sort in ("name", "grade", "sex") else "name"
+    desc = request.args.get("dir") == "desc"
+    _d = " DESC" if desc else ""
+    order = {"name": f"name COLLATE NOCASE{_d}",
+             "grade": f"grade IS NULL, grade{_d}, name COLLATE NOCASE",
+             "sex": f"gender IS NULL, gender{_d}, name COLLATE NOCASE"}[sort]
 
     where = ["school_id=?", "active=0" if grad_view else "active=1"]
     params = [sid]
@@ -296,7 +306,7 @@ def roster(sid):
     conn = db.connect()
     ath = conn.execute(
         f"SELECT * FROM athletes WHERE {' AND '.join(where)} "
-        f"ORDER BY bib IS NULL, bib, name", tuple(params)).fetchall()
+        f"ORDER BY {order}", tuple(params)).fetchall()
     grad_count = conn.execute("SELECT COUNT(*) FROM athletes WHERE school_id=? AND active=0",
                               (sid,)).fetchone()[0]
     conn.close()
@@ -346,13 +356,31 @@ def roster(sid):
                f'onchange="tog({aid},\'road\',this)"></td>' if road_on else "")
             + f'<td><div class="rowacts">{"".join(acts)}</div></td></tr>')
 
+    def _qs(**over):
+        """This roster's URL with the view's filter + sort kept, some of them changed."""
+        q = {"sport": sport if sport != "all" else None, "show": "grad" if grad_view else None,
+             "sort": sort if sort != "name" else None, "dir": "desc" if desc else None}
+        q.update(over)
+        return f"/schools/{sid}?" + "&".join(f"{k}={v}" for k, v in q.items() if v)
+
+    def _sort_url(key):
+        # Clicking the active sort flips it; any other starts ascending.
+        return _qs(sort=None if key == "name" else key,
+                   dir="desc" if (sort == key and not desc) else None)
+
+    def _sh(label, key):
+        arrow = (" ▼" if desc else " ▲") if sort == key else ""
+        return (f'<th><a href="{_sort_url(key)}" title="Sort by {label}" '
+                f'style="color:inherit;text-decoration:none">{label}{arrow}</a></th>')
+    sort_heads = _sh("Name", "name") + _sh("Gr", "grade") + _sh("Sex", "sex")
+
     if grad_view:
-        head = ('<tr><th>Name</th><th>Gr</th><th>Sex</th><th></th></tr>'
+        head = (f'<tr>{sort_heads}<th></th></tr>'
                 if ath else "")
         empty = "No graduated athletes."
     else:
         road_head = '<th style="text-align:center">Road</th>' if road_on else ""
-        head = ('<tr><th>Name</th><th>Gr</th><th>Sex</th>'
+        head = (f'<tr>{sort_heads}'
                 '<th style="text-align:center">XC</th>'
                 '<th style="text-align:center" title="Picked for the championship">Champ</th>'
                 '<th style="text-align:center">Track</th>'
@@ -366,8 +394,8 @@ def roster(sid):
     def _f(label, val):
         on = "background:var(--panel2);color:var(--fg)" if sport == val and not grad_view else ""
         return (f'<a class="btn ghost" style="{on}" '
-                f'href="/schools/{sid}?sport={val}">{label}</a>')
-    grad_link = (f'<a class="btn ghost" href="/schools/{sid}?show=grad" '
+                f'href="{_qs(sport=val if val != "all" else None, show=None)}">{label}</a>')
+    grad_link = (f'<a class="btn ghost" href="{_qs(show="grad", sport=None)}" '
                  f'style="{"background:var(--panel2);color:var(--fg)" if grad_view else ""}">'
                  f'🎓 Graduated ({grad_count})</a>' if grad_count or grad_view else "")
     road_chip = _f("🛣 Road", "road") if road_on else ""
@@ -377,6 +405,17 @@ def roster(sid):
     filt = (f'<div class="row" style="margin:.2rem 0 1rem;gap:.4rem">'
             f'{_f("All", "all")}{_f("🏃 XC", "xc")}{champ_chip}{_f("🎽 Track", "track")}{road_chip}'
             f'<span style="flex:1"></span>{grad_link}</div>')
+    def _sb(label, key):
+        on = sort == key
+        arrow = (" ▼" if desc else " ▲") if on else ""
+        style = "background:var(--panel2);color:var(--fg)" if on else ""
+        return (f'<a class="btn ghost" style="{style}" href="{_sort_url(key)}">'
+                f'{label}{arrow}</a>')
+    sortbar = (f'<div class="row" style="margin:-.5rem 0 1rem;gap:.4rem;align-items:center">'
+               f'<span class="muted" style="font-size:.85rem">Sort:</span>'
+               f'{_sb("Name", "name")}{_sb("Gr", "grade")}{_sb("Sex", "sex")}</div>'
+               if ath else "")
+    filt += sortbar
 
     logo_img = (f'<img src="{escape(s["logo_path"])}" alt="" style="height:42px;width:42px;'
                 f'object-fit:contain;vertical-align:middle;margin-right:.6rem;background:#fff;'
