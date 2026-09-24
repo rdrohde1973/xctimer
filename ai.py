@@ -320,8 +320,11 @@ _ROSTER_SYS = (
     "source (matching column headers like Date of Birth/DOB, Email, Phone, "
     "Parent/Guardian, Emergency Contact, Shirt Size/T-Shirt); otherwise use null — never "
     "invent them. "
-    "Normalize names to 'First Last' with proper capitalization. Infer gender only "
-    "if explicit (a column, or M/F/Boys/Girls). Skip header rows, coaches, blanks, "
+    "Normalize names to 'First Last' with proper capitalization. Gender: when the "
+    "source gives it (a Gender/Sex column, or Boys/Girls sections), use exactly what it "
+    "says, even if it seems unusual for the name. When an athlete's gender is NOT given, "
+    "infer it from their first name. Never read another column as gender -- an S/M/L "
+    "shirt size is a size, not a sex. Skip header rows, coaches, blanks, "
     "and totals. If a grade is given as 9th/Fr/Freshman etc., map to the integer. "
     "Keep the output compact: OMIT every key whose value would be null. An athlete "
     'with only a name, grade and gender is {"name": "Ann Lee", "grade": 8, "gender": "F"}.'
