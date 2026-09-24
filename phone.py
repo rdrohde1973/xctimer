@@ -395,14 +395,14 @@ async function stopRace(){{ if(!confirm('Stop the race clock?'))return;
   // Offer the lock the moment the heat is done — RESET sits right next to STOP on a
   // phone, and one mis-tap used to wipe the whole race behind a single confirm.
   if(FIN.length && !LOCKED){{
-    if(confirm(FIN.length+' finisher(s).\n\nLock these results? RESET is then refused until '
+    if(confirm(FIN.length+' finisher(s).\\n\\nLock these results? RESET is then refused until '
                +'you unlock. Bibs, DQ and places can still be fixed.')){{
       try{{ await jpost('/races/'+RID+'/lock',{{}}); }}catch(e){{ alert(e.message); }}
     }}
   }}
   load(); }}
 async function resetRace(){{
-  if(LOCKED){{ if(!confirm('These results are LOCKED.\n\nUnlock and reset anyway? Every time for '
+  if(LOCKED){{ if(!confirm('These results are LOCKED.\\n\\nUnlock and reset anyway? Every time for '
                           +'this heat is deleted.'))return;
     try{{ await jpost('/races/'+RID+'/unlock',{{}}); }}catch(e){{ alert(e.message); return; }} }}
   else if(!confirm('Reset clears the clock AND every finisher for this race. Continue?'))return;

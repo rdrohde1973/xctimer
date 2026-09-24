@@ -1002,7 +1002,7 @@ async function stopRace(){{ if(!confirm('Stop the race clock?'))return;
   // A stopped race that has finishers is almost always done. Offer the lock right here,
   // while the crew knows it, rather than hoping someone remembers later.
   if(FIN.length && !LOCKED){{
-    if(confirm(RNAME+': '+FIN.length+' finisher(s).\n\nLock these results? Reset is then refused '
+    if(confirm(RNAME+': '+FIN.length+' finisher(s).\\n\\nLock these results? Reset is then refused '
                +'until you unlock. You can still fix bibs, DQ and places.')){{
       try{{ await jpost('/races/'+RID+'/lock',{{}}); }}catch(e){{ alert(e.message); }}
     }}
