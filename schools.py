@@ -510,7 +510,7 @@ function editInfo(){{ document.getElementById('cardView').style.display='none';
   document.getElementById('cardEdit').style.display='block'; }}
 async function saveInfo(aid){{
   const f={{}}; ['dob','email','phone','parent_name','parent_email','parent_phone',
-    'emergency_name','emergency_phone','physical_date'].forEach(k=>{{
+    'emergency_name','emergency_phone','physical_date','shirt_size'].forEach(k=>{{
       const el=document.getElementById('f_'+k); if(el) f[k]=el.value; }});
   try{{ await jpost('/athletes/'+aid+'/info', f); openCard(aid); }}
   catch(e){{ alert(e.message); }}
@@ -725,12 +725,13 @@ history. This can't be undone, so export anything you want to keep first.</p>
 
 _TEMPLATE_COLS = ["Name", "Grade", "Age", "Gender", "Cross Country", "Track", "Event",
                   "Date of Birth", "Athlete Email", "Athlete Phone", "Parent/Guardian Name",
-                  "Parent Email", "Parent Phone", "Emergency Contact", "Emergency Phone"]
+                  "Parent Email", "Parent Phone", "Emergency Contact", "Emergency Phone",
+                  "Shirt Size"]
 _TEMPLATE_SAMPLES = [
     ["Alex Rivers", 7, 13, "M", "Yes", "Yes", "5K", "2013-04-18", "", "", "Jordan Rivers",
-     "jordan.rivers@example.com", "555-0142", "Jordan Rivers", "555-0142"],
+     "jordan.rivers@example.com", "555-0142", "Jordan Rivers", "555-0142", "YL"],
     ["Sam Brooks", 8, 12, "F", "No", "Yes", "10K", "2012-09-05", "sam.brooks@example.com", "",
-     "Taylor Brooks", "taylor.brooks@example.com", "555-0199", "Casey Brooks", "555-0177"],
+     "Taylor Brooks", "taylor.brooks@example.com", "555-0199", "Casey Brooks", "555-0177", "AS"],
 ]
 
 
@@ -993,6 +994,7 @@ def _card_fragment(a, w, ro):
      · <a href="/athletes/{aid}/progress">📈 progress</a></p>
   <div class="crow"><span class="k">Waiver</span><span>{wb} {btn}</span></div>
   <div class="crow"><span class="k">Physical</span><span>{pb}{" · " + escape(pd) if pd else ""}</span></div>
+  {row("Shirt size", a["shirt_size"] if "shirt_size" in a.keys() else None)}
   {row("Date of birth", a["dob"])}
   {row("Athlete email", a["email"])}
   {row("Athlete phone", a["phone"])}
@@ -1018,6 +1020,12 @@ def _card_fragment(a, w, ro):
   <input id="f_dob" type="date" value="{escape((a['dob'] or '')[:10])}">
   <label>Physical date</label>
   <input id="f_physical_date" type="date" value="{escape((a['physical_date'] or '')[:10])}">
+  <label>Shirt size</label>
+  <input id="f_shirt_size" list="shirtsizes" autocomplete="off" placeholder="e.g. YM or AS"
+         value="{escape((a['shirt_size'] if 'shirt_size' in a.keys() else '') or '')}">
+  <datalist id="shirtsizes"><option value="YS"><option value="YM"><option value="YL">
+    <option value="YXL"><option value="AS"><option value="AM"><option value="AL">
+    <option value="AXL"><option value="AXXL"></datalist>
   {inp("email", "Athlete email", "email")}
   {inp("phone", "Athlete phone", "tel")}
   {inp("parent_name", "Parent / guardian name")}
@@ -1153,7 +1161,7 @@ def athlete_info(aid):
         abort(403)
     d = request.get_json(silent=True) or {}
     fields = ("dob", "email", "phone", "parent_name", "parent_email", "parent_phone",
-              "emergency_name", "emergency_phone", "physical_date")
+              "emergency_name", "emergency_phone", "physical_date", "shirt_size")
     vals = [(str(d.get(k)).strip() or None) if d.get(k) is not None else None for k in fields]
     conn = db.connect()
     conn.execute(f"UPDATE athletes SET {', '.join(k + '=?' for k in fields)} WHERE id=?",
@@ -1301,7 +1309,7 @@ def import_commit(sid):
         gender = gender if gender in ("M", "F") else None
         cf = {k: (str(r.get(k)).strip() if r.get(k) else None) for k in
               ("dob", "email", "phone", "parent_name", "parent_email", "parent_phone",
-               "emergency_name", "emergency_phone")}
+               "emergency_name", "emergency_phone", "shirt_size")}
         # Sports: honor Cross Country / Track columns, but a blank means YES — see
         # _sport_flag. Only an explicit no keeps an athlete out of that sport.
         dx, dt = _sport_flag(r.get("does_xc")), _sport_flag(r.get("does_track"))
@@ -1309,11 +1317,12 @@ def import_commit(sid):
         dr = 1 if (r.get("does_road") or road_event) else 0  # having an event implies road
         conn.execute(
             "INSERT INTO athletes (school_id, name, grade, age, gender, does_xc, does_track, does_road, "
-            "road_event, dob, email, phone, parent_name, parent_email, parent_phone, emergency_name, emergency_phone) "
-            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "road_event, dob, email, phone, parent_name, parent_email, parent_phone, emergency_name, "
+            "emergency_phone, shirt_size) "
+            "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (sid, name, grade, age, gender, dx, dt, dr, road_event, cf["dob"], cf["email"], cf["phone"],
              cf["parent_name"], cf["parent_email"], cf["parent_phone"], cf["emergency_name"],
-             cf["emergency_phone"]),
+             cf["emergency_phone"], cf["shirt_size"]),
         )
         added += 1
     if added:

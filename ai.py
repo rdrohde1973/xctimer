@@ -310,14 +310,16 @@ _ROSTER_SYS = (
     '"email": <string or null>, "phone": <string or null>, '
     '"parent_name": <string or null>, "parent_email": <string or null>, '
     '"parent_phone": <string or null>, "emergency_name": <string or null>, '
-    '"emergency_phone": <string or null>}. '
+    '"emergency_phone": <string or null>, '
+    '"shirt_size": <shirt size exactly as written, e.g. "YM" or "Adult S", or null>}. '
     "For does_xc/does_track: read columns like 'Cross Country'/'XC' and 'Track' — a Yes, "
     "Y, X, TRUE, ✓, or the sport's name means true; an explicit No, N, or FALSE means "
     "false; a BLANK cell means null, and use null too when there is no such column at "
     "all. Never turn a blank into false. "
     "Include the dob/contact/parent/emergency fields ONLY when clearly present in the "
     "source (matching column headers like Date of Birth/DOB, Email, Phone, "
-    "Parent/Guardian, Emergency Contact); otherwise use null — never invent them. "
+    "Parent/Guardian, Emergency Contact, Shirt Size/T-Shirt); otherwise use null — never "
+    "invent them. "
     "Normalize names to 'First Last' with proper capitalization. Infer gender only "
     "if explicit (a column, or M/F/Boys/Girls). Skip header rows, coaches, blanks, "
     "and totals. If a grade is given as 9th/Fr/Freshman etc., map to the integer. "
@@ -327,7 +329,7 @@ _ROSTER_SYS = (
 
 # Optional contact fields carried through import when the source has them.
 _CONTACT_FIELDS = ("dob", "email", "phone", "parent_name", "parent_email",
-                   "parent_phone", "emergency_name", "emergency_phone")
+                   "parent_phone", "emergency_name", "emergency_phone", "shirt_size")
 
 
 # The roster is read in chunks so no single answer can outgrow max_tokens. Before this,

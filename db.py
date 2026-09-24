@@ -482,6 +482,9 @@ def migrate(conn):
     if "age_brackets" not in rcols:      # road events: per-event age-group override (JSON list)
         conn.execute("ALTER TABLE races ADD COLUMN age_brackets TEXT")
 
+    if "shirt_size" not in _column_names(conn, "athletes"):
+        # Free text on purpose: rosters write "YM", "Youth M", "Adult Small", "AS"...
+        conn.execute("ALTER TABLE athletes ADD COLUMN shirt_size TEXT")
     if "does_champ" not in _column_names(conn, "athletes"):
         # Picked for the championship. Default OFF, unlike does_xc: a championship
         # takes 7 per school per grade x gender, so being on it is a selection, not
