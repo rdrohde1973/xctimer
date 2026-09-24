@@ -482,6 +482,12 @@ def migrate(conn):
     if "age_brackets" not in rcols:      # road events: per-event age-group override (JSON list)
         conn.execute("ALTER TABLE races ADD COLUMN age_brackets TEXT")
 
+    if "locked_at" not in _column_names(conn, "races"):
+        # Results locked in. Reset exists for false starts and testing, which happen
+        # before anyone has crossed; once a race has actually run, one stray tap on
+        # RESET used to wipe every time with a single confirm behind it.
+        conn.execute("ALTER TABLE races ADD COLUMN locked_at TEXT")
+
     mbcols = _column_names(conn, "meet_bibs")
     if "walkup" not in mbcols:
         # Walk-ups used to be marked by athletes.active=0, which also kept them off the

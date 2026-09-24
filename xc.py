@@ -86,6 +86,24 @@ def _race_or_403(rid, check):
     return r, m
 
 
+def _locked(r):
+    """A JSON refusal when this race is locked, else None.
+
+    Deliberately narrow: this guards the two calls that DESTROY times -- reset, and a
+    restart that clears -- and nothing else. Edits stay open on a locked race because
+    correcting a bib or a place is normal work after the finish; wiping the race is not.
+    Enforced in the ROUTE, not just the button, so a stale phone still holding the
+    console open cannot reset a finished race.
+    """
+    try:
+        if not r["locked_at"]:
+            return None
+    except (KeyError, IndexError):
+        return None
+    return jsonify(error="Results are locked for this race — unlock it first.",
+                   locked=True), 409
+
+
 def _athlete_for_bib(conn, meet_id, bib):
     # Per-meet bib numbering: resolve the scanned bib via the meet's bib map.
     from .meets import athlete_by_meet_bib
@@ -855,6 +873,7 @@ CONSOLE_CSS = """
 @login_required
 def console(rid):
     r, m = _race_or_403(rid, can_record_meet)
+    rname_js = json.dumps(r["name"])       # heat name for the lock/unlock prompts
     body = f"""
 <style>{CONSOLE_CSS}</style>
 <p class="muted"><a href="/meets/{m['id']}">← {escape(m['name'])}</a></p>
@@ -864,7 +883,8 @@ def console(rid):
   <div class="tc-btns">
     <button id="btn-start" onclick="startRace()">🚦 Start</button>
     <button id="btn-stop" onclick="stopRace()">⏹ Stop</button>
-    <button class="ghost" onclick="resetRace()">🔄 Reset</button>
+    <button id="btn-reset" class="ghost" onclick="resetRace()">🔄 Reset</button>
+    <button id="btn-lock" class="ghost" onclick="toggleLock()">🔒 Lock results</button>
   </div>
   <div id="status" class="tc-status wait">Not started.</div>
 </div>
@@ -888,6 +908,7 @@ def console(rid):
 <script>
 const RID={rid}, MID={m['id']};
 let OFFSET=0, START=null, STOPMS=null, STOPPED=false, STARTED=false, MODE='tap', FIN=[], OPEN=0;
+let LOCKED=false; const RNAME={rname_js};
 let dragId=null, dragging=false;
 function nowms(){{ return Date.now()+OFFSET; }}
 function fmt(sec){{ if(sec==null)return''; sec=Math.max(0,sec);
@@ -897,18 +918,28 @@ async function load(){{
   const s=await jget('/races/'+RID+'/state');
   OFFSET=s.server_ms-Date.now(); START=s.start_ms; STOPMS=s.stop_ms;
   STOPPED=s.stopped; STARTED=s.started; MODE=s.capture_mode; FIN=s.finishers; OPEN=s.open;
+  LOCKED=!!s.locked;
   syncUI(); render();
 }}
 function syncUI(){{
   const scan = MODE==='scan';
   document.getElementById('btn-start').disabled = STARTED && !STOPPED;
   document.getElementById('btn-stop').disabled = !STARTED || STOPPED;
+  // Only Reset is taken away. Bib edits, DQ, insert and reorder stay live on a locked
+  // race — those are the corrections that happen after the finish.
+  document.getElementById('btn-reset').disabled = LOCKED;
+  const lb=document.getElementById('btn-lock');
+  lb.textContent = LOCKED ? '🔓 Unlock' : '🔒 Lock results';
+  lb.style.background = LOCKED ? '#2e9e5b' : '';
+  lb.style.color = LOCKED ? '#fff' : '';
   document.getElementById('verb').textContent = scan?'Record':'Assign';
   document.getElementById('help').textContent = scan
     ? 'Scan mode: each bib records with the current race time.'
     : 'Tap mode: taps come from the phone; scan bibs here to fill open slots in order.';
   const st=document.getElementById('status');
-  if(!STARTED){{ st.className='tc-status wait'; st.textContent='Not started.'; }}
+  if(LOCKED){{ st.className='tc-status end';
+    st.textContent='🔒 Results locked — Reset is off. Bibs, DQ and places can still be fixed.'; }}
+  else if(!STARTED){{ st.className='tc-status wait'; st.textContent='Not started.'; }}
   else if(STOPPED){{ st.className='tc-status end';
     st.textContent = scan?'🏁 Race ended.':'🏁 Race ended — keep scanning bibs to fill open slots.'; }}
   else {{ st.className='tc-status run'; st.textContent='🟢 Running.'; }}
@@ -966,9 +997,26 @@ async function startRace(){{
   const body={{}};
   if(STOPPED&&FIN.length){{ if(!confirm('Race ended with '+FIN.length+' finisher(s). Restarting CLEARS them. Continue?'))return; body.clear=true; }}
   try{{ await jpost('/races/'+RID+'/start',body); }}catch(e){{ alert(e.message); }} load(); }}
-async function stopRace(){{ if(!confirm('Stop the race clock?'))return; await jpost('/races/'+RID+'/stop',{{}}); load(); }}
+async function stopRace(){{ if(!confirm('Stop the race clock?'))return;
+  await jpost('/races/'+RID+'/stop',{{}});
+  // A stopped race that has finishers is almost always done. Offer the lock right here,
+  // while the crew knows it, rather than hoping someone remembers later.
+  if(FIN.length && !LOCKED){{
+    if(confirm(RNAME+': '+FIN.length+' finisher(s).\n\nLock these results? Reset is then refused '
+               +'until you unlock. You can still fix bibs, DQ and places.')){{
+      try{{ await jpost('/races/'+RID+'/lock',{{}}); }}catch(e){{ alert(e.message); }}
+    }}
+  }}
+  load(); }}
 async function resetRace(){{ if(!confirm('Reset clears the clock and all finishers. Continue?'))return;
-  await jpost('/races/'+RID+'/reset',{{}}); load(); }}
+  try{{ await jpost('/races/'+RID+'/reset',{{}}); }}catch(e){{ alert(e.message); }} load(); }}
+async function toggleLock(){{
+  if(LOCKED){{ if(!confirm('Unlock '+RNAME+'? Reset becomes possible again.'))return;
+    try{{ await jpost('/races/'+RID+'/unlock',{{}}); }}catch(e){{ alert(e.message); }} }}
+  else {{ if(!confirm('Lock '+RNAME+'? Reset will be refused until you unlock. Bib, DQ and place '
+                     +'edits keep working.'))return;
+    try{{ await jpost('/races/'+RID+'/lock',{{}}); }}catch(e){{ alert(e.message); }} }}
+  load(); }}
 async function recordBib(){{ const el=document.getElementById('bib'); const v=el.value.trim(); if(!v)return;
   try{{ const j=await jpost('/races/'+RID+'/finish',{{bib:v}});
     if(j&&j.warn) alert('⚠ '+j.warn); el.value=''; el.focus(); load(); }}
@@ -1099,6 +1147,7 @@ def race_state(rid):
     return jsonify(
         name=r["name"],
         capture_mode=r["capture_mode"],
+        locked=bool(r["locked_at"]),
         start_ms=_ms(start) if start else None,
         stop_ms=_ms(stop) if stop else None,
         started=bool(r["start_time"]),
@@ -1133,6 +1182,11 @@ def race_start(rid):
             return jsonify(error=f"Race ended with {n} finisher(s). Restarting clears them — "
                                  "confirm the restart (or use Reset).", needs_clear=True), 409
         if n:
+            # Same destruction as Reset, reached another way — so the lock covers it too.
+            lk = _locked(r)
+            if lk:
+                conn.close()
+                return lk
             conn.execute("DELETE FROM finishers WHERE race_id=?", (rid,))
     # First-start-wins: an intentional restart (clear, or restarting a stopped race)
     # overwrites; a plain first start only sets the clock if it's still unset, so two
@@ -1164,12 +1218,40 @@ def race_stop(rid):
 def race_reset(rid):
     """Clear the clock and every finisher — a clean slate for the heat."""
     r, m = _race_or_403(rid, can_record_meet)
+    lk = _locked(r)
+    if lk:
+        return lk
     conn = db.connect()
     conn.execute("DELETE FROM finishers WHERE race_id=?", (rid,))
     conn.execute("UPDATE races SET start_time=NULL, stop_time=NULL WHERE id=?", (rid,))
     conn.commit()
     conn.close()
     return jsonify(ok=True)
+
+
+@bp.post("/races/<int:rid>/lock")
+@login_required
+def race_lock(rid):
+    """Lock the results in. Offered the moment a race with finishers is stopped."""
+    r, m = _race_or_403(rid, can_record_meet)
+    conn = db.connect()
+    n = conn.execute("SELECT COUNT(*) FROM finishers WHERE race_id=?", (rid,)).fetchone()[0]
+    conn.execute("UPDATE races SET locked_at=? WHERE id=?", (_iso(_now()), rid))
+    conn.commit()
+    conn.close()
+    return jsonify(ok=True, locked=True, finishers=n)
+
+
+@bp.post("/races/<int:rid>/unlock")
+@login_required
+def race_unlock(rid):
+    """Deliberately reopen a locked race — the only route back to Reset."""
+    r, m = _race_or_403(rid, can_record_meet)
+    conn = db.connect()
+    conn.execute("UPDATE races SET locked_at=NULL WHERE id=?", (rid,))
+    conn.commit()
+    conn.close()
+    return jsonify(ok=True, locked=False)
 
 
 @bp.post("/races/<int:rid>/untap")

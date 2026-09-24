@@ -286,11 +286,12 @@ def phone_race(rid):
 <div id="ctrls" class="ctrls" style="display:none">
   <button class="ctl undo" onclick="undo()">↶ UNDO</button>
   <button class="ctl stop" onclick="stopRace()">■ STOP</button>
-  <button class="ctl reset" onclick="resetRace()">↺ RESET</button>
+  <button id="btn-reset" class="ctl reset" onclick="resetRace()">↺ RESET</button>
 </div>
 <script>
 const RID={rid};
 let OFFSET=0, BEST_RTT=1e9, START=null, STOPMS=null, STOPPED=false, STARTED=false, MODE='tap', FIN=[];
+let LOCKED=false;
 function nowms(){{ return Date.now()+OFFSET; }}
 function fmt(sec){{ if(sec==null)return''; sec=Math.max(0,sec);
   const h=Math.floor(sec/3600), m=Math.floor((sec%3600)/60), s=sec-3600*h-60*m;
@@ -303,10 +304,16 @@ async function load(){{
   if(rtt<BEST_RTT){{ BEST_RTT=rtt; OFFSET=Math.round(s.server_ms+rtt/2-t1); }}  // keep the lowest-latency sample
   START=s.start_ms; STOPMS=s.stop_ms;
   STOPPED=s.stopped; STARTED=s.started; MODE=s.capture_mode; FIN=s.finishers;
+  LOCKED=!!s.locked;
   sync(); render();
   if((MODE==='tapselect'||MODE==='tap') && STARTED) loadElig();
 }}
 function sync(){{
+  // A locked heat keeps every correction available — only RESET changes, and it says so
+  // rather than disappearing, so nobody hunts for a button that used to be there.
+  const rb=document.getElementById('btn-reset');
+  if(rb){{ rb.textContent = LOCKED ? '🔒 LOCKED' : '↺ RESET';
+    rb.style.background = LOCKED ? '#2e9e5b' : ''; }}
   // Unified "tap -> scan or select": tap and tapselect both fill open slots by scan or pick.
   const active=STARTED&&!STOPPED, scan=MODE==='scan', sel=(MODE==='tapselect'||MODE==='tap');
   document.getElementById('startb').style.display = STARTED?'none':'';
@@ -383,8 +390,22 @@ async function startRace(){{
   const body={{at:nowms()}};     // stamp the gun instant on THIS phone, immune to POST lag
   if(STOPPED&&FIN.length){{ if(!confirm('Race ended with '+FIN.length+' finisher(s). Restarting CLEARS them. Continue?'))return; body.clear=true; }}
   try{{ await jpost('/races/'+RID+'/start',body); }}catch(e){{ alert(e.message); }} load(); }}
-async function stopRace(){{ if(!confirm('Stop the race clock?'))return; await jpost('/races/'+RID+'/stop',{{}}); load(); }}
-async function resetRace(){{ if(!confirm('Reset clears the clock AND every finisher for this race. Continue?'))return;
+async function stopRace(){{ if(!confirm('Stop the race clock?'))return;
+  await jpost('/races/'+RID+'/stop',{{}});
+  // Offer the lock the moment the heat is done — RESET sits right next to STOP on a
+  // phone, and one mis-tap used to wipe the whole race behind a single confirm.
+  if(FIN.length && !LOCKED){{
+    if(confirm(FIN.length+' finisher(s).\n\nLock these results? RESET is then refused until '
+               +'you unlock. Bibs, DQ and places can still be fixed.')){{
+      try{{ await jpost('/races/'+RID+'/lock',{{}}); }}catch(e){{ alert(e.message); }}
+    }}
+  }}
+  load(); }}
+async function resetRace(){{
+  if(LOCKED){{ if(!confirm('These results are LOCKED.\n\nUnlock and reset anyway? Every time for '
+                          +'this heat is deleted.'))return;
+    try{{ await jpost('/races/'+RID+'/unlock',{{}}); }}catch(e){{ alert(e.message); return; }} }}
+  else if(!confirm('Reset clears the clock AND every finisher for this race. Continue?'))return;
   try{{ await jpost('/races/'+RID+'/reset',{{}}); }}catch(e){{ alert(e.message); }} load(); }}
 function buzz(ms){{ try{{ navigator.vibrate && navigator.vibrate(ms); }}catch(e){{}} }}
 async function tap(){{ buzz(35); const at=nowms(); try{{ await jpost('/races/'+RID+'/tap',{{at:at}}); }}catch(e){{}} load(); }}
