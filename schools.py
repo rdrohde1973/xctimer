@@ -282,16 +282,24 @@ def roster(sid):
     road_on = _road_enabled(s["district_id"])
     sport = request.args.get("sport", "all")
     grad_view = request.args.get("show") == "grad"
-    # Sort: Name / Gr / Sex, from the Sort buttons or the column headers; the active one
-    # again reverses it. Blank grades/sexes always sink to the bottom, and name breaks
-    # ties so a grade or sex group reads alphabetically. Whitelisted -- never raw SQL.
-    sort = request.args.get("sort", "name")
-    sort = sort if sort in ("name", "grade", "sex") else "name"
-    desc = request.args.get("dir") == "desc"
-    _d = " DESC" if desc else ""
-    order = {"name": f"name COLLATE NOCASE{_d}",
-             "grade": f"grade IS NULL, grade{_d}, name COLLATE NOCASE",
-             "sex": f"gender IS NULL, gender{_d}, name COLLATE NOCASE"}[sort]
+    # Sort: up to two keys, in the order they were tapped -- Gr then Sex groups each
+    # grade into girls and boys; Sex then Gr the other way round. ?sort=grade,-sex (a
+    # leading "-" = descending). Tapping a key already in use flips it; Name resets to
+    # plain A-Z. Blanks always sink, and name is the last tiebreak. Keys come from a
+    # whitelist -- the query string never reaches SQL.
+    keys = []
+    for tok in (request.args.get("sort") or "").split(","):
+        tok = tok.strip()
+        k, d = tok.lstrip("-"), tok.startswith("-")
+        if k in ("grade", "sex") and k not in [x for x, _ in keys]:
+            keys.append((k, d))
+    keys = keys[:2]
+    if len(keys) == 1 and request.args.get("dir") == "desc":   # 1.95.0 links: ?sort=grade&dir=desc
+        keys = [(keys[0][0], True)]
+    name_desc = not keys and request.args.get("dir") == "desc"
+    _col = {"grade": "grade", "sex": "gender"}
+    order = ", ".join([f'{_col[k]} IS NULL, {_col[k]}{" DESC" if d else ""}' for k, d in keys]
+                      + [f'name COLLATE NOCASE{" DESC" if name_desc else ""}'])
 
     where = ["school_id=?", "active=0" if grad_view else "active=1"]
     params = [sid]
@@ -356,22 +364,38 @@ def roster(sid):
                f'onchange="tog({aid},\'road\',this)"></td>' if road_on else "")
             + f'<td><div class="rowacts">{"".join(acts)}</div></td></tr>')
 
+    def _enc(ks):
+        return ",".join(("-" if d else "") + k for k, d in ks) or None
+
     def _qs(**over):
         """This roster's URL with the view's filter + sort kept, some of them changed."""
         q = {"sport": sport if sport != "all" else None, "show": "grad" if grad_view else None,
-             "sort": sort if sort != "name" else None, "dir": "desc" if desc else None}
+             "sort": _enc(keys), "dir": "desc" if name_desc else None}
         q.update(over)
-        return f"/schools/{sid}?" + "&".join(f"{k}={v}" for k, v in q.items() if v)
+        qs = "&".join(f"{k}={v}" for k, v in q.items() if v)
+        return f"/schools/{sid}" + (f"?{qs}" if qs else "")
 
     def _sort_url(key):
-        # Clicking the active sort flips it; any other starts ascending.
-        return _qs(sort=None if key == "name" else key,
-                   dir="desc" if (sort == key and not desc) else None)
+        if key == "name":            # back to plain A-Z (a second tap reverses it)
+            return _qs(sort=None, dir=None if (keys or name_desc) else "desc")
+        used = [k for k, _ in keys]
+        if key in used:              # already sorting on it: flip just that key
+            return _qs(sort=_enc([(k, (not d) if k == key else d) for k, d in keys]), dir=None)
+        # A new key goes second, keeping the first: tap Gr, then Sex = grade, then sex.
+        return _qs(sort=_enc((keys + [(key, False)])[-2:]), dir=None)
+
+    def _mark(key):
+        """ ▲¹ / ▼² : direction, and position when two sorts are on."""
+        if key == "name":
+            return (" ▼" if name_desc else " ▲") if not keys else ""
+        for i, (k, d) in enumerate(keys):
+            if k == key:
+                return (" ▼" if d else " ▲") + ("¹²"[i] if len(keys) > 1 else "")
+        return ""
 
     def _sh(label, key):
-        arrow = (" ▼" if desc else " ▲") if sort == key else ""
         return (f'<th><a href="{_sort_url(key)}" title="Sort by {label}" '
-                f'style="color:inherit;text-decoration:none">{label}{arrow}</a></th>')
+                f'style="color:inherit;text-decoration:none">{label}{_mark(key)}</a></th>')
     sort_heads = _sh("Name", "name") + _sh("Gr", "grade") + _sh("Sex", "sex")
 
     if grad_view:
@@ -407,14 +431,16 @@ def roster(sid):
             f'{_f("All", "all")}{_f("🏃 XC", "xc")}{champ_chip}{_f("🎽 Track", "track")}{road_chip}'
             f'<span style="flex:1"></span>{grad_link}</div>')
     def _sb(label, key):
-        on = sort == key
-        arrow = (" ▼" if desc else " ▲") if on else ""
-        style = "background:var(--panel2);color:var(--fg)" if on else ""
+        m = _mark(key)
+        style = "background:var(--panel2);color:var(--fg)" if m else ""
         return (f'<a class="btn ghost" style="{style}" href="{_sort_url(key)}">'
-                f'{label}{arrow}</a>')
-    sortbar = (f'<div class="row" style="margin:-.5rem 0 1rem;gap:.4rem;align-items:center">'
+                f'{label}{m}</a>')
+    hint = ("Tap Name for plain A–Z" if len(keys) == 2 else
+            "Tap another to sort within it" if keys else "")
+    sortbar = (f'<div class="row" style="margin:-.5rem 0 1rem;gap:.4rem;align-items:center;flex-wrap:wrap">'
                f'<span class="muted" style="font-size:.85rem">Sort:</span>'
-               f'{_sb("Name", "name")}{_sb("Gr", "grade")}{_sb("Sex", "sex")}</div>'
+               f'{_sb("Name", "name")}{_sb("Gr", "grade")}{_sb("Sex", "sex")}'
+               f'<span class="muted" style="font-size:.8rem">{hint}</span></div>'
                if ath else "")
     filt += sortbar
 
@@ -1438,7 +1464,14 @@ def champ_suggest(sid):
     ro = g.principal.is_demo
 
     def row(p, tag, checked):
-        res_txt = " · ".join(f'{escape(r["meet"])} {_fmt_mmss(r["t"])}' for r in p["results"]) or "—"
+        res_txt = " · ".join(
+            f'{escape(r["meet"])} {_fmt_mmss(r["t"])}'
+            + (' <span class="pill" title="Time trial — may be a different distance; its time is '
+               'only used when there is no real race">TT</span>' if r.get("tt") else "")
+            + ('' if r.get("adj") is not None else
+               ' <span class="muted" title="This course shares too few runners with the others '
+               'to be compared">(not comparable)</span>')
+            for r in p["results"]) or "—"
         return (f'<tr><td style="text-align:center"><input type="checkbox" name="pick" '
                 f'value="{p["aid"]}" style="width:auto" {"checked" if checked else ""} '
                 f'{"disabled" if ro else ""} onchange="cnt()"></td>'
@@ -1453,10 +1486,14 @@ def champ_suggest(sid):
         tu = c["tossup"]
         tossup_ids = {p["aid"] for p in tu["zone"]} if tu else set()
         trs = []
+        tt_note = (' <span class="pill" title="Only has time-trial results, which may have been a '
+                   'different distance — check this one">TT only</span>')
         for p, kind in c["picks"]:
             tag = ('<span class="pill" style="background:#2e9e5b;color:#fff">Pick</span>'
                    if kind == "clear" else
                    f'<span class="pill" style="background:#e8622a;color:#fff">Toss-up pick</span>')
+            if p.get("tt_only"):
+                tag += tt_note
             trs.append(row(p, tag, True))
         for p in c["alternates"]:
             tag = ('<span class="pill">Toss-up — left out</span>' if p["aid"] in tossup_ids
@@ -1467,15 +1504,17 @@ def champ_suggest(sid):
         for p in rest:
             trs.append(row(p, '<span class="muted">slower</span>', False))
         for p in c["unranked"]:
-            trs.append(row(p, '<span class="pill" style="background:var(--warn);color:#000">No XC result yet</span>', False))
+            trs.append(row(p, f'<span class="pill" style="background:var(--warn);color:#000">'
+                              f'{escape(p.get("why_unranked") or "No XC result yet")}</span>', False))
         why = ""
         if tu:
             who = "AI review" if tu["by"] == "AI review" else "head-to-head record"
             if tu["by"] == "AI review":
                 reason = escape(tu.get("reason", ""))
             elif tu.get("settled"):
-                reason = ("Too close on adjusted time, but every pick beat every runner left "
-                          "out in a race they ran together — so there was nothing to judge.")
+                reason = ("Too close on adjusted time, but every pick finished ahead of every "
+                          "runner left out the last time they raced each other — so there was "
+                          "nothing to judge.")
             else:
                 reason = ("Too close to call on adjusted time; ordered by who beat whom when "
                           "they ran the same race.")
@@ -1499,9 +1538,11 @@ def champ_suggest(sid):
         if c["group"] != last:
             course_rows += f'<tr><th colspan="4">{c["group"]}\' races</th></tr>'
             last = c["group"]
-        course_rows += (f'<tr><td>{escape(c["meet"])}</td><td>{escape(c["race"])}</td>'
-                        f'<td>{escape(c["date"] or "")}</td>'
-                        f'<td style="text-align:right">{"+" if c["pct"] >= 0 else ""}{c["pct"]:.1f}%</td></tr>')
+        pct = ("not compared — too few runners in common with the other races"
+               if c["pct"] is None else f'{"+" if c["pct"] >= 0 else ""}{c["pct"]:.1f}%')
+        course_rows += (f'<tr><td>{escape(c["meet"])}{" (time trial)" if c.get("tt") else ""}</td>'
+                        f'<td>{escape(c["race"])}</td><td>{escape(c["date"] or "")}</td>'
+                        f'<td style="text-align:right">{pct}</td></tr>')
     note = (f'<div class="msg warn">{escape(res["llm_note"])}</div>' if res["llm_note"] else "")
     ai_link = (f'<a href="/schools/{sid}/champ?ai=0">skip AI review</a>' if use_llm
                else f'<a href="/schools/{sid}/champ" onclick="xcThinking(event)">'
