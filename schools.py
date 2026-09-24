@@ -400,7 +400,8 @@ def roster(sid):
                  f'🎓 Graduated ({grad_count})</a>' if grad_count or grad_view else "")
     road_chip = _f("🛣 Road", "road") if road_on else ""
     champ_chip = (_f("🏆 Champ", "champ") +
-                  (f'<a class="btn ghost" href="/schools/{sid}/champ">✨ Suggest champ picks</a>'
+                  (f'<a class="btn ghost" href="/schools/{sid}/champ" '
+                   f'onclick="xcThinking(event)">✨ Suggest champ picks</a>{_THINKING_UI}'
                    if not grad_view else ""))
     filt = (f'<div class="row" style="margin:.2rem 0 1rem;gap:.4rem">'
             f'{_f("All", "all")}{_f("🏃 XC", "xc")}{champ_chip}{_f("🎽 Track", "track")}{road_chip}'
@@ -1384,6 +1385,40 @@ async function lookup(){
                  districts=_districts_for_switcher())
 
 
+# Shown the moment a coach asks for champ suggestions. The page can take ~30s when close
+# calls go to Claude, and a screen that sits there reads as broken. The browser keeps the
+# current page up until the next one arrives, so this overlay covers exactly that wait.
+# Plain left-clicks only: a Cmd/Ctrl-click opens a new tab and must not freeze this one.
+# `pageshow` clears it when Back restores this page from the browser's cache (Safari keeps
+# the overlay otherwise). No "\n" inside the JS strings -- see the 1.93.1 note in HANDOFF.
+_THINKING_UI = (
+    '<div id="xcthink" style="display:none;position:fixed;inset:0;z-index:9999;'
+    'background:rgba(8,17,29,.82);align-items:center;justify-content:center;text-align:center;padding:1rem">'
+    '<div style="max-width:24rem;padding:1.5rem 1.7rem;border-radius:14px;background:var(--panel);'
+    'border:1px solid var(--line);box-shadow:0 10px 40px rgba(0,0,0,.4)">'
+    '<div class="xcspin"></div>'
+    '<div style="font-weight:800;font-size:1.15rem;margin:.9rem 0 .35rem">Claude is thinking…</div>'
+    '<div class="muted" style="font-size:.9rem;line-height:1.45">Adjusting every time for how hard '
+    'its course was and checking head-to-head results. Picks too close to call get a closer look, '
+    'which can take up to a minute.</div>'
+    '<div class="muted" id="xcthinkt" style="font-size:.85rem;margin-top:.7rem;'
+    'font-variant-numeric:tabular-nums"></div></div></div>'
+    '<style>.xcspin{width:40px;height:40px;margin:0 auto;border-radius:50%;'
+    'border:4px solid var(--line);border-top-color:#e8622a;animation:xcspin .9s linear infinite}'
+    '@keyframes xcspin{to{transform:rotate(360deg)}}</style>'
+    '<script>'
+    'var XCT=null;'
+    'function xcThinking(ev){'
+    'if(ev&&(ev.metaKey||ev.ctrlKey||ev.shiftKey||ev.altKey||ev.button!==0))return;'
+    'var o=document.getElementById("xcthink");if(!o)return;o.style.display="flex";'
+    'var t0=Date.now(),el=document.getElementById("xcthinkt");el.textContent="";'
+    'if(XCT)clearInterval(XCT);'
+    'XCT=setInterval(function(){el.textContent=Math.round((Date.now()-t0)/1000)+" seconds";},1000);}'
+    'window.addEventListener("pageshow",function(){var o=document.getElementById("xcthink");'
+    'if(o)o.style.display="none";if(XCT){clearInterval(XCT);XCT=null;}});'
+    '</script>')
+
+
 # ------------------------------- championship picks -------------------------------
 def _fmt_mmss(s):
     if s is None:
@@ -1469,7 +1504,8 @@ def champ_suggest(sid):
                         f'<td style="text-align:right">{"+" if c["pct"] >= 0 else ""}{c["pct"]:.1f}%</td></tr>')
     note = (f'<div class="msg warn">{escape(res["llm_note"])}</div>' if res["llm_note"] else "")
     ai_link = (f'<a href="/schools/{sid}/champ?ai=0">skip AI review</a>' if use_llm
-               else f'<a href="/schools/{sid}/champ">run AI review of close calls</a>')
+               else f'<a href="/schools/{sid}/champ" onclick="xcThinking(event)">'
+                    f'run AI review of close calls</a>{_THINKING_UI}')
     apply_btn = ("" if ro else
                  '<button type="submit" onclick="return confirm(\'Replace this school\\\'s championship '
                  'picks with the boxes ticked on this page?\')">✓ Apply these picks</button>')
