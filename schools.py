@@ -1397,9 +1397,14 @@ def champ_suggest(sid):
         why = ""
         if tu:
             who = "AI review" if tu["by"] == "AI review" else "head-to-head record"
-            reason = escape(tu.get("reason", "")) if tu["by"] == "AI review" else (
-                "Too close to call on adjusted time, so the order comes from who beat whom "
-                "when they ran the same race.")
+            if tu["by"] == "AI review":
+                reason = escape(tu.get("reason", ""))
+            elif tu.get("settled"):
+                reason = ("Too close on adjusted time, but every pick beat every runner left "
+                          "out in a race they ran together — so there was nothing to judge.")
+            else:
+                reason = ("Too close to call on adjusted time; ordered by who beat whom when "
+                          "they ran the same race.")
             why = (f'<div class="msg" style="border-left:3px solid #e8622a;padding:.4rem .7rem;margin:.3rem 0 .6rem">'
                    f'<b>Close call — {tu["slots"]} of {len(tu["zone"])} decided by {who}.</b> {reason}</div>')
         cards.append(
@@ -1415,10 +1420,14 @@ def champ_suggest(sid):
             for a in res["uncategorised"])
         cards.append(f'<div class="card"><h2>Can\'t be placed in a category</h2><table>{trs}</table></div>')
 
-    course_rows = "".join(
-        f'<tr><td>{escape(c["meet"])}</td><td>{escape(c["race"])}</td><td>{escape(c["date"] or "")}</td>'
-        f'<td style="text-align:right">{"+" if c["pct"] >= 0 else ""}{c["pct"]:.1f}%</td></tr>'
-        for c in res["courses"])
+    course_rows, last = "", None
+    for c in res["courses"]:
+        if c["group"] != last:
+            course_rows += f'<tr><th colspan="4">{c["group"]}\' races</th></tr>'
+            last = c["group"]
+        course_rows += (f'<tr><td>{escape(c["meet"])}</td><td>{escape(c["race"])}</td>'
+                        f'<td>{escape(c["date"] or "")}</td>'
+                        f'<td style="text-align:right">{"+" if c["pct"] >= 0 else ""}{c["pct"]:.1f}%</td></tr>')
     note = (f'<div class="msg warn">{escape(res["llm_note"])}</div>' if res["llm_note"] else "")
     ai_link = (f'<a href="/schools/{sid}/champ?ai=0">skip AI review</a>' if use_llm
                else f'<a href="/schools/{sid}/champ">run AI review of close calls</a>')
@@ -1443,8 +1452,10 @@ tick or untick anyone first. The Champ box on the roster still works afterwards.
 </form>
 <details class="card"><summary>How hard was each course?</summary>
 <table><tr><th>Meet</th><th>Race</th><th>Date</th><th>vs average course</th></tr>{course_rows}</table>
-<p class="muted" style="font-size:.85rem">Positive = slower than an average course. Learned from runners
-who ran more than one of these races.</p></details>
+<p class="muted" style="font-size:.85rem">Positive = slower than the average course for that gender.
+Learned from runners who ran more than one of these races. A big number can mean a longer course as
+well as a hillier one, and an early-season race also looks "harder" because everyone was less fit —
+which is fair, since it compares each runner with others racing at the same point.</p></details>
 <script>
 function cnt(){{
   let total=0;

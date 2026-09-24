@@ -92,13 +92,28 @@ def _components(by_a, by_r):
 
 
 def course_table(rows, df):
-    """Per race: how much slower/faster than an average course, for display."""
-    seen = {}
+    """Per race: how much slower/faster than the average course FOR THAT GENDER.
+
+    Boys' and girls' races are only tied together through the few runners in a mixed
+    heat, so one shared average made "Lehi Girls +1% / Lehi Boys -17%" appear for the
+    same course -- true to the model, meaningless to a reader. Selection only ever
+    compares within a gender, so the display does too.
+    """
+    seen, sexes = {}, defaultdict(lambda: defaultdict(int))
     for r in rows:
         seen.setdefault(r["rid"], (r["meet"], r["race"], r["date"]))
+        sexes[r["rid"]][r["gender"] or "?"] += 1
+    group = {rid: max(sx, key=sx.get) for rid, sx in sexes.items()}
+    base = {}
+    for gx in set(group.values()):
+        ids = [rid for rid in seen if group[rid] == gx]
+        base[gx] = sum(df.get(rid, 0.0) for rid in ids) / len(ids)
+    word = {"M": "Boys", "F": "Girls"}
     return sorted(({"rid": rid, "meet": v[0], "race": v[1], "date": v[2],
-                    "pct": (math.exp(df.get(rid, 0.0)) - 1) * 100}
-                   for rid, v in seen.items()), key=lambda x: x["date"] or "")
+                    "group": word.get(group[rid], "Other"),
+                    "pct": (math.exp(df.get(rid, 0.0) - base[group[rid]]) - 1) * 100}
+                   for rid, v in seen.items()),
+                  key=lambda x: (x["group"], x["date"] or ""))
 
 
 def _h2h(rows, ids):
@@ -173,10 +188,19 @@ def suggest(school_id, use_llm=True):
                 order = sorted(zone, key=lambda p: (
                     -sum(wins[p["aid"]][q["aid"]] - wins[q["aid"]][p["aid"]] for q in zone if q is not p),
                     p["rating"]))
+                chosen, left = order[:slots], order[slots:]
+                # Settled outright when every pick beat every runner left out, in a race
+                # they both ran. That needs no judgement, so it never goes to the LLM --
+                # which only sees the real close calls: runners who never met, or who
+                # have split results.
+                settled = all(wins[a["aid"]][b["aid"]] > wins[b["aid"]][a["aid"]]
+                              for a in chosen for b in left)
                 cat["picks"] = [(p, "clear") for p in clear]
                 cat["tossup"] = {"zone": zone, "slots": slots, "order": order,
-                                 "chosen": order[:slots], "why": {}, "by": "head-to-head"}
-                tossups.append(cat)
+                                 "chosen": chosen, "why": {}, "settled": settled,
+                                 "by": "head-to-head"}
+                if not settled:
+                    tossups.append(cat)
         picked = {p["aid"] for p, _ in cat["picks"]}
         cat["alternates"] = [p for p in ranked if p["aid"] not in picked][:ALTERNATES]
         out.append(cat)
