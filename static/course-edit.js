@@ -9,6 +9,7 @@
   var doc = (CFG.data && Array.isArray(CFG.data.courses) && CFG.data.courses.length)
     ? CFG.data : { version: 1, courses: [{ name: "Course", points: [], smooth: false }], view: null };
   var cur = 0, sel = -1, dirty = false, ready = false, lastMeters = 0;
+  var plotting = false;       // clicking points in: the Finish flag waits for ✅ Finish course
   var ptMarkers = [], deco = [], history = [], justDragged = false;
 
   function course() { return doc.courses[cur]; }
@@ -34,9 +35,9 @@
           { id: "raw", type: "line", source: "raw", layout: lineLayout,
             paint: { "line-color": "#ffffff", "line-width": 1.5, "line-opacity": 0.75, "line-dasharray": [2, 2] } },
           { id: "route-casing", type: "line", source: "route", layout: lineLayout,
-            paint: { "line-color": "#0a1728", "line-width": 7, "line-opacity": 0.55, "line-offset": ["get", "offset"] } },
+            paint: { "line-color": "#0a1728", "line-width": 8, "line-opacity": 0.55 } },
           { id: "route", type: "line", source: "route", layout: lineLayout,
-            paint: { "line-color": ["get", "color"], "line-width": 4, "line-offset": ["get", "offset"] } }
+            paint: { "line-color": ["get", "color"], "line-width": ["get", "width"] } }
         ]
       },
       center: doc.view ? doc.view.center : [-98.5, 39.8],
@@ -49,6 +50,15 @@
   }
   map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), "top-right");
   map.addControl(new maplibregl.ScaleControl({ unit: "imperial" }), "bottom-left");
+
+  // Credits start tucked behind the ⓘ button (tap it to read them) instead of a long
+  // banner across the bottom of the map.
+  function tuckCredits() {
+    var a = map.getContainer().querySelector(".maplibregl-ctrl-attrib");
+    if (a) { a.removeAttribute("open"); a.classList.remove("maplibregl-compact-show"); }
+  }
+  map.once("load", tuckCredits);
+  map.once("idle", tuckCredits);
   map.on("load", function () {
     ready = true;
     render();
@@ -59,11 +69,27 @@
   // ---------------------------------------------------------------- plotting
   map.on("click", function (e) {
     if (justDragged) return;
-    snapshot();
-    course().points.push([r7(e.lngLat.lng), r7(e.lngLat.lat)]);
-    sel = -1;
-    changed();
+    addPoint(near(e.point) || [r7(e.lngLat.lng), r7(e.lngLat.lat)]);
   });
+  function addPoint(p) {
+    var pts = course().points;
+    var last = pts[pts.length - 1];
+    if (last && last[0] === p[0] && last[1] === p[1]) return;   // same dot twice = nothing
+    snapshot();
+    pts.push(p.slice());
+    sel = -1; plotting = true;
+    $("cm-donemsg").hidden = true;
+    changed();
+  }
+  // A click just beside an existing dot means that dot: a second loop lands exactly on the first.
+  function near(px) {
+    var best = null, bd = 12;
+    course().points.forEach(function (p) {
+      var q = map.project(p), d = Math.hypot(q.x - px.x, q.y - px.y);
+      if (d < bd) { bd = d; best = p; }
+    });
+    return best;
+  }
   // Where the next click would put you. Uses the distance from the last redraw rather than
   // re-analysing the whole course on every mouse movement, which lagged on long courses.
   map.on("mousemove", function (e) {
@@ -80,14 +106,16 @@
     ptMarkers = course().points.map(function (p, i) {
       var el = document.createElement("div");
       el.className = "cm-pt" + (i === sel ? " sel" : "");
-      el.title = "Point " + (i + 1) + " — drag to move, click to select";
+      el.title = "Point " + (i + 1) + " — click to run through it again, drag to move, right-click (or Shift-click) to select";
+      function pick() { sel = (sel === i ? -1 : i); drawPoints(); buttons(); }
+      // Clicking a dot plots the next point on it -- how a loop comes back over its own ground.
       el.addEventListener("click", function (ev) {
         ev.stopPropagation();
         if (justDragged) return;
-        sel = (sel === i ? -1 : i);
-        drawPoints();
-        buttons();
+        if (ev.shiftKey || ev.altKey) pick();
+        else addPoint(course().points[i]);
       });
+      el.addEventListener("contextmenu", function (ev) { ev.preventDefault(); ev.stopPropagation(); pick(); });
       var mk = new maplibregl.Marker({ element: el, draggable: true }).setLngLat(p).addTo(map);
       mk.on("dragstart", function () { snapshot(); justDragged = true; });
       mk.on("dragend", function () {
@@ -112,6 +140,7 @@
     deco.forEach(function (m) { m.remove(); });
     deco = [];
     if (course().points.length < 2) return;
+    var done = !plotting;
     // Mile marks first: markers added later draw on top, and the flags matter more.
     a.marks.forEach(function (mk) {
       var el = document.createElement("div");
@@ -119,7 +148,11 @@
       el.textContent = mk.mile + " mi";
       deco.push(new maplibregl.Marker({ element: el }).setLngLat(mk.p).addTo(map));
     });
-    if (G.hav(a.start, a.finish) < 25) {
+    // While points are going in, the Finish flag would ride on the newest point and cover
+    // the spot about to be clicked -- only the Start flag shows until ✅ Finish course.
+    if (!done) {
+      deco.push(new maplibregl.Marker({ element: flag("start", "🟢", "Start"), anchor: "bottom" }).setLngLat(a.start).addTo(map));
+    } else if (G.hav(a.start, a.finish) < 25) {
       deco.push(new maplibregl.Marker({ element: flag("finish", "🏁", "Start / Finish"), anchor: "bottom" }).setLngLat(a.start).addTo(map));
     } else {
       // Close together (a finish chute beside the start line), the two flags would sit on
@@ -143,9 +176,8 @@
     var c = course(), a = G.analyse(c.points, c.smooth);
     var runs = G.runs(a.samples, a.laps);
     map.getSource("route").setData(fc(runs.map(function (r) {
-      // Each repeat loop gets its own colour AND sits a lane to the side, so laps drawn
-      // over the same ground stay visible instead of the last one hiding the rest.
-      return line(r.coords, { color: G.lapColor(r.pass), offset: (r.pass - 1) * 5 });
+      // Repeat loops sit on the first loop's line, a narrower stripe in their own colour.
+      return line(r.coords, { color: G.lapColor(r.pass), width: G.lapWidth(r.pass, 5) });
     })));
     map.getSource("raw").setData(fc(c.smooth && c.points.length > 1 ? [line(c.points)] : []));
     drawPoints();
@@ -227,7 +259,7 @@
     snapshot();
     var loop = pts.slice(sel + 1).map(function (p) { return p.slice(); });
     Array.prototype.push.apply(pts, loop);
-    sel = -1;
+    sel = -1; plotting = true;
     changed();
   };
   $("cm-clear").onclick = function () {
@@ -235,7 +267,7 @@
     snapshot(); course().points = []; sel = -1; changed();
   };
   $("cm-smooth").onchange = function () { snapshot(); course().smooth = this.checked; changed(); };
-  $("cm-course").onchange = function () { cur = +this.value; sel = -1; render(); fit(); };
+  $("cm-course").onchange = function () { cur = +this.value; sel = -1; plotting = false; render(); fit(); };
   $("cm-add").onclick = function () {
     if (doc.courses.length >= 6) { alert("Six courses is the most one meet can have."); return; }
     var name = prompt("Name for the new course (e.g. Girls 2 mile):", "Course " + (doc.courses.length + 1));
@@ -284,7 +316,9 @@
     if (c.points.length < 2) return;
     var btn = this;
     btn.disabled = true;
-    if (!c.smooth) { snapshot(); c.smooth = true; changed(); }
+    plotting = false;
+    if (!c.smooth) { snapshot(); c.smooth = true; }
+    changed();
     if (await save()) {
       var m = $("cm-donemsg");
       m.innerHTML = "✓ <b>" + esc(c.name) + "</b> is saved — " + lastA.miles.toFixed(2) +

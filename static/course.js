@@ -136,6 +136,38 @@
     return out;
   }
 
+  /* A repeat loop is the same trail, but hand clicks land a few metres off it. Pull every
+   * repeat-pass sample onto the nearest earlier stretch of the route (fully within SNAP
+   * metres, easing off out to the lap radius) so loop 2 draws right on top of loop 1
+   * instead of wandering beside it. Distances stay as plotted; only the drawing moves. */
+  function follow(samples, laps, snap, radius) {
+    snap = snap || 20;
+    radius = radius || 25;
+    var gap = 150, n = samples.length;
+    if (n < 3) return samples;
+    var pr = projector(samples[0].p);
+    var xy = samples.map(function (s) { return pr.fwd(s.p); });
+    var out = samples.map(function (s) { return { p: s.p, d: s.d }; });
+    for (var i = 0; i < n; i++) {
+      if ((laps[i] || 1) < 2) continue;
+      var best = Infinity, bx = 0, by = 0;
+      for (var j = 0; j + 1 < n; j++) {
+        if (samples[j + 1].d > samples[i].d - gap) break;
+        var ax = xy[j][0], ay = xy[j][1], ux = xy[j + 1][0] - ax, uy = xy[j + 1][1] - ay;
+        var L = ux * ux + uy * uy;
+        var t = L ? Math.max(0, Math.min(1, ((xy[i][0] - ax) * ux + (xy[i][1] - ay) * uy) / L)) : 0;
+        var qx = ax + ux * t, qy = ay + uy * t;
+        var dd = Math.hypot(xy[i][0] - qx, xy[i][1] - qy);
+        if (dd < best) { best = dd; bx = qx; by = qy; }
+      }
+      if (best > radius) continue;
+      var w = best <= snap ? 1 : (radius - best) / (radius - snap);
+      xy[i] = [xy[i][0] + (bx - xy[i][0]) * w, xy[i][1] + (by - xy[i][1]) * w];
+      out[i].p = pr.inv(xy[i]);        // later loops then follow this one, i.e. loop 1
+    }
+    return out;
+  }
+
   /* Position and heading at a distance along the samples. */
   function pointAt(samples, d) {
     if (!samples.length) return null;
@@ -192,7 +224,9 @@
     var path = doSmooth ? smooth(points) : dedupe(points);
     var samples = resample(path, 5);
     var laps = samples.length ? passes(samples) : [];
+    samples = follow(samples, laps);
     var loops = laps.reduce(function (m, x) { return Math.max(m, x); }, 0);
+    if (loops > 1) path = samples.map(function (s) { return s.p; });   // the line as drawn
     return {
       path: path, samples: samples, laps: laps, loops: loops,
       meters: samples.length ? samples[samples.length - 1].d : 0,
@@ -204,10 +238,13 @@
 
   var LAP_COLORS = ["#ffd400", "#ff7a00", "#ff2d95", "#9b5cff", "#22d3ee", "#7CFC00"];
   function lapColor(n) { return LAP_COLORS[(Math.max(1, n) - 1) % LAP_COLORS.length]; }
+  // Repeat loops ride on the same line, each a narrower stripe down the middle of the one
+  // before, so every loop's colour still shows without drawing a second trail beside it.
+  function lapWidth(n, base) { return Math.max(1.5, base * Math.pow(0.55, Math.max(1, n) - 1)); }
 
   var api = { hav: hav, length: length, dedupe: dedupe, smooth: smooth, resample: resample, passes: passes,
-              pointAt: pointAt, bearing: bearing, mileMarks: mileMarks, runs: runs,
-              analyse: analyse, lapColor: lapColor, MILE: MILE };
+              pointAt: pointAt, bearing: bearing, mileMarks: mileMarks, runs: runs, follow: follow,
+              analyse: analyse, lapColor: lapColor, lapWidth: lapWidth, MILE: MILE };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.CourseGeo = api;
 })(this);

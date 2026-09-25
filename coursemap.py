@@ -149,6 +149,28 @@ def _tabs(m):
 
 
 # ------------------------------------------------------------------ editor
+def can_edit_course(m):
+    """Who may draw the course: Super Admin, the meet's District Admin, and coaches of the
+    HOST school -- never visiting coaches or meet-day timers. A community road event has no
+    host school; its race director (or self-serve owner) maps their own course."""
+    p = g.principal
+    if not p or p.meet_scope:
+        return False
+    if p.is_super:
+        return True
+    if getattr(p, "owns_meet", None) is not None or _meet_organizer(m) is not None:
+        return can_setup_meet(m)
+    if p.district_id != m["district_id"]:
+        return False
+    if p.role == "district_admin":
+        return True
+    return p.role == "coach" and m["host_school_id"] in p.school_ids()
+
+
+def _meet_organizer(m):
+    return m["organizer_id"] if "organizer_id" in m.keys() else None
+
+
 @bp.get("/meets/<int:mid>/course")
 @login_required
 def course_editor(mid):
@@ -157,8 +179,8 @@ def course_editor(mid):
         abort(403)
     if m["sport"] not in ("xc", "road"):
         abort(404)
-    if not can_setup_meet(m):
-        # Coaches and viewers get the spectator map, not the editor.
+    if not can_edit_course(m):
+        # Visiting coaches and viewers get the spectator map, not the editor.
         if has_course(m):
             return redirect(f"/r/{m['public_token']}/course")
         body = (f'<p class="muted"><a href="/meets/{mid}">← {escape(m["name"])}</a></p>'
@@ -207,7 +229,7 @@ def course_editor(mid):
   <div class="cm-row">
     <button type="button" class="ghost" id="cm-undo">↶ Undo</button>
     <button type="button" class="ghost" id="cm-delpt" disabled>✕ Delete point</button>
-    <button type="button" class="ghost" id="cm-repeat" disabled title="Tap the point where a loop starts, then repeat it">🔁 Repeat loop</button>
+    <button type="button" class="ghost" id="cm-repeat" disabled title="Right-click the point where a loop starts, then repeat it">🔁 Repeat loop</button>
     <button type="button" class="ghost" id="cm-clear">Clear</button>
     <label class="cm-check"><input type="checkbox" id="cm-smooth"> Smooth the route</label>
     <span style="flex:1"></span>
@@ -217,9 +239,10 @@ def course_editor(mid):
   <p class="muted cm-help"><b>1.</b> Find the course. <b>2.</b> Click along it from the start line to the
   finish — the running distance shows in the corner of the map, and <b>⌫ Delete last point</b> (or
   Backspace) takes back a click. <b>3.</b> Press <b>✅ Finish course</b>: it smooths the route and saves it.
-  Drag a point to move it; tap one and press <b>Delete point</b> to remove it. When the route
-  goes back over ground it already covered, that loop turns a new colour automatically. <b>Same loop
-  twice?</b> Draw it once, tap the point where the loop starts, and press <b>Repeat loop</b>. Tick
+  Drag a point to move it. <b>Going round again?</b> Click the dots from the last loop — the new
+  point lands right on them, and a loop over ground already covered follows the same line in a new
+  colour. Or draw a loop once, <b>right-click</b> (or Shift-click) the point where it starts, and press
+  <b>Repeat loop</b>. Right-click a point and press <b>Delete point</b> to remove it. Tick
   <b>Smooth the route</b> once it's all in to round off the corners — it still passes through every point.</p>
 </div>
 <script type="application/json" id="cm-config">{cfg}</script>
@@ -233,7 +256,7 @@ def course_editor(mid):
 @login_required
 def course_save(mid):
     m = load_meet(mid)
-    if not can_setup_meet(m):
+    if not can_edit_course(m):
         abort(403)
     if m["sport"] not in ("xc", "road"):
         abort(404)

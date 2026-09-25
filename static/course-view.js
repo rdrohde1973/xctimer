@@ -37,9 +37,9 @@
           { id: "ghost", type: "line", source: "ghost", layout: lineLayout,
             paint: { "line-color": "#ffffff", "line-width": 2, "line-opacity": 0.5, "line-dasharray": [1.5, 1.5] } },
           { id: "route-casing", type: "line", source: "route", layout: lineLayout,
-            paint: { "line-color": "#0a1728", "line-width": 8, "line-opacity": 0.5, "line-offset": ["get", "offset"] } },
+            paint: { "line-color": "#0a1728", "line-width": 9, "line-opacity": 0.5 } },
           { id: "route", type: "line", source: "route", layout: lineLayout,
-            paint: { "line-color": ["get", "color"], "line-width": 5, "line-offset": ["get", "offset"] } }
+            paint: { "line-color": ["get", "color"], "line-width": ["get", "width"] } }
         ],
         terrain: { source: "dem", exaggeration: 1.35 }   // real hills, gently emphasised
       },
@@ -51,6 +51,15 @@
     return;
   }
   map.addControl(new maplibregl.NavigationControl({ visualizePitch: true }), "bottom-right");
+
+  // Credits start tucked behind the ⓘ button (tap it to read them) instead of a long
+  // banner across the bottom of the map.
+  function tuckCredits() {
+    var a = map.getContainer().querySelector(".maplibregl-ctrl-attrib");
+    if (a) { a.removeAttribute("open"); a.classList.remove("maplibregl-compact-show"); }
+  }
+  map.once("load", tuckCredits);
+  map.once("idle", tuckCredits);
 
   // A finger or mouse on the map means "let me look" -- stop flying and hand it over.
   ["mousedown", "touchstart", "wheel"].forEach(function (ev) {
@@ -139,7 +148,7 @@
 
   function setRoute(upto) {
     map.getSource("route").setData(fc(G.runs(A.samples, A.laps, upto).map(function (r) {
-      return line(r.coords, { color: G.lapColor(r.pass), offset: (r.pass - 1) * 5 });
+      return line(r.coords, { color: G.lapColor(r.pass), width: G.lapWidth(r.pass, 6) });
     })));
   }
 
@@ -152,7 +161,7 @@
     var diff = ((to - from + 540) % 360) - 180;
     return (from + diff * k + 360) % 360;
   }
-  function zoom() { return A.meters > 6000 ? 15.6 : 16.2; }
+  function zoom() { return A.meters > 6000 ? 16.4 : 17; }   // low enough to see the runners' view
   function pad() { return { top: Math.round(window.innerHeight * 0.35), bottom: 0, left: 0, right: 0 }; }
   function toast(text) {
     var t = $("cv-toast");
