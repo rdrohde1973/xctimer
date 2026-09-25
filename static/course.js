@@ -235,7 +235,9 @@
     };
   }
 
-  var LAP_COLORS = ["#ffd400", "#ff7a00", "#ff2d95", "#9b5cff", "#22d3ee", "#7CFC00"];
+  // Blues, greens and purples, alternating so a loop's stripe always contrasts with the
+  // loop underneath it; bright enough to read over grass and trees.
+  var LAP_COLORS = ["#38bdf8", "#4ade80", "#a855f7", "#2563eb", "#10b981", "#e879f9"];
   function lapColor(n) { return LAP_COLORS[(Math.max(1, n) - 1) % LAP_COLORS.length]; }
   // Repeat loops ride on the same line, each a narrower stripe down the middle of the one
   // before, so every loop's colour still shows without drawing a second trail beside it.

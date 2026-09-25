@@ -189,6 +189,8 @@
     mileEls.forEach(function (el) { el.classList.remove("hit", "done"); });
     var el = document.createElement("div");
     el.className = "cv-head";
+    el.style.background = G.lapColor(1);
+    el.style.boxShadow = "0 0 0 6px " + G.lapColor(1) + "55, 0 2px 6px rgba(0,0,0,.5)";
     head = new maplibregl.Marker({ element: el }).setLngLat(A.start).addTo(map);
     brg = heading(0);
     map.flyTo({ center: A.start, zoom: zoom(), pitch: 62, bearing: brg, padding: pad(), duration: INTRO_MS, essential: true });
