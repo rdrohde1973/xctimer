@@ -374,6 +374,9 @@
     if (!c.smooth) { snapshot(); c.smooth = true; }
     changed();
     if (await save()) {
+      // Every drawn course finished: straight to the fly-over (its ✎ Edit course comes back).
+      var allDone = doc.courses.every(function (x) { return (x.points || []).length < 2 || x.smooth; });
+      if (allDone) { location.href = CFG.preview; return; }
       var m = $("cm-donemsg");
       m.innerHTML = "✓ <b>" + esc(c.name) + "</b> is saved — " + lastA.miles.toFixed(2) +
         " mi. Spectators see it on the results page. <a href=\"" + CFG.preview +

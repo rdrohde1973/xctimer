@@ -58,6 +58,7 @@ html,body.cv{height:100%;margin:0;background:#0a1728;overflow:hidden;
 .cv-top a,.cv-top button{pointer-events:auto}
 .cv-back{color:#fff;text-decoration:none;font-weight:700;background:rgba(255,255,255,.16);
   padding:.4rem .7rem;border-radius:9px;white-space:nowrap}
+.cv-edit{margin-left:auto;background:rgba(56,189,248,.28)}
 .cv-title{font-weight:800;font-size:1.05rem;line-height:1.2;text-shadow:0 1px 3px rgba(0,0,0,.6)}
 .cv-title small{display:block;font-weight:600;font-size:.8rem;opacity:.9}
 .cv-chips{position:absolute;top:calc(4.2rem + env(safe-area-inset-top));left:0;right:0;

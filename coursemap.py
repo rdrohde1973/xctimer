@@ -115,6 +115,15 @@ def _point(p):
     return [round(lng, 7), round(lat, 7)]
 
 
+def finished(m):
+    """Every drawn course has been through Finish course (smoothed). Then the Course tab
+    opens on the fly-over rather than the drawing tools -- a course still being drawn
+    (saved part-way, not finished) opens in the editor."""
+    d = load_course(m)
+    drawn = [c for c in (d or {}).get("courses", []) if len(c.get("points") or []) >= 2]
+    return bool(drawn) and all(c.get("smooth") for c in drawn)
+
+
 def clean(data, road=False):
     """Validate a posted course document. Raises ValueError with a readable reason.
     Water stations are a road-event thing: kept only when `road`, dropped otherwise."""
@@ -196,6 +205,8 @@ def course_editor(mid):
                 f'<h1>{escape(m["name"])}</h1>{_tabs(m)}'
                 '<div class="card muted">No course map yet — the host adds it here.</div>')
         return shell(g.principal, body, active="meets")
+    if finished(m) and request.args.get("edit") is None:
+        return redirect(f"/r/{m['public_token']}/course")
     cfg = _config(save=f"/meets/{mid}/course", data=load_course(m), road=(m["sport"] == "road"),
                   preview=f"/r/{m['public_token']}/course", meetName=m["name"])
     water_btn = ('<button type="button" class="ghost" id="cm-water" title="Then click the course where the '
@@ -304,6 +315,10 @@ def course_view(token):
         for c in data["courses"]:
             c.pop("water", None)
     cfg = _config(data=data, results=f"/r/{token}", meetName=m["name"])
+    edit = ""
+    if getattr(g, "principal", None) and can_edit_course(m):
+        edit = f'<a class="cv-back cv-edit" href="/meets/{m["id"]}/course?edit=1">✎ Edit course</a>'
+
     html = f"""<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0a1728">
@@ -316,6 +331,7 @@ def course_view(token):
 <header class="cv-top">
   <a class="cv-back" href="/r/{escape(token)}">‹ Results</a>
   <div class="cv-title">{escape(m['name'])}<small id="cv-sub"></small></div>
+  {edit}
 </header>
 <div id="cv-chips" class="cv-chips"></div>
 <div id="cv-toast" class="cv-toast" aria-live="polite"></div>
