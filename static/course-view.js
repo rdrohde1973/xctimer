@@ -404,7 +404,7 @@
     map.flyTo({ center: cam.center, zoom: cam.zoom - (celebrate ? 0.25 : 0), bearing: 0, pitch: celebrate ? 30 : 0,
                 padding: { top: 0, bottom: 0, left: 0, right: 0 },
                 duration: celebrate ? OUTRO_MS : 0, essential: true });
-    if (celebrate) timer = setTimeout(confettiRain, OUTRO_MS - 400);
+    if (celebrate) timer = setTimeout(finishBurst, OUTRO_MS + 60);   // once the camera has settled
   }
 
   function stopHere() {             // the viewer grabbed the map: finish the line, keep their view
@@ -425,16 +425,24 @@
   }
 
   var shoot = window.confetti ? window.confetti.create($("cv-confetti"), { resize: true, useWorker: false }) : null;
-  function confettiRain() {
-    if (!shoot || reduce) return;
+  // The finish line explodes: a burst out of the 🏁 flag in every direction, a second
+  // pop straight up a beat later, and it all rains back down around the line.
+  function finishBurst() {
+    if (!shoot || reduce || !A) return;
     var colors = ["#ffd400", "#ff7a00", "#ff2d95", "#22d3ee", "#7CFC00", "#ffffff"];
-    var end = Date.now() + 3200;
-    (function drop() {                   // falling from the top edge, all the way across
-      shoot({ particleCount: 4, angle: 270, spread: 80, startVelocity: 6, gravity: 0.65, ticks: 420,
-              scalar: 1.1, drift: (Math.random() - 0.5) * 0.8, colors: colors,
-              origin: { x: Math.random(), y: -0.05 } });
-      if (Date.now() < end) requestAnimationFrame(drop);
-    })();
+    var pt = map.project(A.finish);
+    var o = { x: Math.min(0.95, Math.max(0.05, pt.x / window.innerWidth)),
+              y: Math.min(0.9, Math.max(0.1, (pt.y - 14) / window.innerHeight)) };   // from the flag, not under it
+    shoot({ particleCount: 160, spread: 360, startVelocity: 32, gravity: 0.8, ticks: 260,
+            decay: 0.91, scalar: 1.05, colors: colors, origin: o });
+    setTimeout(function () {
+      shoot({ particleCount: 90, angle: 90, spread: 70, startVelocity: 45, gravity: 0.9, ticks: 280,
+              scalar: 1.1, colors: colors, origin: o });
+    }, 250);
+    setTimeout(function () {
+      shoot({ particleCount: 60, spread: 360, startVelocity: 22, gravity: 0.7, ticks: 220,
+              scalar: 0.9, shapes: ["circle"], colors: colors, origin: o });
+    }, 550);
   }
 
   $("cv-skip").onclick = function () { overview(false); };
