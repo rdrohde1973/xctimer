@@ -76,7 +76,8 @@ html,body.cv{height:100%;margin:0;background:#0a1728;overflow:hidden;
 .cv-bottom button{pointer-events:auto;border:0;border-radius:10px;padding:.6rem 1rem;font-weight:800;
   background:#e8622a;color:#fff;font-size:.95rem}
 .cv-stats{font-weight:700;text-shadow:0 1px 3px rgba(0,0,0,.6);line-height:1.4}
-.cv-stats b{font-size:1.4rem}
+.cv-stats b{font-size:1.4rem;font-variant-numeric:tabular-nums}
+#cv-km{font-variant-numeric:tabular-nums}
 .cv-stats .cm-legend span{font-size:.8rem}
 .cv-head{width:16px;height:16px;border-radius:50%;background:#ffd400;border:3px solid #fff;
   box-shadow:0 0 0 6px rgba(255,212,0,.35),0 2px 6px rgba(0,0,0,.5);

@@ -108,13 +108,19 @@
   }
 
   function stats() {
-    var h = "<b>" + A.miles.toFixed(2) + "</b> mi · " + (A.meters / 1000).toFixed(2) + " km";
+    var h = '<b id="cv-mi"></b> mi · <span id="cv-km"></span> km';
     if (A.loops > 1) {
       h += '<br><span class="cm-legend">';
       for (var i = 1; i <= A.loops; i++) h += '<span><i style="background:' + G.lapColor(i) + '"></i>Loop ' + i + "</span>";
       h += "</span>";
     }
     $("cv-stats").innerHTML = h;
+    dist(A.meters);
+  }
+  // The distance readout: counts up with the dot during the fly-over, the full course otherwise.
+  function dist(m) {
+    $("cv-mi").textContent = (m / G.MILE).toFixed(2);
+    $("cv-km").textContent = (m / 1000).toFixed(2);
   }
 
   function flag(cls, icon, text) {
@@ -179,6 +185,7 @@
     $("cv-skip").hidden = false; $("cv-replay").hidden = true;
     setRoute(0);
     hitMile = 0; shownLap = 1;
+    dist(0);
     mileEls.forEach(function (el) { el.classList.remove("hit", "done"); });
     var el = document.createElement("div");
     el.className = "cv-head";
@@ -197,6 +204,7 @@
         brg = turn(brg, heading(d), 0.03);          // turn gently -- quick swings are what make you dizzy
         map.jumpTo({ center: p.p, bearing: brg, pitch: 62, zoom: zoom(), padding: pad() });
         head.setLngLat(p.p);
+        dist(d);
         if (now - lastData > 60 || f === 1) { setRoute(d); lastData = now; }
         while (hitMile < A.marks.length && d >= A.marks[hitMile].d) {
           var mel = mileEls[hitMile];
@@ -229,6 +237,7 @@
   function overview(celebrate) {
     halt();
     setRoute(null);
+    dist(A.meters);
     mileEls.forEach(function (el) { el.classList.add("done"); });
     // Side room for the Start/Finish flags, which lean outward past the course itself.
     var cam = map.cameraForBounds(bounds(), { padding: { top: 110, bottom: 150, left: 85, right: 85 } });
@@ -241,6 +250,7 @@
   function stopHere() {             // the viewer grabbed the map: finish the line, keep their view
     halt();
     setRoute(null);
+    dist(A.meters);
     mileEls.forEach(function (el) { el.classList.add("done"); });
   }
 
