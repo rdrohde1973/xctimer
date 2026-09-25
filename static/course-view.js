@@ -16,7 +16,9 @@
   var reduce = !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
   var cur = 0, A = null, raf = 0, timer = 0, running = false;
   var deco = [], mileEls = [], head = null, lastData = 0, shownLap = 1, hitMile = 0, brg = 0;
-  var waters = [], waterEls = [], hitWater = 0, TRAIL = 140;
+  // The comet tail: short and thin, so it sparkles behind the dot without washing the
+  // loop colour out to white (140 m did).
+  var waters = [], waterEls = [], hitWater = 0, TRAIL = 45;
 
   function fc(f) { return { type: "FeatureCollection", features: f }; }
   function line(c, props) { return { type: "Feature", properties: props || {}, geometry: { type: "LineString", coordinates: c } }; }
@@ -51,13 +53,15 @@
             paint: { "line-color": ["get", "color"], "line-width": ["get", "width"] } },
           // The comet: the last stretch behind the dot, fading in to bright white at the dot.
           { id: "trail-glow", type: "line", source: "trail", layout: lineLayout,
-            paint: { "line-width": 18, "line-blur": 10,
+            paint: { "line-width": 12, "line-blur": 8,
                      "line-gradient": ["interpolate", ["linear"], ["line-progress"],
-                                       0, "rgba(255,255,255,0)", 1, "rgba(255,255,255,0.7)"] } },
+                                       0, "rgba(255,255,255,0)", 0.6, "rgba(255,255,255,0.1)",
+                                       1, "rgba(255,255,255,0.5)"] } },
           { id: "trail", type: "line", source: "trail", layout: lineLayout,
-            paint: { "line-width": 6, "line-blur": 1,
+            paint: { "line-width": 3.5, "line-blur": 1,
                      "line-gradient": ["interpolate", ["linear"], ["line-progress"],
-                                       0, "rgba(255,255,255,0)", 1, "rgba(255,255,255,0.95)"] } }
+                                       0, "rgba(255,255,255,0)", 0.6, "rgba(255,255,255,0.2)",
+                                       1, "rgba(255,255,255,0.9)"] } }
         ],
         terrain: { source: "dem", exaggeration: 1.35 },  // real hills, gently emphasised
         // Tilted, the map used to stop at a hard edge; now it fades into haze and sky.
