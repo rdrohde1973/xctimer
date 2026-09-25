@@ -26,7 +26,7 @@ from .waivers import bp as waivers_bp
 from .road import bp as road_bp
 from .coursemap import bp as coursemap_bp
 
-APP_VERSION = "1.103.4-finish-burst"
+APP_VERSION = "1.103.5-static-cacheable"
 
 LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width, initial-scale=1">
@@ -627,6 +627,18 @@ def create_app():
         if _secure:
             resp.headers.setdefault("Strict-Transport-Security",
                                     "max-age=31536000; includeSubDomains")
+        # Static files: cacheable by Cloudflare and browsers, and never carrying a cookie --
+        # Cloudflare will not cache a response that sets one, so every parent opening the
+        # course fly-over used to pull the 1 MB map library from this server.
+        if request.path.startswith("/static/"):
+            if request.args.get("v"):            # stamped with the file time: safe forever
+                resp.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+            elif request.path.startswith("/static/vendor/"):
+                resp.headers["Cache-Control"] = "public, max-age=86400"
+            else:                                 # unstamped: short, so deploys show up fast
+                resp.headers["Cache-Control"] = "public, max-age=300"
+            resp.headers.pop("Pragma", None)
+            return resp
         # Don't let authenticated pages sit in caches (audit LOW-1).
         if getattr(g, "principal", None):
             resp.headers["Cache-Control"] = "no-store"
