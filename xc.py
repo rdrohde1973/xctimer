@@ -6,6 +6,7 @@ gender, MileSplit-style team scoring, xlsx export, and a public results page.
 """
 import io
 import json
+import re
 import time
 from collections import defaultdict
 from datetime import datetime, timezone
@@ -194,12 +195,23 @@ def setup_section(m, setup):
             mode_html = f'<span class="muted">{escape(CAPTURE_LABELS.get(r["capture_mode"], r["capture_mode"]))}</span>'
         else:
             mode_html = f'<span class="muted">{escape(CAPTURE_LABELS.get(r["capture_mode"], r["capture_mode"]))}</span>'
+        sched = r["scheduled_start"] if "scheduled_start" in r.keys() else None
+        if setup:
+            # Optional planned start: saves as soon as it's picked; clearing it removes it.
+            when = (f'<form class="inline" method="post" action="/races/{r["id"]}/schedule">'
+                    f'<input type="time" name="at" value="{escape(sched or "")}" aria-label="Start time for {escape(r["name"])}" '
+                    f'style="width:auto;padding:.25rem .4rem" onchange="this.form.submit()"></form>')
+        else:
+            when = escape(clock12(sched)) if sched else '<span class="muted">—</span>'
         rows.append(
-            f'<tr><td><b>{escape(r["name"])}</b></td><td>{mode_html}</td>'
+            f'<tr><td><b>{escape(r["name"])}</b></td><td>{when}</td><td>{mode_html}</td>'
             f'<td>{status}</td><td>{counts.get(r["id"], 0)}</td>'
             f'<td style="text-align:right">{act}</td></tr>')
-    tbl = (f'<table><tr><th>Heat</th><th>Mode</th><th>Status</th><th>Finishers</th><th></th></tr>'
+    tbl = (f'<table><tr><th>Heat</th><th>Start time</th><th>Mode</th><th>Status</th><th>Finishers</th><th></th></tr>'
            f'{"".join(rows)}</table>' if races else '<p class="muted">No heats yet.</p>')
+    if races and setup and not any(("scheduled_start" in r.keys() and r["scheduled_start"]) for r in races):
+        tbl += ('<p class="muted" style="margin:.4rem 0 0;font-size:.88rem">Optional: add each heat\'s start '
+                'time and it goes out in the race-day email to coaches.</p>')
 
     ts_toggle = ""
     add = ""
@@ -609,6 +621,30 @@ def road_assign_auto(mid):
 
 
 # ------------------------------- races -------------------------------
+def clock12(hhmm):
+    """'15:30' -> '3:30 PM' (the planned heat start as people say it)."""
+    try:
+        h, mi = (int(x) for x in (hhmm or "").split(":")[:2])
+    except ValueError:
+        return hhmm or ""
+    return f"{(h % 12) or 12}:{mi:02d} {'AM' if h < 12 else 'PM'}"
+
+
+@bp.post("/races/<int:rid>/schedule")
+@login_required
+def schedule_race(rid):
+    """Set (or clear, when blank) a heat's planned start time, HH:MM."""
+    r, m = _race_or_403(rid, can_setup_meet)
+    at = (request.form.get("at") or "").strip()
+    if at and not re.fullmatch(r"([01]\d|2[0-3]):[0-5]\d", at):
+        abort(400)
+    conn = db.connect()
+    conn.execute("UPDATE races SET scheduled_start=? WHERE id=?", (at or None, rid))
+    conn.commit()
+    conn.close()
+    return redirect(f"/meets/{m['id']}")
+
+
 @bp.post("/meets/<int:mid>/races")
 @login_required
 def create_race(mid):

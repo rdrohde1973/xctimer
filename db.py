@@ -505,6 +505,11 @@ def migrate(conn):
         # RESET used to wipe every time with a single confirm behind it.
         conn.execute("ALTER TABLE races ADD COLUMN locked_at TEXT")
 
+    if "scheduled_start" not in _column_names(conn, "races"):
+        # The PLANNED start ("15:30"), set in meet setup and sent in the race-day email.
+        # start_time is the actual gun time and stays that way.
+        conn.execute("ALTER TABLE races ADD COLUMN scheduled_start TEXT")
+
     mbcols = _column_names(conn, "meet_bibs")
     if "walkup" not in mbcols:
         # Walk-ups used to be marked by athletes.active=0, which also kept them off the

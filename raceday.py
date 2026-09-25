@@ -1,5 +1,6 @@
-"""Race-day morning email to coaches: "It's race day", the results link, their school's
-bib list, and -- when the host drew a course map -- the map and driving directions.
+"""Race-day morning email to coaches: "It's race day", the heat start times (when the
+host set them), the results link, their school's bib list, and -- when the host drew a
+course map -- the map and driving directions.
 
 Run by the xctimer-raceday.timer systemd --user unit early on meet mornings (Mountain
 Time). Goes to coaches of every school entered in an XC meet dated today who have
@@ -72,6 +73,14 @@ def recipients(conn, mid):
     return out
 
 
+def start_times(conn, mid):
+    """[(heat name, '3:30 PM')] for heats with a planned start, earliest first."""
+    from xctimer.xc import clock12
+    return [(r["name"], clock12(r["scheduled_start"])) for r in conn.execute(
+        "SELECT name, scheduled_start FROM races WHERE meet_id=? AND scheduled_start IS NOT NULL "
+        "AND scheduled_start<>'' ORDER BY scheduled_start, id", (mid,))]
+
+
 def bibs(conn, mid, sid):
     return conn.execute(
         "SELECT mb.bib, a.name, a.grade, a.gender FROM meet_bibs mb JOIN athletes a ON a.id=mb.athlete_id "
@@ -98,8 +107,13 @@ def build(conn, m, name, schools):
         f'<p style="margin:0 0 14px;font-size:16px"><b>{escape(m["name"])}</b></p>',
         f"<p>Good luck today, {escape(first)}! Results post live as runners finish — share the "
         "results link with your athletes and parents.</p>",
-        f'<p>{"".join(links)}</p>',
     ]
+    sched = start_times(conn, m["id"])
+    if sched:
+        items = "".join(f'<tr><td {td}><b>{escape(t)}</b></td><td {td}>{escape(n or "")}</td></tr>' for n, t in sched)
+        parts.append(f'<h3 style="margin:14px 0 6px">⏱ Start times</h3>'
+                     f'<table style="border-collapse:collapse;font-size:15px">{items}</table>')
+    parts.append(f'<p style="margin-top:14px">{"".join(links)}</p>')
     if start:
         parts.append('<p style="color:#5b6b7b;font-size:13px;margin-top:0">Directions go to the start line on the host\'s course map.</p>')
     for sid, sname in schools:
