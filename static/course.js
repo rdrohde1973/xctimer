@@ -294,7 +294,7 @@
 
   // Blue, orange, purple (then deeper shades of each): every loop's stripe stands out
   // against the loop underneath it -- green on blue didn't -- and reads over grass and trees.
-  var LAP_COLORS = ["#38bdf8", "#fb923c", "#a855f7", "#2563eb", "#f97316", "#e879f9"];
+  var LAP_COLORS = ["#38bdf8", "#ff6a00", "#a855f7", "#2563eb", "#c2410c", "#e879f9"];
   function lapColor(n) { return LAP_COLORS[(Math.max(1, n) - 1) % LAP_COLORS.length]; }
   // Repeat loops ride on the same line, each a narrower stripe down the middle of the one
   // before, so every loop's colour still shows without drawing a second trail beside it.
