@@ -26,7 +26,7 @@ from .waivers import bp as waivers_bp
 from .road import bp as road_bp
 from .coursemap import bp as coursemap_bp
 
-APP_VERSION = "1.104.0-marketing-course-maps"
+APP_VERSION = "1.105.0-marketing-flyover-anim"
 
 LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width, initial-scale=1">
@@ -163,10 +163,15 @@ LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
             background:linear-gradient(rgba(10,23,40,.85),rgba(10,23,40,0))}
   .cvd .top .bk{background:rgba(255,255,255,.18);border-radius:7px;padding:.25rem .45rem;font-weight:700}
   .cvd .top b{display:block;font-size:.82rem}
-  .cvd .toast{position:absolute;left:50%;top:17%;transform:translateX(-50%);background:rgba(10,23,40,.88);
+  .cvd .toast{position:absolute;left:50%;top:17%;transition:opacity .3s;transform:translateX(-50%);background:rgba(10,23,40,.88);
               color:#fff;font-weight:800;font-size:1.05rem;padding:.35rem .8rem;border-radius:10px}
-  .cvd .mi{position:absolute;padding:.12rem .35rem;border-radius:6px;background:#e8622a;color:#fff;
-           font-size:.62rem;font-weight:800;border:2px solid #fff;transform:translate(-50%,-50%) scale(1.3)}
+  .cvd .mi{position:absolute;padding:.12rem .35rem;border-radius:6px;background:#12385f;color:#fff;
+           font-size:.62rem;font-weight:800;border:2px solid #fff;transform:translate(-50%,-50%);
+           transition:transform .35s cubic-bezier(.2,1.6,.4,1),background .35s}
+  .cvd .mi.hit{background:#e8622a;transform:translate(-50%,-50%) scale(1.35)}
+  .cvd canvas{position:absolute;inset:0;width:100%;height:100%;display:none}
+  .cvd.anim canvas{display:block}
+  .cvd.anim .world{display:none}
   .cvd .fl{position:absolute;background:#fff;color:#12385f;font-size:.62rem;font-weight:800;
            padding:.15rem .4rem;border-radius:999px;border:2px solid #111;white-space:nowrap;
            transform:translate(-50%,-125%)}
@@ -330,21 +335,22 @@ LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
   <div>
     <div class="cvd" role="img" aria-label="A phone showing a 3D fly-over of a cross-country course: the route drawn over satellite imagery in blue for loop 1 with an orange loop-2 stripe down the middle, the Mile 1 marker lighting up, and an elevation profile along the bottom">
       <svg class="world" viewBox="0 0 274 524" aria-hidden="true"><defs><linearGradient id="cvSky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#3f86d4"/><stop offset="1" stop-color="#d6e8f5"/></linearGradient><linearGradient id="cvGrass" x1="0" y1="70" x2="0" y2="524" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#9fb58f"/><stop offset=".25" stop-color="#6f9356"/><stop offset="1" stop-color="#4b7438"/></linearGradient></defs><rect width="274" height="71.5" fill="url(#cvSky)"/><rect x="0" y="69.5" width="274" height="454.5" fill="url(#cvGrass)"/><polygon points="-114.6,292.0 11.2,292.0 63.8,199.0 -9.4,199.0" fill="#5c8745"/><polygon points="224.3,216.6 324.1,216.6 253.2,160.9 191.2,160.9" fill="#6a9150"/><polygon points="350.3,446.8 616.9,446.8 393.7,271.3 251.1,271.3" fill="#5a8243"/><polygon points="-27.6,166.6 301.6,166.6 295.9,163.2 -21.9,163.2" fill="#b9b2a4" opacity=".8"/><polygon points="-255.5,648.1 -214.6,648.1 106.9,119.1 103.4,119.1" fill="#b9b2a4" opacity=".75"/><polygon points="93.0,242.4 171.2,242.4 165.7,214.6 100.1,214.6" fill="#d3cdc0"/><polygon points="115.4,260.7 147.8,260.7 146.8,242.4 117.5,242.4" fill="#c6c0b3"/><polygon points="163.5,304.1 209.9,304.1 198.6,267.6 159.4,267.6" fill="#a0673f" opacity=".55"/><line x1="137.0" y1="170.2" x2="137.0" y2="171.3" stroke="#263f2c" stroke-width="5.15" stroke-linecap="round"/><line x1="137.0" y1="171.3" x2="137.0" y2="172.4" stroke="#263f2c" stroke-width="5.21" stroke-linecap="round"/><line x1="137.0" y1="172.4" x2="137.0" y2="173.6" stroke="#263f2c" stroke-width="5.26" stroke-linecap="round"/><line x1="137.0" y1="173.6" x2="137.0" y2="174.7" stroke="#263f2c" stroke-width="5.32" stroke-linecap="round"/><line x1="137.0" y1="174.7" x2="137.0" y2="176.0" stroke="#263f2c" stroke-width="5.38" stroke-linecap="round"/><line x1="137.0" y1="176.0" x2="137.0" y2="177.2" stroke="#263f2c" stroke-width="5.45" stroke-linecap="round"/><line x1="137.0" y1="177.2" x2="137.0" y2="178.4" stroke="#263f2c" stroke-width="5.51" stroke-linecap="round"/><line x1="137.0" y1="178.4" x2="137.0" y2="179.7" stroke="#263f2c" stroke-width="5.57" stroke-linecap="round"/><line x1="137.0" y1="179.7" x2="137.0" y2="181.1" stroke="#263f2c" stroke-width="5.64" stroke-linecap="round"/><line x1="137.0" y1="181.1" x2="137.0" y2="182.4" stroke="#263f2c" stroke-width="5.71" stroke-linecap="round"/><line x1="137.0" y1="182.4" x2="137.0" y2="183.8" stroke="#263f2c" stroke-width="5.78" stroke-linecap="round"/><line x1="137.0" y1="183.8" x2="137.0" y2="185.2" stroke="#263f2c" stroke-width="5.85" stroke-linecap="round"/><line x1="137.0" y1="185.2" x2="141.1" y2="185.2" stroke="#263f2c" stroke-width="5.89" stroke-linecap="round"/><line x1="141.1" y1="185.2" x2="145.2" y2="185.2" stroke="#263f2c" stroke-width="5.89" stroke-linecap="round"/><line x1="145.2" y1="185.2" x2="149.3" y2="185.2" stroke="#263f2c" stroke-width="5.89" stroke-linecap="round"/><line x1="149.3" y1="185.2" x2="153.4" y2="185.2" stroke="#263f2c" stroke-width="5.89" stroke-linecap="round"/><line x1="153.4" y1="185.2" x2="157.4" y2="185.2" stroke="#263f2c" stroke-width="5.89" stroke-linecap="round"/><line x1="157.4" y1="185.2" x2="161.5" y2="185.2" stroke="#263f2c" stroke-width="5.89" stroke-linecap="round"/><line x1="161.5" y1="185.2" x2="165.6" y2="185.2" stroke="#263f2c" stroke-width="5.89" stroke-linecap="round"/><line x1="165.6" y1="185.2" x2="169.7" y2="185.2" stroke="#263f2c" stroke-width="5.89" stroke-linecap="round"/><line x1="169.7" y1="185.2" x2="173.8" y2="185.2" stroke="#263f2c" stroke-width="5.89" stroke-linecap="round"/><line x1="173.8" y1="185.2" x2="177.9" y2="185.2" stroke="#263f2c" stroke-width="5.89" stroke-linecap="round"/><line x1="177.9" y1="185.2" x2="182.0" y2="185.2" stroke="#263f2c" stroke-width="5.89" stroke-linecap="round"/><line x1="182.0" y1="185.2" x2="186.1" y2="185.2" stroke="#263f2c" stroke-width="5.89" stroke-linecap="round"/><line x1="186.1" y1="185.2" x2="188.6" y2="191.2" stroke="#263f2c" stroke-width="6.03" stroke-linecap="round"/><line x1="188.6" y1="191.2" x2="191.4" y2="197.8" stroke="#263f2c" stroke-width="6.35" stroke-linecap="round"/><line x1="191.4" y1="197.8" x2="194.5" y2="205.1" stroke="#263f2c" stroke-width="6.71" stroke-linecap="round"/><line x1="194.5" y1="205.1" x2="198.0" y2="213.4" stroke="#263f2c" stroke-width="7.10" stroke-linecap="round"/><line x1="198.0" y1="213.4" x2="201.9" y2="222.7" stroke="#263f2c" stroke-width="7.55" stroke-linecap="round"/><line x1="201.9" y1="222.7" x2="206.4" y2="233.3" stroke="#263f2c" stroke-width="8.05" stroke-linecap="round"/><line x1="206.4" y1="233.3" x2="211.6" y2="245.4" stroke="#263f2c" stroke-width="8.63" stroke-linecap="round"/><line x1="211.6" y1="245.4" x2="217.6" y2="259.5" stroke="#263f2c" stroke-width="9.30" stroke-linecap="round"/><line x1="217.6" y1="259.5" x2="224.6" y2="276.1" stroke="#263f2c" stroke-width="10.07" stroke-linecap="round"/><line x1="224.6" y1="276.1" x2="233.0" y2="295.9" stroke="#263f2c" stroke-width="10.99" stroke-linecap="round"/><line x1="233.0" y1="295.9" x2="243.1" y2="319.8" stroke="#263f2c" stroke-width="12.10" stroke-linecap="round"/><line x1="243.1" y1="319.8" x2="255.7" y2="349.4" stroke="#263f2c" stroke-width="13.45" stroke-linecap="round"/><line x1="255.7" y1="349.4" x2="235.9" y2="349.4" stroke="#263f2c" stroke-width="14.24" stroke-linecap="round"/><line x1="235.9" y1="349.4" x2="216.1" y2="349.4" stroke="#263f2c" stroke-width="14.24" stroke-linecap="round"/><line x1="216.1" y1="349.4" x2="196.3" y2="349.4" stroke="#263f2c" stroke-width="14.24" stroke-linecap="round"/><line x1="196.3" y1="349.4" x2="176.6" y2="349.4" stroke="#263f2c" stroke-width="14.24" stroke-linecap="round"/><line x1="176.6" y1="349.4" x2="156.8" y2="349.4" stroke="#263f2c" stroke-width="14.24" stroke-linecap="round"/><line x1="156.8" y1="349.4" x2="137.0" y2="349.4" stroke="#263f2c" stroke-width="14.24" stroke-linecap="round"/><line x1="137.0" y1="349.4" x2="117.2" y2="349.4" stroke="#263f2c" stroke-width="14.24" stroke-linecap="round"/><line x1="117.2" y1="349.4" x2="97.4" y2="349.4" stroke="#263f2c" stroke-width="14.24" stroke-linecap="round"/><line x1="97.4" y1="349.4" x2="77.7" y2="349.4" stroke="#263f2c" stroke-width="14.24" stroke-linecap="round"/><line x1="77.7" y1="349.4" x2="57.9" y2="349.4" stroke="#263f2c" stroke-width="14.24" stroke-linecap="round"/><line x1="57.9" y1="349.4" x2="38.1" y2="349.4" stroke="#263f2c" stroke-width="14.24" stroke-linecap="round"/><line x1="38.1" y1="349.4" x2="18.3" y2="349.4" stroke="#263f2c" stroke-width="14.24" stroke-linecap="round"/><line x1="18.3" y1="349.4" x2="30.9" y2="319.8" stroke="#263f2c" stroke-width="13.45" stroke-linecap="round"/><line x1="30.9" y1="319.8" x2="41.0" y2="295.9" stroke="#263f2c" stroke-width="12.10" stroke-linecap="round"/><line x1="41.0" y1="295.9" x2="49.4" y2="276.1" stroke="#263f2c" stroke-width="10.99" stroke-linecap="round"/><line x1="49.4" y1="276.1" x2="56.4" y2="259.5" stroke="#263f2c" stroke-width="10.07" stroke-linecap="round"/><line x1="56.4" y1="259.5" x2="62.4" y2="245.4" stroke="#263f2c" stroke-width="9.30" stroke-linecap="round"/><line x1="62.4" y1="245.4" x2="67.6" y2="233.3" stroke="#263f2c" stroke-width="8.63" stroke-linecap="round"/><line x1="67.6" y1="233.3" x2="72.1" y2="222.7" stroke="#263f2c" stroke-width="8.05" stroke-linecap="round"/><line x1="72.1" y1="222.7" x2="76.0" y2="213.4" stroke="#263f2c" stroke-width="7.55" stroke-linecap="round"/><line x1="76.0" y1="213.4" x2="79.5" y2="205.1" stroke="#263f2c" stroke-width="7.10" stroke-linecap="round"/><line x1="79.5" y1="205.1" x2="82.6" y2="197.8" stroke="#263f2c" stroke-width="6.71" stroke-linecap="round"/><line x1="82.6" y1="197.8" x2="85.4" y2="191.2" stroke="#263f2c" stroke-width="6.35" stroke-linecap="round"/><line x1="85.4" y1="191.2" x2="87.9" y2="185.2" stroke="#263f2c" stroke-width="6.03" stroke-linecap="round"/><line x1="87.9" y1="185.2" x2="92.0" y2="185.2" stroke="#263f2c" stroke-width="5.89" stroke-linecap="round"/><line x1="92.0" y1="185.2" x2="96.1" y2="185.2" stroke="#263f2c" stroke-width="5.89" stroke-linecap="round"/><line x1="96.1" y1="185.2" x2="100.2" y2="185.2" stroke="#263f2c" stroke-width="5.89" stroke-linecap="round"/><line x1="100.2" y1="185.2" x2="104.3" y2="185.2" stroke="#263f2c" stroke-width="5.89" stroke-linecap="round"/><line x1="104.3" y1="185.2" x2="108.4" y2="185.2" stroke="#263f2c" stroke-width="5.89" stroke-linecap="round"/><line x1="108.4" y1="185.2" x2="112.5" y2="185.2" stroke="#263f2c" stroke-width="5.89" stroke-linecap="round"/><line x1="112.5" y1="185.2" x2="116.6" y2="185.2" stroke="#263f2c" stroke-width="5.89" stroke-linecap="round"/><line x1="116.6" y1="185.2" x2="120.6" y2="185.2" stroke="#263f2c" stroke-width="5.89" stroke-linecap="round"/><line x1="120.6" y1="185.2" x2="124.7" y2="185.2" stroke="#263f2c" stroke-width="5.89" stroke-linecap="round"/><line x1="124.7" y1="185.2" x2="128.8" y2="185.2" stroke="#263f2c" stroke-width="5.89" stroke-linecap="round"/><line x1="128.8" y1="185.2" x2="132.9" y2="185.2" stroke="#263f2c" stroke-width="5.89" stroke-linecap="round"/><line x1="132.9" y1="185.2" x2="137.0" y2="185.2" stroke="#263f2c" stroke-width="5.89" stroke-linecap="round"/><line x1="137.0" y1="349.4" x2="137.0" y2="352.5" stroke="#263f2c" stroke-width="14.32" stroke-linecap="round"/><line x1="137.0" y1="352.5" x2="137.0" y2="355.6" stroke="#263f2c" stroke-width="14.48" stroke-linecap="round"/><line x1="137.0" y1="355.6" x2="137.0" y2="358.8" stroke="#263f2c" stroke-width="14.64" stroke-linecap="round"/><line x1="137.0" y1="358.8" x2="137.0" y2="362.0" stroke="#263f2c" stroke-width="14.80" stroke-linecap="round"/><line x1="137.0" y1="362.0" x2="137.0" y2="365.4" stroke="#263f2c" stroke-width="14.97" stroke-linecap="round"/><line x1="137.0" y1="365.4" x2="137.0" y2="368.8" stroke="#263f2c" stroke-width="15.14" stroke-linecap="round"/><line x1="137.0" y1="368.8" x2="137.0" y2="372.2" stroke="#263f2c" stroke-width="15.31" stroke-linecap="round"/><line x1="137.0" y1="372.2" x2="137.0" y2="375.8" stroke="#263f2c" stroke-width="15.49" stroke-linecap="round"/><line x1="137.0" y1="375.8" x2="137.0" y2="379.4" stroke="#263f2c" stroke-width="15.68" stroke-linecap="round"/><line x1="137.0" y1="379.4" x2="137.0" y2="383.2" stroke="#263f2c" stroke-width="15.86" stroke-linecap="round"/><line x1="137.0" y1="383.2" x2="137.0" y2="387.0" stroke="#263f2c" stroke-width="16.06" stroke-linecap="round"/><line x1="137.0" y1="387.0" x2="137.0" y2="390.9" stroke="#263f2c" stroke-width="16.25" stroke-linecap="round"/><line x1="137.0" y1="170.2" x2="137.0" y2="171.3" stroke="#38bdf8" stroke-width="3.72" stroke-linecap="round"/><line x1="137.0" y1="171.3" x2="137.0" y2="172.4" stroke="#38bdf8" stroke-width="3.76" stroke-linecap="round"/><line x1="137.0" y1="172.4" x2="137.0" y2="173.6" stroke="#38bdf8" stroke-width="3.80" stroke-linecap="round"/><line x1="137.0" y1="173.6" x2="137.0" y2="174.7" stroke="#38bdf8" stroke-width="3.84" stroke-linecap="round"/><line x1="137.0" y1="174.7" x2="137.0" y2="176.0" stroke="#38bdf8" stroke-width="3.89" stroke-linecap="round"/><line x1="137.0" y1="176.0" x2="137.0" y2="177.2" stroke="#38bdf8" stroke-width="3.93" stroke-linecap="round"/><line x1="137.0" y1="177.2" x2="137.0" y2="178.4" stroke="#38bdf8" stroke-width="3.98" stroke-linecap="round"/><line x1="137.0" y1="178.4" x2="137.0" y2="179.7" stroke="#38bdf8" stroke-width="4.03" stroke-linecap="round"/><line x1="137.0" y1="179.7" x2="137.0" y2="181.1" stroke="#38bdf8" stroke-width="4.07" stroke-linecap="round"/><line x1="137.0" y1="181.1" x2="137.0" y2="182.4" stroke="#38bdf8" stroke-width="4.12" stroke-linecap="round"/><line x1="137.0" y1="182.4" x2="137.0" y2="183.8" stroke="#38bdf8" stroke-width="4.17" stroke-linecap="round"/><line x1="137.0" y1="183.8" x2="137.0" y2="185.2" stroke="#38bdf8" stroke-width="4.23" stroke-linecap="round"/><line x1="137.0" y1="185.2" x2="141.1" y2="185.2" stroke="#38bdf8" stroke-width="4.25" stroke-linecap="round"/><line x1="141.1" y1="185.2" x2="145.2" y2="185.2" stroke="#38bdf8" stroke-width="4.25" stroke-linecap="round"/><line x1="145.2" y1="185.2" x2="149.3" y2="185.2" stroke="#38bdf8" stroke-width="4.25" stroke-linecap="round"/><line x1="149.3" y1="185.2" x2="153.4" y2="185.2" stroke="#38bdf8" stroke-width="4.25" stroke-linecap="round"/><line x1="153.4" y1="185.2" x2="157.4" y2="185.2" stroke="#38bdf8" stroke-width="4.25" stroke-linecap="round"/><line x1="157.4" y1="185.2" x2="161.5" y2="185.2" stroke="#38bdf8" stroke-width="4.25" stroke-linecap="round"/><line x1="161.5" y1="185.2" x2="165.6" y2="185.2" stroke="#38bdf8" stroke-width="4.25" stroke-linecap="round"/><line x1="165.6" y1="185.2" x2="169.7" y2="185.2" stroke="#38bdf8" stroke-width="4.25" stroke-linecap="round"/><line x1="169.7" y1="185.2" x2="173.8" y2="185.2" stroke="#38bdf8" stroke-width="4.25" stroke-linecap="round"/><line x1="173.8" y1="185.2" x2="177.9" y2="185.2" stroke="#38bdf8" stroke-width="4.25" stroke-linecap="round"/><line x1="177.9" y1="185.2" x2="182.0" y2="185.2" stroke="#38bdf8" stroke-width="4.25" stroke-linecap="round"/><line x1="182.0" y1="185.2" x2="186.1" y2="185.2" stroke="#38bdf8" stroke-width="4.25" stroke-linecap="round"/><line x1="186.1" y1="185.2" x2="188.6" y2="191.2" stroke="#38bdf8" stroke-width="4.36" stroke-linecap="round"/><line x1="188.6" y1="191.2" x2="191.4" y2="197.8" stroke="#38bdf8" stroke-width="4.59" stroke-linecap="round"/><line x1="191.4" y1="197.8" x2="194.5" y2="205.1" stroke="#38bdf8" stroke-width="4.84" stroke-linecap="round"/><line x1="194.5" y1="205.1" x2="198.0" y2="213.4" stroke="#38bdf8" stroke-width="5.13" stroke-linecap="round"/><line x1="198.0" y1="213.4" x2="201.9" y2="222.7" stroke="#38bdf8" stroke-width="5.45" stroke-linecap="round"/><line x1="201.9" y1="222.7" x2="206.4" y2="233.3" stroke="#38bdf8" stroke-width="5.82" stroke-linecap="round"/><line x1="206.4" y1="233.3" x2="211.6" y2="245.4" stroke="#38bdf8" stroke-width="6.23" stroke-linecap="round"/><line x1="211.6" y1="245.4" x2="217.6" y2="259.5" stroke="#38bdf8" stroke-width="6.71" stroke-linecap="round"/><line x1="217.6" y1="259.5" x2="224.6" y2="276.1" stroke="#38bdf8" stroke-width="7.27" stroke-linecap="round"/><line x1="224.6" y1="276.1" x2="233.0" y2="295.9" stroke="#38bdf8" stroke-width="7.94" stroke-linecap="round"/><line x1="233.0" y1="295.9" x2="243.1" y2="319.8" stroke="#38bdf8" stroke-width="8.74" stroke-linecap="round"/><line x1="243.1" y1="319.8" x2="255.7" y2="349.4" stroke="#38bdf8" stroke-width="9.71" stroke-linecap="round"/><line x1="255.7" y1="349.4" x2="235.9" y2="349.4" stroke="#38bdf8" stroke-width="10.29" stroke-linecap="round"/><line x1="235.9" y1="349.4" x2="216.1" y2="349.4" stroke="#38bdf8" stroke-width="10.29" stroke-linecap="round"/><line x1="216.1" y1="349.4" x2="196.3" y2="349.4" stroke="#38bdf8" stroke-width="10.29" stroke-linecap="round"/><line x1="196.3" y1="349.4" x2="176.6" y2="349.4" stroke="#38bdf8" stroke-width="10.29" stroke-linecap="round"/><line x1="176.6" y1="349.4" x2="156.8" y2="349.4" stroke="#38bdf8" stroke-width="10.29" stroke-linecap="round"/><line x1="156.8" y1="349.4" x2="137.0" y2="349.4" stroke="#38bdf8" stroke-width="10.29" stroke-linecap="round"/><line x1="137.0" y1="349.4" x2="117.2" y2="349.4" stroke="#38bdf8" stroke-width="10.29" stroke-linecap="round"/><line x1="117.2" y1="349.4" x2="97.4" y2="349.4" stroke="#38bdf8" stroke-width="10.29" stroke-linecap="round"/><line x1="97.4" y1="349.4" x2="77.7" y2="349.4" stroke="#38bdf8" stroke-width="10.29" stroke-linecap="round"/><line x1="77.7" y1="349.4" x2="57.9" y2="349.4" stroke="#38bdf8" stroke-width="10.29" stroke-linecap="round"/><line x1="57.9" y1="349.4" x2="38.1" y2="349.4" stroke="#38bdf8" stroke-width="10.29" stroke-linecap="round"/><line x1="38.1" y1="349.4" x2="18.3" y2="349.4" stroke="#38bdf8" stroke-width="10.29" stroke-linecap="round"/><line x1="18.3" y1="349.4" x2="30.9" y2="319.8" stroke="#38bdf8" stroke-width="9.71" stroke-linecap="round"/><line x1="30.9" y1="319.8" x2="41.0" y2="295.9" stroke="#38bdf8" stroke-width="8.74" stroke-linecap="round"/><line x1="41.0" y1="295.9" x2="49.4" y2="276.1" stroke="#38bdf8" stroke-width="7.94" stroke-linecap="round"/><line x1="49.4" y1="276.1" x2="56.4" y2="259.5" stroke="#38bdf8" stroke-width="7.27" stroke-linecap="round"/><line x1="56.4" y1="259.5" x2="62.4" y2="245.4" stroke="#38bdf8" stroke-width="6.71" stroke-linecap="round"/><line x1="62.4" y1="245.4" x2="67.6" y2="233.3" stroke="#38bdf8" stroke-width="6.23" stroke-linecap="round"/><line x1="67.6" y1="233.3" x2="72.1" y2="222.7" stroke="#38bdf8" stroke-width="5.82" stroke-linecap="round"/><line x1="72.1" y1="222.7" x2="76.0" y2="213.4" stroke="#38bdf8" stroke-width="5.45" stroke-linecap="round"/><line x1="76.0" y1="213.4" x2="79.5" y2="205.1" stroke="#38bdf8" stroke-width="5.13" stroke-linecap="round"/><line x1="79.5" y1="205.1" x2="82.6" y2="197.8" stroke="#38bdf8" stroke-width="4.84" stroke-linecap="round"/><line x1="82.6" y1="197.8" x2="85.4" y2="191.2" stroke="#38bdf8" stroke-width="4.59" stroke-linecap="round"/><line x1="85.4" y1="191.2" x2="87.9" y2="185.2" stroke="#38bdf8" stroke-width="4.36" stroke-linecap="round"/><line x1="87.9" y1="185.2" x2="92.0" y2="185.2" stroke="#38bdf8" stroke-width="4.25" stroke-linecap="round"/><line x1="92.0" y1="185.2" x2="96.1" y2="185.2" stroke="#38bdf8" stroke-width="4.25" stroke-linecap="round"/><line x1="96.1" y1="185.2" x2="100.2" y2="185.2" stroke="#38bdf8" stroke-width="4.25" stroke-linecap="round"/><line x1="100.2" y1="185.2" x2="104.3" y2="185.2" stroke="#38bdf8" stroke-width="4.25" stroke-linecap="round"/><line x1="104.3" y1="185.2" x2="108.4" y2="185.2" stroke="#38bdf8" stroke-width="4.25" stroke-linecap="round"/><line x1="108.4" y1="185.2" x2="112.5" y2="185.2" stroke="#38bdf8" stroke-width="4.25" stroke-linecap="round"/><line x1="112.5" y1="185.2" x2="116.6" y2="185.2" stroke="#38bdf8" stroke-width="4.25" stroke-linecap="round"/><line x1="116.6" y1="185.2" x2="120.6" y2="185.2" stroke="#38bdf8" stroke-width="4.25" stroke-linecap="round"/><line x1="120.6" y1="185.2" x2="124.7" y2="185.2" stroke="#38bdf8" stroke-width="4.25" stroke-linecap="round"/><line x1="124.7" y1="185.2" x2="128.8" y2="185.2" stroke="#38bdf8" stroke-width="4.25" stroke-linecap="round"/><line x1="128.8" y1="185.2" x2="132.9" y2="185.2" stroke="#38bdf8" stroke-width="4.25" stroke-linecap="round"/><line x1="132.9" y1="185.2" x2="137.0" y2="185.2" stroke="#38bdf8" stroke-width="4.25" stroke-linecap="round"/><line x1="137.0" y1="185.2" x2="141.1" y2="185.2" stroke="#ff6a00" stroke-width="2.13" stroke-linecap="round"/><line x1="141.1" y1="185.2" x2="145.2" y2="185.2" stroke="#ff6a00" stroke-width="2.13" stroke-linecap="round"/><line x1="145.2" y1="185.2" x2="149.3" y2="185.2" stroke="#ff6a00" stroke-width="2.13" stroke-linecap="round"/><line x1="149.3" y1="185.2" x2="153.4" y2="185.2" stroke="#ff6a00" stroke-width="2.13" stroke-linecap="round"/><line x1="153.4" y1="185.2" x2="157.4" y2="185.2" stroke="#ff6a00" stroke-width="2.13" stroke-linecap="round"/><line x1="157.4" y1="185.2" x2="161.5" y2="185.2" stroke="#ff6a00" stroke-width="2.13" stroke-linecap="round"/><line x1="161.5" y1="185.2" x2="165.6" y2="185.2" stroke="#ff6a00" stroke-width="2.13" stroke-linecap="round"/><line x1="165.6" y1="185.2" x2="169.7" y2="185.2" stroke="#ff6a00" stroke-width="2.13" stroke-linecap="round"/><line x1="169.7" y1="185.2" x2="173.8" y2="185.2" stroke="#ff6a00" stroke-width="2.13" stroke-linecap="round"/><line x1="173.8" y1="185.2" x2="177.9" y2="185.2" stroke="#ff6a00" stroke-width="2.13" stroke-linecap="round"/><line x1="177.9" y1="185.2" x2="182.0" y2="185.2" stroke="#ff6a00" stroke-width="2.13" stroke-linecap="round"/><line x1="182.0" y1="185.2" x2="186.1" y2="185.2" stroke="#ff6a00" stroke-width="2.13" stroke-linecap="round"/><line x1="186.1" y1="185.2" x2="188.6" y2="191.2" stroke="#ff6a00" stroke-width="2.18" stroke-linecap="round"/><line x1="188.6" y1="191.2" x2="191.4" y2="197.8" stroke="#ff6a00" stroke-width="2.29" stroke-linecap="round"/><line x1="191.4" y1="197.8" x2="194.5" y2="205.1" stroke="#ff6a00" stroke-width="2.42" stroke-linecap="round"/><line x1="194.5" y1="205.1" x2="198.0" y2="213.4" stroke="#ff6a00" stroke-width="2.56" stroke-linecap="round"/><line x1="198.0" y1="213.4" x2="201.9" y2="222.7" stroke="#ff6a00" stroke-width="2.73" stroke-linecap="round"/><line x1="201.9" y1="222.7" x2="206.4" y2="233.3" stroke="#ff6a00" stroke-width="2.91" stroke-linecap="round"/><line x1="206.4" y1="233.3" x2="211.6" y2="245.4" stroke="#ff6a00" stroke-width="3.12" stroke-linecap="round"/><line x1="211.6" y1="245.4" x2="217.6" y2="259.5" stroke="#ff6a00" stroke-width="3.36" stroke-linecap="round"/><line x1="217.6" y1="259.5" x2="224.6" y2="276.1" stroke="#ff6a00" stroke-width="3.64" stroke-linecap="round"/><line x1="224.6" y1="276.1" x2="233.0" y2="295.9" stroke="#ff6a00" stroke-width="3.97" stroke-linecap="round"/><line x1="233.0" y1="295.9" x2="243.1" y2="319.8" stroke="#ff6a00" stroke-width="4.37" stroke-linecap="round"/><line x1="243.1" y1="319.8" x2="255.7" y2="349.4" stroke="#ff6a00" stroke-width="4.86" stroke-linecap="round"/><line x1="255.7" y1="349.4" x2="235.9" y2="349.4" stroke="#ff6a00" stroke-width="5.14" stroke-linecap="round"/><line x1="235.9" y1="349.4" x2="216.1" y2="349.4" stroke="#ff6a00" stroke-width="5.14" stroke-linecap="round"/><line x1="216.1" y1="349.4" x2="196.3" y2="349.4" stroke="#ff6a00" stroke-width="5.14" stroke-linecap="round"/><line x1="196.3" y1="349.4" x2="176.6" y2="349.4" stroke="#ff6a00" stroke-width="5.14" stroke-linecap="round"/><line x1="176.6" y1="349.4" x2="156.8" y2="349.4" stroke="#ff6a00" stroke-width="5.14" stroke-linecap="round"/><line x1="156.8" y1="349.4" x2="137.0" y2="349.4" stroke="#ff6a00" stroke-width="5.14" stroke-linecap="round"/><line x1="137.0" y1="349.4" x2="117.2" y2="349.4" stroke="#ff6a00" stroke-width="5.14" stroke-linecap="round"/><line x1="117.2" y1="349.4" x2="97.4" y2="349.4" stroke="#ff6a00" stroke-width="5.14" stroke-linecap="round"/><line x1="97.4" y1="349.4" x2="77.7" y2="349.4" stroke="#ff6a00" stroke-width="5.14" stroke-linecap="round"/><line x1="77.7" y1="349.4" x2="57.9" y2="349.4" stroke="#ff6a00" stroke-width="5.14" stroke-linecap="round"/><line x1="57.9" y1="349.4" x2="38.1" y2="349.4" stroke="#ff6a00" stroke-width="5.14" stroke-linecap="round"/><line x1="38.1" y1="349.4" x2="18.3" y2="349.4" stroke="#ff6a00" stroke-width="5.14" stroke-linecap="round"/><line x1="18.3" y1="349.4" x2="30.9" y2="319.8" stroke="#ff6a00" stroke-width="4.86" stroke-linecap="round"/><line x1="30.9" y1="319.8" x2="41.0" y2="295.9" stroke="#ff6a00" stroke-width="4.37" stroke-linecap="round"/><line x1="41.0" y1="295.9" x2="49.4" y2="276.1" stroke="#ff6a00" stroke-width="3.97" stroke-linecap="round"/><line x1="49.4" y1="276.1" x2="56.4" y2="259.5" stroke="#ff6a00" stroke-width="3.64" stroke-linecap="round"/><line x1="56.4" y1="259.5" x2="62.4" y2="245.4" stroke="#ff6a00" stroke-width="3.36" stroke-linecap="round"/><line x1="62.4" y1="245.4" x2="67.6" y2="233.3" stroke="#ff6a00" stroke-width="3.12" stroke-linecap="round"/><line x1="67.6" y1="233.3" x2="72.1" y2="222.7" stroke="#ff6a00" stroke-width="2.91" stroke-linecap="round"/><line x1="72.1" y1="222.7" x2="76.0" y2="213.4" stroke="#ff6a00" stroke-width="2.73" stroke-linecap="round"/><line x1="76.0" y1="213.4" x2="79.5" y2="205.1" stroke="#ff6a00" stroke-width="2.56" stroke-linecap="round"/><line x1="79.5" y1="205.1" x2="82.6" y2="197.8" stroke="#ff6a00" stroke-width="2.42" stroke-linecap="round"/><line x1="82.6" y1="197.8" x2="85.4" y2="191.2" stroke="#ff6a00" stroke-width="2.29" stroke-linecap="round"/><line x1="85.4" y1="191.2" x2="87.9" y2="185.2" stroke="#ff6a00" stroke-width="2.18" stroke-linecap="round"/><line x1="87.9" y1="185.2" x2="92.0" y2="185.2" stroke="#ff6a00" stroke-width="2.13" stroke-linecap="round"/><line x1="92.0" y1="185.2" x2="96.1" y2="185.2" stroke="#ff6a00" stroke-width="2.13" stroke-linecap="round"/><line x1="96.1" y1="185.2" x2="100.2" y2="185.2" stroke="#ff6a00" stroke-width="2.13" stroke-linecap="round"/><line x1="100.2" y1="185.2" x2="104.3" y2="185.2" stroke="#ff6a00" stroke-width="2.13" stroke-linecap="round"/><line x1="104.3" y1="185.2" x2="108.4" y2="185.2" stroke="#ff6a00" stroke-width="2.13" stroke-linecap="round"/><line x1="108.4" y1="185.2" x2="112.5" y2="185.2" stroke="#ff6a00" stroke-width="2.13" stroke-linecap="round"/><line x1="112.5" y1="185.2" x2="116.6" y2="185.2" stroke="#ff6a00" stroke-width="2.13" stroke-linecap="round"/><line x1="116.6" y1="185.2" x2="120.6" y2="185.2" stroke="#ff6a00" stroke-width="2.13" stroke-linecap="round"/><line x1="120.6" y1="185.2" x2="124.7" y2="185.2" stroke="#ff6a00" stroke-width="2.13" stroke-linecap="round"/><line x1="124.7" y1="185.2" x2="128.8" y2="185.2" stroke="#ff6a00" stroke-width="2.13" stroke-linecap="round"/><line x1="128.8" y1="185.2" x2="132.9" y2="185.2" stroke="#ff6a00" stroke-width="2.13" stroke-linecap="round"/><line x1="132.9" y1="185.2" x2="137.0" y2="185.2" stroke="#ff6a00" stroke-width="2.13" stroke-linecap="round"/><line x1="137.0" y1="349.4" x2="137.0" y2="352.5" stroke="#ff6a00" stroke-width="10.34" stroke-linecap="round"/><line x1="137.0" y1="352.5" x2="137.0" y2="355.6" stroke="#ff6a00" stroke-width="10.46" stroke-linecap="round"/><line x1="137.0" y1="355.6" x2="137.0" y2="358.8" stroke="#ff6a00" stroke-width="10.57" stroke-linecap="round"/><line x1="137.0" y1="358.8" x2="137.0" y2="362.0" stroke="#ff6a00" stroke-width="10.69" stroke-linecap="round"/><line x1="137.0" y1="362.0" x2="137.0" y2="365.4" stroke="#ff6a00" stroke-width="10.81" stroke-linecap="round"/><line x1="137.0" y1="365.4" x2="137.0" y2="368.8" stroke="#ff6a00" stroke-width="10.93" stroke-linecap="round"/><line x1="137.0" y1="368.8" x2="137.0" y2="372.2" stroke="#ff6a00" stroke-width="11.06" stroke-linecap="round"/><line x1="137.0" y1="372.2" x2="137.0" y2="375.8" stroke="#ff6a00" stroke-width="11.19" stroke-linecap="round"/><line x1="137.0" y1="375.8" x2="137.0" y2="379.4" stroke="#ff6a00" stroke-width="11.32" stroke-linecap="round"/><line x1="137.0" y1="379.4" x2="137.0" y2="383.2" stroke="#ff6a00" stroke-width="11.46" stroke-linecap="round"/><line x1="137.0" y1="383.2" x2="137.0" y2="387.0" stroke="#ff6a00" stroke-width="11.60" stroke-linecap="round"/><line x1="137.0" y1="387.0" x2="137.0" y2="390.9" stroke="#ff6a00" stroke-width="11.74" stroke-linecap="round"/><line x1="137.0" y1="349.4" x2="137.0" y2="351.6" stroke="#ffe2cc" stroke-width="3.97" stroke-linecap="round"/><line x1="137.0" y1="351.6" x2="137.0" y2="353.7" stroke="#ffe2cc" stroke-width="4.00" stroke-linecap="round"/><line x1="137.0" y1="353.7" x2="137.0" y2="355.9" stroke="#ffe2cc" stroke-width="4.03" stroke-linecap="round"/><line x1="137.0" y1="355.9" x2="137.0" y2="358.1" stroke="#ffe2cc" stroke-width="4.06" stroke-linecap="round"/><line x1="137.0" y1="358.1" x2="137.0" y2="360.4" stroke="#ffe2cc" stroke-width="4.10" stroke-linecap="round"/><line x1="137.0" y1="360.4" x2="137.0" y2="362.7" stroke="#ffe2cc" stroke-width="4.13" stroke-linecap="round"/><line x1="137.0" y1="362.7" x2="137.0" y2="365.0" stroke="#ffe2cc" stroke-width="4.16" stroke-linecap="round"/><line x1="137.0" y1="365.0" x2="137.0" y2="367.4" stroke="#ffe2cc" stroke-width="4.19" stroke-linecap="round"/><line x1="137.0" y1="367.4" x2="137.0" y2="369.8" stroke="#ffe2cc" stroke-width="4.23" stroke-linecap="round"/><line x1="137.0" y1="369.8" x2="137.0" y2="372.2" stroke="#ffe2cc" stroke-width="4.26" stroke-linecap="round"/><line x1="137.0" y1="372.2" x2="137.0" y2="374.7" stroke="#ffe2cc" stroke-width="4.30" stroke-linecap="round"/><line x1="137.0" y1="374.7" x2="137.0" y2="377.2" stroke="#ffe2cc" stroke-width="4.33" stroke-linecap="round"/><circle cx="137.0" cy="377.2" r="7" fill="#ff6a00" stroke="#fff" stroke-width="3.5"/></svg>
+      <canvas id="cvd-canvas" aria-hidden="true"></canvas>
       <div class="top"><span class="bk">‹ Results</span><div><b>Maple Grove Invitational</b>Course map</div></div>
-      <div class="toast">Mile 1</div>
-      <span class="mi" style="left:75.3%;top:44.5%">1 mi</span>
-      <span class="fl" style="left:50.0%;top:32.5%">🟢 Start</span>
-      <span class="fl fin" style="left:55.1%;top:72.0%">🏁 Finish</span>
+      <div class="toast" id="cvd-toast">Mile 1</div>
+      <span class="mi hit" id="cvd-mi" style="left:75.3%;top:44.5%">1 mi</span>
+      <span class="fl" id="cvd-start" style="left:50.0%;top:32.5%">🟢 Start</span>
+      <span class="fl fin" id="cvd-fin" style="left:55.1%;top:72.0%">🏁 Finish</span>
       <div class="bot">
         <div class="eh"><b>Elevation</b><span>↑ 118 ft of climbing</span></div>
         <svg class="elev" viewBox="0 0 300 34" preserveAspectRatio="none" aria-hidden="true">
           <polygon points="0,34 0,26 40,24 70,20 95,12 120,8 150,14 180,22 210,18 240,24 270,26 300,25 300,34" fill="rgba(56,189,248,.35)"/>
           <polyline points="0,26 40,24 70,20 95,12 120,8 150,14 180,22 210,18 240,24 270,26 300,25" fill="none" stroke="#fff" stroke-width="1.5"/>
           <polyline points="70,20 95,12 120,8" fill="none" stroke="#c084fc" stroke-width="3"/>
-          <circle cx="270" cy="26" r="3.5" fill="#fff" stroke="#38bdf8" stroke-width="2"/>
+          <circle id="cvd-edot" cx="270" cy="26" r="3.5" fill="#fff" stroke="#38bdf8" stroke-width="2"/>
         </svg>
-        <div class="dist"><b>1.42</b> mi · 2.29 km</div>
-        <div class="lg"><span><i style="background:#38bdf8"></i>Loop 1</span><span><i style="background:#ff6a00"></i>Loop 2</span></div>
+        <div class="dist"><b id="cvd-dist">1.42</b> mi · <span id="cvd-km">2.29</span> km</div>
+        <div class="lg"><span><i style="background:#38bdf8"></i>Loop 1</span><span><i style="background:#ff6a00"></i>Loop 2</span><span><i style="background:#a855f7"></i>Loop 3</span></div>
       </div>
     </div>
     <p class="cap">The course fly-over, one tap from the results page.</p>
@@ -364,6 +370,301 @@ LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
     </ul>
   </div>
 </div></section>
+<script>
+/* Marketing-page fly-over: the phone mock flies a camera around a little course, drawing
+   the route loop by loop (blue, the orange loop-2 stripe, purple), popping the mile marker,
+   counting up the distance, then pulls out to the whole course and bursts confetti from the
+   finish -- the same beats as the real fly-over, drawn on a canvas in true perspective.
+   The static SVG stays underneath as the no-script / reduced-motion picture. */
+(function () {
+  var box = document.querySelector(".cvd"), cv = document.getElementById("cvd-canvas");
+  if (!box || !cv || !cv.getContext) return;
+  var ctx = cv.getContext("2d"), W = 274, H = 524, F = 260, NEAR = 2;
+  var dpr = Math.min(2, window.devicePixelRatio || 1);
+  cv.width = W * dpr; cv.height = H * dpr; ctx.scale(dpr, dpr);
+  box.classList.add("anim");
+  function $(id) { return document.getElementById(id); }
+
+  // ------------------------------------------------------------------ the scene (metres)
+  var patches = [   // [x0, z0, x1, z1, colour]: roads, the school and its lot, a soccer field
+    [-160, -14, 160, -9, "#b9b2a4"], [-112, -200, -107, 400, "#b9b2a4"], [-160, 214, 160, 221, "#b9b2a4"],
+    [-104, 0, -66, 58, "#9b958a"], [-100, 64, -64, 94, "#d3cdc0"], [-92, 94, -74, 106, "#c6c0b3"],
+    [58, 26, 106, 90, "#7fae5e"], [62, 30, 102, 86, "#8bbb69"], [81.5, 30, 82.5, 86, "#e8f0dd"],
+    [-150, 130, -118, 205, "#5c8745"], [112, 110, 170, 195, "#668e4d"]];
+  var pond = [];
+  for (var k = 0; k < 24; k++) { var an = k / 24 * Math.PI * 2; pond.push([16 + Math.cos(an) * 10, 104 + Math.sin(an) * 15]); }
+  // The course: a winding loop (smoothed through these points) run twice, then most of a
+  // third lap before it breaks off down the finish chute.
+  var cps = [[0, 165], [22, 172], [44, 160], [50, 135], [38, 118], [48, 96], [42, 70], [24, 52], [4, 58],
+             [-14, 44], [-36, 50], [-46, 74], [-34, 96], [-50, 118], [-44, 146], [-22, 162]];
+  function ring(P, per) {                   // closed Catmull-Rom through P
+    var out = [], n = P.length;
+    for (var q = 0; q < n; q++) {
+      var p0 = P[(q - 1 + n) % n], p1 = P[q], p2 = P[(q + 1) % n], p3 = P[(q + 2) % n];
+      for (var st = 0; st < per; st++) {
+        var t = st / per, t2 = t * t, t3 = t2 * t;
+        out.push([0, 1].map(function (ci) {
+          return 0.5 * (2 * p1[ci] + (p2[ci] - p0[ci]) * t + (2 * p0[ci] - 5 * p1[ci] + 4 * p2[ci] - p3[ci]) * t2 +
+                        (3 * p1[ci] - p0[ci] - 3 * p2[ci] + p3[ci]) * t3);
+        }));
+      }
+    }
+    return out;
+  }
+  var PER = 8, R = ring(cps, PER), lap = R.slice(1).concat([R[0]]);
+  // pass = times this ground is covered (stripe width); loop = loop the runner is on (colour)
+  var way = [[0, 196]], info = [];
+  function add(pts, pass, lp) { pts.forEach(function (p) { info.push([pass, lp]); way.push(p); }); }
+  add([R[0]], 1, 1);
+  add(lap, 1, 1);
+  add(lap, 2, 2);
+  add(R.slice(1, 8 * PER + 1), 3, 3);       // round to the near side...
+  add([[4, 40], [3, 24]], 1, 3);            // ...and down the chute to the finish
+  var START = way[0], FIN = way[way.length - 1];
+  // Woods the course runs through, and trees scattered round the park.
+  var seed = 11;
+  function rnd() { seed = (seed * 16807) % 2147483647; return (seed - 1) / 2147483646; }
+  function clear(x, z) {
+    for (var q = 0; q < way.length; q++) if (Math.hypot(way[q][0] - x, way[q][1] - z) < 5.5) return false;
+    if (Math.hypot(x - 16, (z - 104) / 1.5) < 12) return false;
+    for (q = 3; q < 9; q++) { var pt = patches[q]; if (x > pt[0] - 3 && x < pt[2] + 3 && z > pt[1] - 3 && z < pt[3] + 3) return false; }
+    return true;
+  }
+  var trees = [];
+  [[47, 130, 13, 34], [-42, 132, 13, 34], [-2, 184, 30, 26], [-26, 74, 9, 12], [0, 118, 10, 8],
+   [125, 55, 28, 22], [-135, 40, 16, 18], [60, 205, 45, 22], [-70, 170, 25, 18], [85, 120, 18, 14]].forEach(function (g) {
+    for (var q = 0; q < g[3]; q++) {
+      var x = g[0] + (rnd() * 2 - 1) * g[2], z = g[1] + (rnd() * 2 - 1) * g[2] * 1.2;
+      if (clear(x, z)) trees.push([x, z, 2.2 + rnd() * 1.8, rnd()]);
+    }
+  });
+  var pieces = [], L = 0;
+  for (var i = 0; i + 1 < way.length; i++) {
+    var a = way[i], b = way[i + 1], len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    var n = Math.max(1, Math.ceil(len / 5));
+    for (var j = 0; j < n; j++) {
+      var t0 = j / n, t1 = (j + 1) / n;
+      pieces.push({ a: [a[0] + (b[0] - a[0]) * t0, a[1] + (b[1] - a[1]) * t0],
+                    b: [a[0] + (b[0] - a[0]) * t1, a[1] + (b[1] - a[1]) * t1],
+                    d0: L + len * t0, d1: L + len * t1, pass: info[i][0], loop: info[i][1] });
+    }
+    L += len;
+  }
+  var COLOR = [null, "#38bdf8", "#ff6a00", "#a855f7"], WIDTH = [null, 2.6, 1.3, 0.65];
+  var MILES = 1.42, MILE_D = L / MILES;
+  function at(d) {                          // point + loop at distance d along the route
+    d = Math.max(0, Math.min(L, d));
+    for (var q = 0; q < pieces.length; q++) {
+      var p = pieces[q];
+      if (d <= p.d1) { var f = (d - p.d0) / (p.d1 - p.d0 || 1);
+        return { x: p.a[0] + (p.b[0] - p.a[0]) * f, z: p.a[1] + (p.b[1] - p.a[1]) * f, loop: p.loop }; }
+    }
+    var e = pieces[pieces.length - 1];
+    return { x: e.b[0], z: e.b[1], loop: e.loop };
+  }
+
+  // ------------------------------------------------------------------ camera
+  function cam3(x, z, c) {                  // world ground point -> camera space
+    var dx = x - c.x, dz = z - c.z, cs = Math.cos(c.yaw), sn = Math.sin(c.yaw);
+    var xr = dx * cs - dz * sn, zf = dx * sn + dz * cs;
+    var s = Math.sin(c.pitch), co = Math.cos(c.pitch);
+    return [xr, -c.h * co + zf * s, c.h * s + zf * co];
+  }
+  function scr(v, c) { return [W / 2 + F * v[0] / v[2], c.cy - F * v[1] / v[2]]; }
+  function proj(x, z, c) { var v = cam3(x, z, c); return v[2] > NEAR ? scr(v, c) : null; }
+  function clipSeg(a, b, c) {               // a line on the ground, cut at the near plane
+    var A = cam3(a[0], a[1], c), B = cam3(b[0], b[1], c);
+    if (A[2] <= NEAR && B[2] <= NEAR) return null;
+    if (A[2] <= NEAR || B[2] <= NEAR) {
+      var t = (NEAR - A[2]) / (B[2] - A[2]), M = [A[0] + (B[0] - A[0]) * t, A[1] + (B[1] - A[1]) * t, NEAR + 0.01];
+      if (A[2] <= NEAR) A = M; else B = M;
+    }
+    return [scr(A, c), scr(B, c), (A[2] + B[2]) / 2];
+  }
+  function quad(p, c) { return shape([[p[0], p[1]], [p[2], p[1]], [p[2], p[3]], [p[0], p[3]]], c); }
+  function shape(pts, c) {                  // a flat ground shape, clipped at the near plane
+    var vs = pts.map(function (w) { return cam3(w[0], w[1], c); }), m = vs.length;
+    var out = [];
+    for (var q = 0; q < m; q++) {
+      var A = vs[q], B = vs[(q + 1) % m], ai = A[2] > NEAR, bi = B[2] > NEAR;
+      if (ai) out.push(A);
+      if (ai !== bi) { var t = (NEAR - A[2]) / (B[2] - A[2]);
+        out.push([A[0] + (B[0] - A[0]) * t, A[1] + (B[1] - A[1]) * t, NEAR + 0.01]); }
+    }
+    return out.length > 2 ? out.map(function (v) { return scr(v, c); }) : null;
+  }
+
+  // ------------------------------------------------------------------ drawing
+  function draw(c, upto, dot) {
+    var hz = c.cy - F * Math.tan(c.pitch);
+    var sky = ctx.createLinearGradient(0, 0, 0, Math.max(1, hz));
+    sky.addColorStop(0, "#3f86d4"); sky.addColorStop(1, "#d6e8f5");
+    ctx.fillStyle = sky; ctx.fillRect(0, 0, W, Math.max(0, hz) + 1);
+    var gr = ctx.createLinearGradient(0, hz, 0, H);
+    gr.addColorStop(0, "#9fb58f"); gr.addColorStop(0.25, "#6f9356"); gr.addColorStop(1, "#4b7438");
+    ctx.fillStyle = gr; ctx.fillRect(0, hz, W, H - hz);
+    function fill(poly, col) {
+      if (!poly) return;
+      ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(poly[0][0], poly[0][1]);
+      for (var q = 1; q < poly.length; q++) ctx.lineTo(poly[q][0], poly[q][1]);
+      ctx.closePath(); ctx.fill();
+    }
+    patches.forEach(function (p) { fill(quad(p, c), p[4]); });
+    fill(shape(pond.map(function (w) { return [16 + (w[0] - 16) * 1.12, 104 + (w[1] - 104) * 1.08]; }), c), "#c9b98f");
+    fill(shape(pond, c), "#3f7fa3");
+    var haze = ctx.createLinearGradient(0, hz, 0, hz + 40);
+    haze.addColorStop(0, "rgba(214,232,245,.9)"); haze.addColorStop(1, "rgba(214,232,245,0)");
+    ctx.fillStyle = haze; ctx.fillRect(0, hz, W, 40);
+    ctx.lineCap = "round";
+    function stroke(p, wm, col, alpha) {
+      var b = p.b;
+      if (upto < p.d1) { var f = (upto - p.d0) / (p.d1 - p.d0); b = [p.a[0] + (p.b[0] - p.a[0]) * f, p.a[1] + (p.b[1] - p.a[1]) * f]; }
+      var s = clipSeg(p.a, b, c);
+      if (!s) return;
+      ctx.globalAlpha = alpha || 1; ctx.strokeStyle = col; ctx.lineWidth = Math.min(40, F * wm / s[2]);
+      ctx.beginPath(); ctx.moveTo(s[0][0], s[0][1]); ctx.lineTo(s[1][0], s[1][1]); ctx.stroke();
+    }
+    var drawn = pieces.filter(function (p) { return p.d0 < upto; });
+    drawn.forEach(function (p) { stroke(p, 3.6, "#263f2c"); });
+    [1, 2, 3].forEach(function (ps) { drawn.forEach(function (p) { if (p.pass === ps) stroke(p, WIDTH[ps], COLOR[p.loop]); }); });
+    if (dot) {
+      drawn.forEach(function (p) {            // comet tail: fades in over the last 25 m
+        if (p.d1 > upto - 25) stroke(p, 0.9, "#ffffff", Math.max(0, 1 - (upto - p.d1) / 25) * 0.85);
+      });
+      ctx.globalAlpha = 1;
+    }
+    drawTrees(c);
+    if (dot) {
+      var h = at(upto), s = proj(h.x, h.z, c);
+      if (s) {
+        ctx.beginPath(); ctx.arc(s[0], s[1], 7, 0, 7); ctx.fillStyle = COLOR[h.loop]; ctx.fill();
+        ctx.lineWidth = 3.5; ctx.strokeStyle = "#fff"; ctx.stroke();
+      }
+    }
+    ctx.globalAlpha = 1;
+  }
+  function drawTrees(c) {                   // far to near, fading out as the camera flies through
+    var list = [], co = Math.cos(c.pitch);
+    trees.forEach(function (t) { var v = cam3(t[0], t[1], c); if (v[2] > 8) list.push([v, t]); });
+    list.sort(function (p, q) { return q[0][2] - p[0][2]; });
+    list.forEach(function (e) {
+      var v = e[0], t = e[1], s = scr(v, c), r = F * t[2] / v[2], ht = F * t[2] * 1.5 / v[2] * co;
+      if (r < 0.5 || s[0] < -2 * r || s[0] > W + 2 * r || s[1] < -r) return;
+      ctx.globalAlpha = Math.max(0, Math.min(1, (v[2] - 10) / 14));
+      ctx.fillStyle = "rgba(15,35,15,.3)";
+      ctx.beginPath(); ctx.ellipse(s[0] + r * 0.4, s[1], r * 1.05, r * 0.42, 0, 0, 7); ctx.fill();
+      ctx.strokeStyle = "#5b4630"; ctx.lineWidth = Math.max(1, r * 0.22);
+      ctx.beginPath(); ctx.moveTo(s[0], s[1]); ctx.lineTo(s[0], s[1] - ht * 0.5); ctx.stroke();
+      var cy2 = s[1] - ht * 0.5 - r * 0.55;
+      ctx.fillStyle = t[3] > 0.5 ? "#2e5b29" : "#386a2f";
+      ctx.beginPath(); ctx.arc(s[0], cy2, r, 0, 7); ctx.fill();
+      ctx.fillStyle = "rgba(130,180,95,.5)";
+      ctx.beginPath(); ctx.arc(s[0] - r * 0.3, cy2 - r * 0.3, r * 0.5, 0, 7); ctx.fill();
+    });
+    ctx.globalAlpha = 1;
+  }
+  function place(el, x, z, c) {
+    var s = proj(x, z, c);
+    if (!s || s[0] < -30 || s[0] > W + 30 || s[1] < 50 || s[1] > H - 120) { el.style.visibility = "hidden"; return; }
+    el.style.visibility = "visible";
+    el.style.left = (s[0] / W * 100) + "%"; el.style.top = (s[1] / H * 100) + "%";
+  }
+
+  // ------------------------------------------------------------------ the show
+  var OVER = { x: 0, z: -10, h: 62, pitch: 34 * Math.PI / 180, yaw: 0, cy: 236 };
+  var INTRO = 1200, FLY = 19000, OUTRO = 2600, HOLD = 3400, CYCLE = INTRO + FLY + OUTRO + HOLD;
+  var mileAt = at(MILE_D), yawS = 0, lastT = 0, lastLoop = 1, milePopped = false, toastTimer = 0;
+  var eh = [[0, 26], [40, 24], [70, 20], [95, 12], [120, 8], [150, 14], [180, 22], [210, 18], [240, 24], [270, 26], [300, 25]];
+  function toast(t) {
+    var el = $("cvd-toast"); el.textContent = t; el.style.opacity = 1;
+    clearTimeout(toastTimer); toastTimer = setTimeout(function () { el.style.opacity = 0; }, 1300);
+  }
+  function heading(d) { var a = at(d - 8), b = at(d + 25); return Math.atan2(b.x - a.x, b.z - a.z); }
+  function follow(d) {
+    var p = at(d);
+    return { x: p.x - Math.sin(yawS) * 34, z: p.z - Math.cos(yawS) * 34, h: 20, pitch: 0.5, yaw: yawS, cy: 300 };
+  }
+  function turnTo(target, k) { var df = ((target - yawS + 3 * Math.PI) % (2 * Math.PI)) - Math.PI; yawS += df * k; }
+  function ease(u) { return u < 0.5 ? 2 * u * u : 1 - Math.pow(-2 * u + 2, 2) / 2; }
+  function mix(A, B, u) {
+    var dy = ((B.yaw - A.yaw + 3 * Math.PI) % (2 * Math.PI)) - Math.PI, o = {};
+    ["x", "z", "h", "pitch", "cy"].forEach(function (key) { o[key] = A[key] + (B[key] - A[key]) * u; });
+    o.yaw = A.yaw + dy * u; return o;
+  }
+  function hud(d) {
+    var u = d / L;
+    $("cvd-dist").textContent = (u * MILES).toFixed(2);
+    $("cvd-km").textContent = (u * MILES * 1.609344).toFixed(2);
+    var x = u * 300, y = 26;
+    for (var q = 0; q + 1 < eh.length; q++) if (x <= eh[q + 1][0]) { y = eh[q][1] + (eh[q + 1][1] - eh[q][1]) * (x - eh[q][0]) / (eh[q + 1][0] - eh[q][0]); break; }
+    $("cvd-edot").setAttribute("cx", x.toFixed(1)); $("cvd-edot").setAttribute("cy", y.toFixed(1));
+  }
+  function labels(c) {
+    place($("cvd-start"), START[0], START[1], c); place($("cvd-fin"), FIN[0], FIN[1], c); place($("cvd-mi"), mileAt.x, mileAt.z, c);
+  }
+
+  // confetti bursting out of the finish line
+  var bits = [], CONF = ["#ffd400", "#ff7a00", "#ff2d95", "#22d3ee", "#7CFC00", "#ffffff"];
+  function burst(x, y) {
+    for (var q = 0; q < 120; q++) {
+      var ang = Math.random() * Math.PI * 2, sp = 2 + Math.random() * 5.5;
+      bits.push({ x: x, y: y, vx: Math.cos(ang) * sp, vy: Math.sin(ang) * sp - 2.5, r: Math.random() * 6, vr: Math.random() * 0.4 - 0.2,
+                  c: CONF[q % CONF.length], life: 1 });
+    }
+  }
+  function confetti() {
+    bits = bits.filter(function (b) { return b.life > 0 && b.y < H + 10; });
+    bits.forEach(function (b) {
+      b.vy += 0.16; b.vx *= 0.985; b.x += b.vx; b.y += b.vy; b.r += b.vr; b.life -= 0.006;
+      ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(b.r); ctx.globalAlpha = Math.max(0, Math.min(1, b.life * 1.5));
+      ctx.fillStyle = b.c; ctx.fillRect(-3, -1.8, 6, 3.6); ctx.restore();
+    });
+    ctx.globalAlpha = 1;
+  }
+
+  var t0 = null, burstDone = false, lastCyc = -1;
+  function frame(now) {
+    if (t0 === null) { t0 = now; lastT = now; }
+    var dt = Math.min(0.05, (now - lastT) / 1000); lastT = now;
+    var t = (now - t0) % CYCLE, cyc = Math.floor((now - t0) / CYCLE), c, d, dot = true;
+    if (cyc !== lastCyc) { lastCyc = cyc; yawS = heading(0); lastLoop = 1; milePopped = false; burstDone = false; bits = [];
+                  $("cvd-mi").classList.remove("hit"); toast("🟢 Start"); }
+    if (t < INTRO) { d = 0; c = follow(0); }
+    else if (t < INTRO + FLY) {
+      d = (t - INTRO) / FLY * L;
+      turnTo(heading(d), Math.min(1, dt * 3.2)); c = follow(d);
+      var lp = at(d).loop;
+      if (lp > lastLoop) { lastLoop = lp; toast("Loop " + lp); }
+      if (!milePopped && d >= MILE_D) { milePopped = true; $("cvd-mi").classList.add("hit"); toast("Mile 1"); }
+    } else {
+      d = L; dot = t < INTRO + FLY + OUTRO;
+      var u = Math.min(1, (t - INTRO - FLY) / OUTRO);
+      c = mix(follow(L), OVER, ease(u));
+      if (u >= 1 && !burstDone) { burstDone = true; toast("🏁 Finish"); var s = proj(FIN[0], FIN[1], c); if (s) burst(s[0], s[1] - 10); }
+    }
+    ctx.clearRect(0, 0, W, H);
+    draw(c, d, dot);
+    confetti();
+    labels(c);
+    hud(d);
+    if (running) raf = requestAnimationFrame(frame);
+  }
+
+  var running = false, raf = 0;
+  function start() { if (running) return; running = true; lastT = performance.now(); t0 = null; lastCyc = -1; raf = requestAnimationFrame(frame); }
+  function stop() { running = false; cancelAnimationFrame(raf); }
+  var reduce = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (reduce) {                             // one still frame: the whole course, no motion
+    draw(OVER, L, false); labels(OVER); hud(L); $("cvd-mi").classList.add("hit"); $("cvd-toast").style.opacity = 0;
+    return;
+  }
+  // Only animate while it's on screen.
+  if ("IntersectionObserver" in window) {
+    new IntersectionObserver(function (es) { es[0].isIntersecting ? start() : stop(); }, { threshold: 0.2 }).observe(box);
+  } else start();
+})();
+</script>
+
 
 <section class="band"><div class="wrap">
   <h2>Built by a coach — and an XC &amp; track parent.</h2>
