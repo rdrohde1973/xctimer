@@ -45,6 +45,19 @@ _MAP_CSP = ("default-src 'self'; script-src 'self' 'unsafe-inline'; "
             "base-uri 'self'; form-action 'self'; frame-ancestors 'none'")
 
 
+_STATIC = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+
+
+def _v(name):
+    """Cache-buster: the file's modification time. Without it a browser kept the old
+    course-edit.js after a deploy while loading the new page, so the new buttons did
+    nothing until a reload (2026-09-25). Changes whenever the file does, and only then."""
+    try:
+        return int(os.path.getmtime(os.path.join(_STATIC, name)))
+    except OSError:
+        return 0
+
+
 def _tiles():
     key = (os.environ.get("XC_ESRI_KEY") or "").strip()
     if key:
@@ -159,7 +172,7 @@ def course_editor(mid):
         'goes blurry when you zoom in close. Adding a free Esri key makes it sharp.</div>')
     body = f"""
 <link rel="stylesheet" href="/static/vendor/maplibre/maplibre-gl.css">
-<link rel="stylesheet" href="/static/course.css">
+<link rel="stylesheet" href="/static/course.css?v={_v("course.css")}">
 <p class="muted"><a href="/meets/{mid}">← {escape(m['name'])}</a></p>
 <h1>🗺 Course map <span class="muted" style="font-weight:400">· {escape(m['name'])}</span></h1>
 {_tabs(m)}
@@ -211,8 +224,8 @@ def course_editor(mid):
 </div>
 <script type="application/json" id="cm-config">{cfg}</script>
 <script src="/static/vendor/maplibre/maplibre-gl-csp.js"></script>
-<script src="/static/course.js"></script>
-<script src="/static/course-edit.js"></script>"""
+<script src="/static/course.js?v={_v("course.js")}"></script>
+<script src="/static/course-edit.js?v={_v("course-edit.js")}"></script>"""
     return _map_page(shell(g.principal, body, active="meets", wide=True), geolocation=True)
 
 
@@ -253,7 +266,7 @@ def course_view(token):
 <meta name="theme-color" content="#0a1728">
 <title>{escape(m['name'])} — Course map · XCTimer</title>
 <link rel="stylesheet" href="/static/vendor/maplibre/maplibre-gl.css">
-<link rel="stylesheet" href="/static/course.css">
+<link rel="stylesheet" href="/static/course.css?v={_v("course.css")}">
 </head><body class="cv">
 <div id="cv-map"></div>
 <div id="cv-loading" class="cv-loading"><div class="cv-spin"></div>Loading the course…</div>
@@ -274,7 +287,7 @@ def course_view(token):
 <script type="application/json" id="cv-config">{cfg}</script>
 <script src="/static/vendor/maplibre/maplibre-gl-csp.js"></script>
 <script src="/static/vendor/confetti/confetti.browser.min.js"></script>
-<script src="/static/course.js"></script>
-<script src="/static/course-view.js"></script>
+<script src="/static/course.js?v={_v("course.js")}"></script>
+<script src="/static/course-view.js?v={_v("course-view.js")}"></script>
 </body></html>"""
     return _map_page(html)
