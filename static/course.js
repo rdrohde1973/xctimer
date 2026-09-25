@@ -24,7 +24,7 @@
   }
 
   // Local flat projection around a point: metres east/north. Good to well under 1% over
-  // a cross-country course, and it lets the spline work in real distances.
+  // a cross-country course, and it lets corner rounding work in real distances.
   function projector(origin) {
     var kx = Math.cos(origin[1] * RAD) * R * RAD, ky = R * RAD;
     return {
@@ -33,11 +33,8 @@
     };
   }
 
-  /* Smooth the route with a CENTRIPETAL Catmull-Rom spline. It passes through every point
-   * the host clicked -- a smoothed course still goes round the same trees -- and, unlike
-   * the plain version, never overshoots into little loops on sharp turns. */
   // A double-click drops two points on one spot; a zero-length segment would divide by
-  // zero in the spline and turn the whole line into NaN.
+  // zero when rounding its corner and turn the line into NaN.
   function dedupe(pts) {
     var out = [];
     for (var i = 0; i < (pts || []).length; i++) {
@@ -46,37 +43,33 @@
     return out;
   }
 
+  /* "Smooth" = keep the host's straight lines and just round off each corner. Each corner
+   * gets a small curve (at most ROUND metres back along either leg, never more than half a
+   * leg) that stays inside the corner, so the line can't swing out across a street the way
+   * a spline fitted through the points did -- it never strays more than a few metres. */
+  var ROUND = 10;
   function smooth(pts, spacing) {
     pts = dedupe(pts);
     if (pts.length < 3) return pts.slice();
-    spacing = spacing || 4;
+    spacing = spacing || 2;
     var pr = projector(pts[0]);
     var P = pts.map(pr.fwd);
-    var ext = [[2 * P[0][0] - P[1][0], 2 * P[0][1] - P[1][1]]].concat(P,
-      [[2 * P[P.length - 1][0] - P[P.length - 2][0], 2 * P[P.length - 1][1] - P[P.length - 2][1]]]);
     var out = [pts[0]];
-    for (var i = 1; i < ext.length - 2; i++) {
-      var p0 = ext[i - 1], p1 = ext[i], p2 = ext[i + 1], p3 = ext[i + 2];
-      var seg = Math.hypot(p2[0] - p1[0], p2[1] - p1[1]);
-      var n = Math.max(2, Math.min(60, Math.round(seg / spacing)));
-      var t0 = 0, t1 = t0 + Math.pow(Math.hypot(p1[0] - p0[0], p1[1] - p0[1]), 0.5) || 1e-6;
-      var t2 = t1 + Math.pow(seg, 0.5) || t1 + 1e-6;
-      var t3 = t2 + Math.pow(Math.hypot(p3[0] - p2[0], p3[1] - p2[1]), 0.5) || t2 + 1e-6;
-      for (var k = 1; k <= n; k++) {
-        var t = t1 + (t2 - t1) * k / n;
-        var q = [0, 0];
-        for (var c = 0; c < 2; c++) {
-          var A1 = (t1 - t) / (t1 - t0) * p0[c] + (t - t0) / (t1 - t0) * p1[c];
-          var A2 = (t2 - t) / (t2 - t1) * p1[c] + (t - t1) / (t2 - t1) * p2[c];
-          var A3 = (t3 - t) / (t3 - t2) * p2[c] + (t - t2) / (t3 - t2) * p3[c];
-          var B1 = (t2 - t) / (t2 - t0) * A1 + (t - t0) / (t2 - t0) * A2;
-          var B2 = (t3 - t) / (t3 - t1) * A2 + (t - t1) / (t3 - t1) * A3;
-          q[c] = (t2 - t) / (t2 - t1) * B1 + (t - t1) / (t2 - t1) * B2;
-        }
-        out.push(k === n ? pts[i] : pr.inv(q));   // land exactly on the clicked point
+    for (var i = 1; i < P.length - 1; i++) {
+      var a = P[i - 1], p = P[i], b = P[i + 1];
+      var la = Math.hypot(a[0] - p[0], a[1] - p[1]), lb = Math.hypot(b[0] - p[0], b[1] - p[1]);
+      var r = Math.min(ROUND, la / 2, lb / 2);
+      var s = [p[0] + (a[0] - p[0]) * r / la, p[1] + (a[1] - p[1]) * r / la];   // curve start, on leg in
+      var e = [p[0] + (b[0] - p[0]) * r / lb, p[1] + (b[1] - p[1]) * r / lb];   // curve end, on leg out
+      var n = Math.max(2, Math.min(24, Math.round(2 * r / spacing)));
+      for (var k = 0; k <= n; k++) {               // quadratic Bezier with the corner as control
+        var t = k / n, u = 1 - t;
+        out.push(pr.inv([u * u * s[0] + 2 * u * t * p[0] + t * t * e[0],
+                         u * u * s[1] + 2 * u * t * p[1] + t * t * e[1]]));
       }
     }
-    return out;
+    out.push(pts[pts.length - 1]);
+    return dedupe(out);
   }
 
   /* Evenly spaced samples along a path: [{p:[lng,lat], d:metres from start}]. */

@@ -1,4 +1,4 @@
-/* XCTimer course map for spectators: a 30-second fly-over along the course over 3D
+/* XCTimer course map for spectators: a fly-over along the course (25 s a mile) over 3D
  * terrain, mile marks lighting up as it passes, each repeat loop fading to its own
  * colour, then a zoom out to the whole course and confetti. */
 (function () {
@@ -8,7 +8,9 @@
   var $ = function (id) { return document.getElementById(id); };
   maplibregl.setWorkerUrl(CFG.worker);
 
-  var FLY_MS = 30000, INTRO_MS = 2200, OUTRO_MS = 2600;
+  // A steady 25 seconds a mile: slow enough not to make anyone dizzy, and a 5K takes
+  // longer than a 2 mile instead of racing through it in the same time.
+  var MS_PER_MILE = 25000, INTRO_MS = 2200, OUTRO_MS = 2600;
   var courses = CFG.data.courses;
   var reduce = !!(window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches);
   var cur = 0, A = null, raf = 0, timer = 0, running = false;
@@ -161,7 +163,7 @@
     var diff = ((to - from + 540) % 360) - 180;
     return (from + diff * k + 360) % 360;
   }
-  function zoom() { return A.meters > 6000 ? 16.4 : 17; }   // low enough to see the runners' view
+  function zoom() { return 17.6; }       // close in, near the runners' view
   function pad() { return { top: Math.round(window.innerHeight * 0.35), bottom: 0, left: 0, right: 0 }; }
   function toast(text) {
     var t = $("cv-toast");
@@ -189,10 +191,10 @@
       var t0 = performance.now();
       function frame(now) {
         if (!running) return;
-        var f = Math.min(1, (now - t0) / FLY_MS);
+        var f = Math.min(1, (now - t0) / (MS_PER_MILE * A.miles));
         var d = f * A.meters;                              // constant speed, like a drone
         var p = G.pointAt(A.samples, d);
-        brg = turn(brg, heading(d), 0.045);
+        brg = turn(brg, heading(d), 0.03);          // turn gently -- quick swings are what make you dizzy
         map.jumpTo({ center: p.p, bearing: brg, pitch: 62, zoom: zoom(), padding: pad() });
         head.setLngLat(p.p);
         if (now - lastData > 60 || f === 1) { setRoute(d); lastData = now; }

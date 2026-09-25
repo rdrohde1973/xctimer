@@ -5,7 +5,7 @@ those clicked points are stored -- smoothing, distance, loop colouring and mile 
 are all worked out in the browser by static/course.js, the same code on both pages, so
 the editor and the results-page viewer can never disagree about a course.
 
-Spectators open /r/<token>/course from the public results page: a 30-second fly-over
+Spectators open /r/<token>/course from the public results page: a fly-over (25 s a mile)
 along the route over 3D terrain, mile marks lighting up as it passes, each repeat loop
 in its own colour, then a zoom out to the whole course and confetti.
 
@@ -243,7 +243,7 @@ def course_editor(mid):
   point lands right on them, and a loop over ground already covered follows the same line in a new
   colour. Or draw a loop once, <b>right-click</b> (or Shift-click) the point where it starts, and press
   <b>Repeat loop</b>. Right-click a point and press <b>Delete point</b> to remove it. Tick
-  <b>Smooth the route</b> once it's all in to round off the corners — it still passes through every point.</p>
+  <b>Smooth the route</b> once it's all in to round off the corners slightly — it keeps to the line you clicked.</p>
 </div>
 <script type="application/json" id="cm-config">{cfg}</script>
 <script src="/static/vendor/maplibre/maplibre-gl-csp.js"></script>
