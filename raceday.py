@@ -7,9 +7,9 @@ actually logged in to XCTimer (an invite nobody accepted gets nothing). Practice
 trials are skipped. Each coach gets one email per meet, ever: sends are recorded in
 meet_mail_log, so a rerun or a restart the same morning can't double-send.
 
-    python -m xctimer.raceday                       # today's meets, for real
-    python -m xctimer.raceday --dry-run             # print who would get what
-    python -m xctimer.raceday --date 2026-09-30 --preview-to me@example.com
+    python raceday.py                               # today's meets, for real
+    python raceday.py --dry-run                     # print who would get what
+    python raceday.py --date 2026-09-30 --preview-to me@example.com
                                                     # every email, sent to one inbox, not logged
 """
 import argparse
