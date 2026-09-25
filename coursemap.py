@@ -200,7 +200,8 @@ def course_editor(mid):
                   preview=f"/r/{m['public_token']}/course", meetName=m["name"])
     water_btn = ('<button type="button" class="ghost" id="cm-water" title="Then click the course where the '
                  'water station is">💧 Add water station</button>') if m["sport"] == "road" else ""
-    water_help = (" <b>💧 Water stations:</b> press <b>Add water station</b>, then click the course where it is — "
+    water_help = (" <b>💧 Water stations:</b> press <b>💧 Add water station</b> (on the map, by Finish course), "
+                  "then click the course where it is — "
                   "it snaps onto the route and pops up as the fly-over passes. Drag one to move it; click it to "
                   "remove it.") if m["sport"] == "road" else ""
     sharp = "" if _tiles()["sharp"] else (
@@ -234,6 +235,7 @@ def course_editor(mid):
     <div class="cm-hud-btns">
       <button type="button" class="ghost" id="cm-last" disabled>⌫ Delete last point</button>
       <button type="button" id="cm-done" disabled>✅ Finish course</button>
+      {water_btn}
     </div>
     <div class="cm-donemsg" id="cm-donemsg" hidden></div>
   </div>
@@ -245,7 +247,6 @@ def course_editor(mid):
     <button type="button" class="ghost" id="cm-delpt" disabled>✕ Delete point</button>
     <button type="button" class="ghost" id="cm-repeat" disabled title="Right-click the point where a loop starts, then repeat it">🔁 Repeat loop</button>
     <button type="button" class="ghost" id="cm-clear">Clear</button>
-    {water_btn}
     <label class="cm-check"><input type="checkbox" id="cm-smooth"> Smooth the route</label>
     <span style="flex:1"></span>
     <a class="btn ghost" id="cm-preview" target="_blank" rel="noopener" href="/r/{escape(m['public_token'])}/course">▶ Preview fly-over</a>
