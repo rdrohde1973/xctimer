@@ -31,7 +31,7 @@ from .ui import shell
 
 bp = Blueprint("coursemap", __name__)
 
-MAX_COURSES, MAX_POINTS, MAX_NAME = 6, 3000, 60
+MAX_COURSES, MAX_POINTS, MAX_NAME, MAX_WATER = 6, 3000, 60, 20
 _WORKER = "/static/vendor/maplibre/maplibre-gl-csp-worker.js"
 _DEM = "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png"
 
@@ -105,8 +105,19 @@ def has_course(m):
     return bool(d) and any(len(c.get("points") or []) >= 2 for c in d.get("courses", []))
 
 
-def clean(data):
-    """Validate a posted course document. Raises ValueError with a readable reason."""
+def _point(p):
+    try:
+        lng, lat = float(p[0]), float(p[1])
+    except (TypeError, ValueError, IndexError, KeyError):
+        raise ValueError("bad point")
+    if not (math.isfinite(lng) and math.isfinite(lat) and -180 <= lng <= 180 and -90 <= lat <= 90):
+        raise ValueError("point off the map")
+    return [round(lng, 7), round(lat, 7)]
+
+
+def clean(data, road=False):
+    """Validate a posted course document. Raises ValueError with a readable reason.
+    Water stations are a road-event thing: kept only when `road`, dropped otherwise."""
     if not isinstance(data, dict):
         raise ValueError("bad payload")
     courses = data.get("courses")
@@ -120,16 +131,14 @@ def clean(data):
         pts = c.get("points") or []
         if not isinstance(pts, list) or len(pts) > MAX_POINTS:
             raise ValueError(f"at most {MAX_POINTS} points per course")
-        good = []
-        for p in pts:
-            try:
-                lng, lat = float(p[0]), float(p[1])
-            except (TypeError, ValueError, IndexError):
-                raise ValueError("bad point")
-            if not (math.isfinite(lng) and math.isfinite(lat) and -180 <= lng <= 180 and -90 <= lat <= 90):
-                raise ValueError("point off the map")
-            good.append([round(lng, 7), round(lat, 7)])
-        out.append({"name": name, "points": good, "smooth": bool(c.get("smooth", True))})
+        good = [_point(p) for p in pts]
+        one = {"name": name, "points": good, "smooth": bool(c.get("smooth", True))}
+        water = c.get("water") or []
+        if road and water:
+            if not isinstance(water, list) or len(water) > MAX_WATER:
+                raise ValueError(f"at most {MAX_WATER} water stations per course")
+            one["water"] = [_point(w) for w in water]
+        out.append(one)
     view = None
     v = data.get("view")
     if isinstance(v, dict):
@@ -187,8 +196,13 @@ def course_editor(mid):
                 f'<h1>{escape(m["name"])}</h1>{_tabs(m)}'
                 '<div class="card muted">No course map yet — the host adds it here.</div>')
         return shell(g.principal, body, active="meets")
-    cfg = _config(save=f"/meets/{mid}/course", data=load_course(m),
+    cfg = _config(save=f"/meets/{mid}/course", data=load_course(m), road=(m["sport"] == "road"),
                   preview=f"/r/{m['public_token']}/course", meetName=m["name"])
+    water_btn = ('<button type="button" class="ghost" id="cm-water" title="Then click the course where the '
+                 'water station is">💧 Add water station</button>') if m["sport"] == "road" else ""
+    water_help = (" <b>💧 Water stations:</b> press <b>Add water station</b>, then click the course where it is — "
+                  "it snaps onto the route and pops up as the fly-over passes. Drag one to move it; click it to "
+                  "remove it.") if m["sport"] == "road" else ""
     sharp = "" if _tiles()["sharp"] else (
         '<div class="msg warn" style="margin:.4rem 0">Using public-domain USGS imagery, which '
         'goes blurry when you zoom in close. Adding a free Esri key makes it sharp.</div>')
@@ -231,6 +245,7 @@ def course_editor(mid):
     <button type="button" class="ghost" id="cm-delpt" disabled>✕ Delete point</button>
     <button type="button" class="ghost" id="cm-repeat" disabled title="Right-click the point where a loop starts, then repeat it">🔁 Repeat loop</button>
     <button type="button" class="ghost" id="cm-clear">Clear</button>
+    {water_btn}
     <label class="cm-check"><input type="checkbox" id="cm-smooth"> Smooth the route</label>
     <span style="flex:1"></span>
     <a class="btn ghost" id="cm-preview" target="_blank" rel="noopener" href="/r/{escape(m['public_token'])}/course">▶ Preview fly-over</a>
@@ -244,7 +259,7 @@ def course_editor(mid):
   (say, off the last lap to the finish), just click off the old line — more than 2 m away, a point
   goes exactly where you click. Or draw a loop once, <b>right-click</b> (or Shift-click) the point where it starts, and press
   <b>Repeat loop</b>. Right-click a point and press <b>Delete point</b> to remove it. Tick
-  <b>Smooth the route</b> once it's all in to round off the corners slightly — it keeps to the line you clicked.</p>
+  <b>Smooth the route</b> once it's all in to round off the corners slightly — it keeps to the line you clicked.{water_help}</p>
 </div>
 <script type="application/json" id="cm-config">{cfg}</script>
 <script src="/static/vendor/maplibre/maplibre-gl-csp.js"></script>
@@ -265,7 +280,7 @@ def course_save(mid):
     if len(raw) > 400_000:
         return jsonify(error="Course is too large to save."), 413
     try:
-        doc = clean(json.loads(raw or b"null"))
+        doc = clean(json.loads(raw or b"null"), road=(m["sport"] == "road"))
     except ValueError as e:
         return jsonify(error=f"Couldn't save the course: {e}."), 400
     conn = db.connect()
@@ -284,6 +299,9 @@ def course_view(token):
     if not has_course(m):
         abort(404)
     data["courses"] = [c for c in data["courses"] if len(c.get("points") or []) >= 2]
+    if m["sport"] != "road":
+        for c in data["courses"]:
+            c.pop("water", None)
     cfg = _config(data=data, results=f"/r/{token}", meetName=m["name"])
     html = f"""<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -301,6 +319,14 @@ def course_view(token):
 <div id="cv-chips" class="cv-chips"></div>
 <div id="cv-toast" class="cv-toast" aria-live="polite"></div>
 <footer class="cv-bottom">
+  <div id="cv-elev" class="cv-elev" hidden>
+    <div id="cv-elev-head" class="cv-elev-head"></div>
+    <div class="cv-elev-box">
+      <svg id="cv-elev-svg" viewBox="0 0 1000 60" preserveAspectRatio="none" aria-hidden="true"></svg>
+      <div id="cv-elev-tags"></div>
+      <div id="cv-elev-dot" class="cv-elev-dot" hidden></div>
+    </div>
+  </div>
   <div id="cv-stats" class="cv-stats"></div>
   <div class="cv-btns">
     <button type="button" id="cv-skip">Skip ⏭</button>

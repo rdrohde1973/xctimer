@@ -237,6 +237,63 @@
 
   // Blues, greens and purples, alternating so a loop's stripe always contrasts with the
   // loop underneath it; bright enough to read over grass and trees.
+  // ---------------------------------------------------------------- elevation
+  /* Terrarium elevation tiles (the same ones the 3D terrain uses) store metres in the
+   * pixel colour: (R * 256 + G + B / 256) - 32768. */
+  function terrarium(r, g, b) { return r * 256 + g + b / 256 - 32768; }
+
+  /* Web-Mercator position of [lng, lat] in whole-world pixels at zoom z (256 px tiles). */
+  function worldPx(p, z) {
+    var n = 256 * Math.pow(2, z), lat = Math.max(-85, Math.min(85, p[1])) * RAD;
+    return [(p[0] + 180) / 360 * n, (1 - Math.log(Math.tan(lat) + 1 / Math.cos(lat)) / Math.PI) / 2 * n];
+  }
+
+  /* The hills of a course from elevations (metres) at each sample:
+   *   gain  -- total climbing, ignoring wobbles under a metre (tile noise)
+   *   climb -- the biggest single climb {rise, from, to (metres along), grade}; a dip of
+   *            under 3 m on the way up doesn't end it
+   *   lo/hi -- lowest and highest points. */
+  function hills(elev, samples) {
+    var n = elev.length, out = { gain: 0, climb: null, lo: Infinity, hi: -Infinity };
+    if (n < 2) return out;
+    var e = elev.map(function (_, i) {          // +-15 m moving average: tiles are ~4 m pixels
+      var s = 0, k = 0;
+      for (var j = Math.max(0, i - 3); j <= Math.min(n - 1, i + 3); j++) { s += elev[j]; k++; }
+      return s / k;
+    });
+    var ref = e[0];
+    for (var i = 0; i < n; i++) {
+      out.lo = Math.min(out.lo, e[i]); out.hi = Math.max(out.hi, e[i]);
+      if (e[i] > ref + 1) { out.gain += e[i] - ref; ref = e[i]; }
+      else if (e[i] < ref - 1) ref = e[i];
+    }
+    var lo = 0, pk = 0;
+    function take() {
+      var rise = e[pk] - e[lo];
+      if (pk > lo && (!out.climb || rise > out.climb.rise)) {
+        var run = samples[pk].d - samples[lo].d;
+        out.climb = { rise: rise, from: samples[lo].d, to: samples[pk].d, grade: run ? rise / run : 0 };
+      }
+    }
+    for (var t = 1; t < n; t++) {
+      if (e[t] > e[pk]) pk = t;
+      if (e[pk] - e[t] > 3) { take(); lo = pk = t; }
+      else if (e[t] <= e[lo]) { lo = pk = t; }    // still level or lower: the climb hasn't begun
+    }
+    take();
+    return out;
+  }
+
+  /* How far along the route (metres) a spot is: the nearest sample's distance. */
+  function along(samples, p) {
+    var best = Infinity, d = 0;
+    for (var i = 0; i < samples.length; i++) {
+      var h = hav(samples[i].p, p);
+      if (h < best) { best = h; d = samples[i].d; }
+    }
+    return { d: d, off: best };
+  }
+
   var LAP_COLORS = ["#38bdf8", "#4ade80", "#a855f7", "#2563eb", "#10b981", "#e879f9"];
   function lapColor(n) { return LAP_COLORS[(Math.max(1, n) - 1) % LAP_COLORS.length]; }
   // Repeat loops ride on the same line, each a narrower stripe down the middle of the one
@@ -245,7 +302,8 @@
 
   var api = { hav: hav, length: length, dedupe: dedupe, smooth: smooth, resample: resample, passes: passes,
               pointAt: pointAt, bearing: bearing, mileMarks: mileMarks, runs: runs, follow: follow,
-              analyse: analyse, lapColor: lapColor, lapWidth: lapWidth, MILE: MILE };
+              analyse: analyse, lapColor: lapColor, lapWidth: lapWidth, MILE: MILE,
+              terrarium: terrarium, worldPx: worldPx, hills: hills, along: along };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   else root.CourseGeo = api;
 })(this);

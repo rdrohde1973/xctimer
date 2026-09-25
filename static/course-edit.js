@@ -10,6 +10,7 @@
     ? CFG.data : { version: 1, courses: [{ name: "Course", points: [], smooth: false }], view: null };
   var cur = 0, sel = -1, dirty = false, ready = false, lastMeters = 0;
   var plotting = false;       // clicking points in: the Finish flag waits for ✅ Finish course
+  var placingWater = false, waterMarkers = [];   // road events: 💧 water stations
   var ptMarkers = [], deco = [], history = [], justDragged = false;
 
   function course() { return doc.courses[cur]; }
@@ -69,6 +70,7 @@
   // ---------------------------------------------------------------- plotting
   map.on("click", function (e) {
     if (justDragged) return;
+    if (placingWater) { addWater([e.lngLat.lng, e.lngLat.lat]); return; }
     addPoint(near(e.point) || [r7(e.lngLat.lng), r7(e.lngLat.lat)]);
   });
   function addPoint(p) {
@@ -95,7 +97,7 @@
   // re-analysing the whole course on every mouse movement, which lagged on long courses.
   map.on("mousemove", function (e) {
     var pts = course().points;
-    if (!pts.length) return;
+    if (!pts.length || placingWater) return;
     var add = G.hav(pts[pts.length - 1], [e.lngLat.lng, e.lngLat.lat]);
     $("cm-sub").textContent = "Next point here → " + ((lastMeters + add) / G.MILE).toFixed(2) +
       " mi  (+" + Math.round(add * 3.28084) + " ft)";
@@ -127,6 +129,46 @@
         setTimeout(function () { justDragged = false; }, 50);   // swallow the click after a drag
       });
       return mk;
+    });
+  }
+
+  // ---------------------------------------------------------------- water stations (road)
+  // A station belongs ON the course, so a click within 40 m of the route snaps onto it.
+  function onRoute(p) {
+    if (!lastA || !lastA.samples.length) return [r7(p[0]), r7(p[1])];
+    var best = null, bd = 40;
+    lastA.samples.forEach(function (s) { var d = G.hav(s.p, p); if (d < bd) { bd = d; best = s.p; } });
+    var q = best || p;
+    return [r7(q[0]), r7(q[1])];
+  }
+  function addWater(p) {
+    snapshot();
+    course().water = (course().water || []).concat([onRoute(p)]);
+    placingWater = false;
+    changed();
+  }
+  function drawWater() {
+    waterMarkers.forEach(function (m) { m.remove(); });
+    waterMarkers = [];
+    if (!CFG.road) return;
+    (course().water || []).forEach(function (w, i) {
+      var el = flag("water edit", "💧", "Water");
+      el.title = "Water station — drag to move, click to remove";
+      el.addEventListener("click", function (ev) {
+        ev.stopPropagation();
+        if (justDragged) return;
+        if (!confirm("Remove this water station?")) return;
+        snapshot(); course().water.splice(i, 1); changed();
+      });
+      var mk = new maplibregl.Marker({ element: el, anchor: "bottom", draggable: true }).setLngLat(w).addTo(map);
+      mk.on("dragstart", function () { snapshot(); justDragged = true; });
+      mk.on("dragend", function () {
+        var ll = mk.getLngLat();
+        course().water[i] = onRoute([ll.lng, ll.lat]);
+        changed();
+        setTimeout(function () { justDragged = false; }, 50);
+      });
+      waterMarkers.push(mk);
     });
   }
 
@@ -181,14 +223,17 @@
       return line(r.coords, { color: G.lapColor(r.pass), width: G.lapWidth(r.pass, 5) });
     })));
     map.getSource("raw").setData(fc(c.smooth && c.points.length > 1 ? [line(c.points)] : []));
+    lastA = a;
     drawPoints();
     drawDeco(a);
+    drawWater();
     lastMeters = a.meters;
     hud(a);
     $("cm-stats").innerHTML = c.points.length < 2
       ? '<span class="muted">Find the course, then click the map at the start line to begin.</span>'
       : '<span><b>' + a.miles.toFixed(2) + '</b> mi</span><span><b>' + (a.meters / 1000).toFixed(2) + "</b> km</span>" +
         "<span>" + c.points.length + " points</span>" + (a.loops > 1 ? legend(a.loops) : "") +
+        ((c.water || []).length ? "<span>💧 " + c.water.length + " water</span>" : "") +
         (dirty ? '<span class="muted">· unsaved</span>' : "") + '';
     buttons();
   }
@@ -202,7 +247,8 @@
     var c = course();
     $("cm-mi").textContent = a.miles.toFixed(2);
     $("cm-km").textContent = (a.meters / 1000).toFixed(2) + " km";
-    $("cm-sub").textContent = !c.points.length ? "Click the start line to begin"
+    $("cm-sub").textContent = placingWater ? "💧 Click the course where the water station is (Esc to cancel)"
+      : !c.points.length ? "Click the start line to begin"
       : c.points.length === 1 ? "Start set — keep clicking along the course"
       : c.points.length + " points" + (a.loops > 1 ? " · " + a.loops + " loops" : "") +
         (dirty ? " · not saved yet" : " · saved");
@@ -217,6 +263,10 @@
     $("cm-undo").disabled = !history.length;
     $("cm-clear").disabled = !c.points.length;
     $("cm-smooth").checked = !!c.smooth;
+    if ($("cm-water")) {
+      $("cm-water").disabled = c.points.length < 2;
+      $("cm-water").classList.toggle("on", placingWater);
+    }
     $("cm-del").disabled = false;
     var s = $("cm-course");
     s.innerHTML = doc.courses.map(function (x, i) {
@@ -229,7 +279,8 @@
   function changed() { dirty = true; render(); }
   function esc(t) { var d = document.createElement("div"); d.textContent = t; return d.innerHTML; }
   function snapshot() {
-    history.push({ cur: cur, points: course().points.map(function (p) { return p.slice(); }), smooth: course().smooth });
+    history.push({ cur: cur, points: course().points.map(function (p) { return p.slice(); }), smooth: course().smooth,
+                   water: (course().water || []).map(function (p) { return p.slice(); }) });
     if (history.length > 200) history.shift();
   }
   function fit() {
@@ -245,6 +296,7 @@
     var h = history.pop();
     if (!h) return;
     cur = h.cur; doc.courses[cur].points = h.points; doc.courses[cur].smooth = h.smooth;
+    doc.courses[cur].water = h.water || [];
     sel = -1; changed();
   };
   $("cm-delpt").onclick = function () {
@@ -265,10 +317,11 @@
   };
   $("cm-clear").onclick = function () {
     if (!confirm("Clear every point on \"" + course().name + "\"?")) return;
-    snapshot(); course().points = []; sel = -1; changed();
+    snapshot(); course().points = []; course().water = []; sel = -1; changed();
   };
   $("cm-smooth").onchange = function () { snapshot(); course().smooth = this.checked; changed(); };
-  $("cm-course").onchange = function () { cur = +this.value; sel = -1; plotting = false; render(); fit(); };
+  $("cm-course").onchange = function () { cur = +this.value; sel = -1; plotting = false; placingWater = false; render(); fit(); };
+  if ($("cm-water")) $("cm-water").onclick = function () { placingWater = !placingWater; render(); };
   $("cm-add").onclick = function () {
     if (doc.courses.length >= 6) { alert("Six courses is the most one meet can have."); return; }
     var name = prompt("Name for the new course (e.g. Girls 2 mile):", "Course " + (doc.courses.length + 1));
@@ -335,7 +388,8 @@
   window.addEventListener("beforeunload", function (e) { if (dirty) { e.preventDefault(); e.returnValue = ""; } });
   document.addEventListener("keydown", function (e) {
     if (/INPUT|SELECT|TEXTAREA/.test((e.target && e.target.tagName) || "")) return;
-    if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z") { e.preventDefault(); $("cm-undo").click(); }
+    if (e.key === "Escape" && placingWater) { placingWater = false; render(); }
+    else if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z") { e.preventDefault(); $("cm-undo").click(); }
     else if (e.key === "Delete" || e.key === "Backspace") {
       e.preventDefault();
       if (sel >= 0) $("cm-delpt").click();       // a tapped point
