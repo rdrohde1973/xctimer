@@ -177,7 +177,18 @@ def course_editor(mid):
     <button type="button" class="ghost" id="cm-del">Delete course</button>
   </div>
 </div>
-<div id="cm-map" class="cm-map"></div>
+<div class="cm-wrap">
+  <div id="cm-map" class="cm-map"></div>
+  <div class="cm-hud" aria-live="polite">
+    <div class="cm-dist"><b id="cm-mi">0.00</b> mi <span id="cm-km">0.00 km</span></div>
+    <div class="cm-sub" id="cm-sub">Click the start line to begin</div>
+    <div class="cm-hud-btns">
+      <button type="button" class="ghost" id="cm-last" disabled>⌫ Delete last point</button>
+      <button type="button" id="cm-done" disabled>✅ Finish course</button>
+    </div>
+    <div class="cm-donemsg" id="cm-donemsg" hidden></div>
+  </div>
+</div>
 <div class="card cm-bar">
   <div class="cm-stats" id="cm-stats"></div>
   <div class="cm-row">
@@ -190,8 +201,10 @@ def course_editor(mid):
     <a class="btn ghost" id="cm-preview" target="_blank" rel="noopener" href="/r/{escape(m['public_token'])}/course">▶ Preview fly-over</a>
     <button type="button" id="cm-save">💾 Save</button>
   </div>
-  <p class="muted cm-help">Click the map to drop points along the course, from the start line to the
-  finish. Drag a point to move it; tap one and press <b>Delete point</b> to remove it. When the route
+  <p class="muted cm-help"><b>1.</b> Find the course. <b>2.</b> Click along it from the start line to the
+  finish — the running distance shows in the corner of the map, and <b>⌫ Delete last point</b> (or
+  Backspace) takes back a click. <b>3.</b> Press <b>✅ Finish course</b>: it smooths the route and saves it.
+  Drag a point to move it; tap one and press <b>Delete point</b> to remove it. When the route
   goes back over ground it already covered, that loop turns a new colour automatically. <b>Same loop
   twice?</b> Draw it once, tap the point where the loop starts, and press <b>Repeat loop</b>. Tick
   <b>Smooth the route</b> once it's all in to round off the corners — it still passes through every point.</p>

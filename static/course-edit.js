@@ -8,7 +8,7 @@
 
   var doc = (CFG.data && Array.isArray(CFG.data.courses) && CFG.data.courses.length)
     ? CFG.data : { version: 1, courses: [{ name: "Course", points: [], smooth: false }], view: null };
-  var cur = 0, sel = -1, dirty = false, ready = false;
+  var cur = 0, sel = -1, dirty = false, ready = false, lastMeters = 0;
   var ptMarkers = [], deco = [], history = [], justDragged = false;
 
   function course() { return doc.courses[cur]; }
@@ -64,14 +64,16 @@
     sel = -1;
     changed();
   });
+  // Where the next click would put you. Uses the distance from the last redraw rather than
+  // re-analysing the whole course on every mouse movement, which lagged on long courses.
   map.on("mousemove", function (e) {
-    var pts = course().points, el = $("cm-live");
-    if (!el) return;
-    if (!pts.length) { el.textContent = ""; return; }
-    var a = G.analyse(pts, false);
+    var pts = course().points;
+    if (!pts.length) return;
     var add = G.hav(pts[pts.length - 1], [e.lngLat.lng, e.lngLat.lat]);
-    el.textContent = "Next point here: " + ((a.meters + add) / G.MILE).toFixed(2) + " mi (+" + Math.round(add) + " m)";
+    $("cm-sub").textContent = "Next point here → " + ((lastMeters + add) / G.MILE).toFixed(2) +
+      " mi  (+" + Math.round(add * 3.28084) + " ft)";
   });
+  map.getCanvasContainer().addEventListener("mouseleave", function () { hud(); });
 
   function drawPoints() {
     ptMarkers.forEach(function (m) { m.remove(); });
@@ -148,12 +150,31 @@
     map.getSource("raw").setData(fc(c.smooth && c.points.length > 1 ? [line(c.points)] : []));
     drawPoints();
     drawDeco(a);
+    lastMeters = a.meters;
+    hud(a);
     $("cm-stats").innerHTML = c.points.length < 2
-      ? '<span class="muted">Find the course, then click the map at the start line to begin.</span><span class="muted" id="cm-live"></span>'
+      ? '<span class="muted">Find the course, then click the map at the start line to begin.</span>'
       : '<span><b>' + a.miles.toFixed(2) + '</b> mi</span><span><b>' + (a.meters / 1000).toFixed(2) + "</b> km</span>" +
         "<span>" + c.points.length + " points</span>" + (a.loops > 1 ? legend(a.loops) : "") +
-        (dirty ? '<span class="muted">· unsaved</span>' : "") + '<span class="muted" id="cm-live"></span>';
+        (dirty ? '<span class="muted">· unsaved</span>' : "") + '';
     buttons();
+  }
+
+  // The panel on the map: running distance, points, and the two buttons used most.
+  var lastA = null;
+  function hud(a) {
+    a = a || lastA;
+    if (!a) return;
+    lastA = a;
+    var c = course();
+    $("cm-mi").textContent = a.miles.toFixed(2);
+    $("cm-km").textContent = (a.meters / 1000).toFixed(2) + " km";
+    $("cm-sub").textContent = !c.points.length ? "Click the start line to begin"
+      : c.points.length === 1 ? "Start set — keep clicking along the course"
+      : c.points.length + " points" + (a.loops > 1 ? " · " + a.loops + " loops" : "") +
+        (dirty ? " · not saved yet" : " · saved");
+    $("cm-last").disabled = !c.points.length;
+    $("cm-done").disabled = c.points.length < 2;
   }
 
   function buttons() {
@@ -173,6 +194,7 @@
   }
 
   function changed() { dirty = true; render(); }
+  function esc(t) { var d = document.createElement("div"); d.textContent = t; return d.innerHTML; }
   function snapshot() {
     history.push({ cur: cur, points: course().points.map(function (p) { return p.slice(); }), smooth: course().smooth });
     if (history.length > 200) history.shift();
@@ -232,17 +254,44 @@
     else { doc.courses.splice(cur, 1); cur = 0; }
     history = []; sel = -1; changed();
   };
-  $("cm-save").onclick = async function () {
+  async function save() {
     var c = map.getCenter();
     doc.view = { center: [r7(c.lng), r7(c.lat)], zoom: Math.round(map.getZoom() * 100) / 100 };
-    var btn = this;
-    btn.disabled = true;
     try {
       await jpost(CFG.save, doc);
       dirty = false; render();
+      return true;
+    } catch (e) { alert(e.message); return false; }
+  }
+  $("cm-save").onclick = async function () {
+    var btn = this;
+    btn.disabled = true;
+    if (await save()) {
       btn.textContent = "✓ Saved";
       setTimeout(function () { btn.textContent = "💾 Save"; }, 1800);
-    } catch (e) { alert(e.message); }
+    }
+    btn.disabled = false;
+  };
+  $("cm-last").onclick = function () {
+    var pts = course().points;
+    if (!pts.length) return;
+    snapshot(); pts.pop(); sel = -1; changed();
+    $("cm-donemsg").hidden = true;
+  };
+  // "I'm done": smooth the route and save it, then say where spectators will see it.
+  $("cm-done").onclick = async function () {
+    var c = course();
+    if (c.points.length < 2) return;
+    var btn = this;
+    btn.disabled = true;
+    if (!c.smooth) { snapshot(); c.smooth = true; changed(); }
+    if (await save()) {
+      var m = $("cm-donemsg");
+      m.innerHTML = "✓ <b>" + esc(c.name) + "</b> is saved — " + lastA.miles.toFixed(2) +
+        " mi. Spectators see it on the results page. <a href=\"" + CFG.preview +
+        "\" target=\"_blank\" rel=\"noopener\">▶ Watch the fly-over</a>";
+      m.hidden = false;
+    }
     btn.disabled = false;
   };
   $("cm-preview").onclick = function (e) {
@@ -252,7 +301,11 @@
   document.addEventListener("keydown", function (e) {
     if (/INPUT|SELECT|TEXTAREA/.test((e.target && e.target.tagName) || "")) return;
     if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z") { e.preventDefault(); $("cm-undo").click(); }
-    else if ((e.key === "Delete" || e.key === "Backspace") && sel >= 0) { e.preventDefault(); $("cm-delpt").click(); }
+    else if (e.key === "Delete" || e.key === "Backspace") {
+      e.preventDefault();
+      if (sel >= 0) $("cm-delpt").click();       // a tapped point
+      else $("cm-last").click();                 // otherwise the last click
+    }
   });
 
   // ---------------------------------------------------------------- finding the course

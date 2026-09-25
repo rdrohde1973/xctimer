@@ -23,8 +23,19 @@
 .cm-row select{max-width:16rem}
 .cm-check{display:flex;gap:.4rem;align-items:center;font-weight:600;white-space:nowrap}
 .cm-check input{width:auto}
-.cm-map{height:62vh;min-height:360px;border-radius:12px;overflow:hidden;margin:.6rem 0;
-  border:1px solid var(--line)}
+.cm-wrap{position:relative;margin:.6rem 0}
+.cm-map{height:62vh;min-height:360px;border-radius:12px;overflow:hidden;border:1px solid var(--line)}
+.cm-hud{position:absolute;top:10px;left:10px;z-index:2;max-width:min(300px,calc(100% - 70px));
+  background:rgba(10,23,40,.9);color:#fff;border-radius:12px;padding:.65rem .8rem;
+  box-shadow:0 4px 16px rgba(0,0,0,.4);display:flex;flex-direction:column;gap:.35rem}
+.cm-dist{font-size:.95rem;font-weight:700;line-height:1}
+.cm-dist b{font-size:2rem;font-variant-numeric:tabular-nums}
+.cm-dist span{color:#9fb3c8;font-weight:600;margin-left:.3rem}
+.cm-sub{font-size:.85rem;color:#c9d7e6;min-height:1.1em}
+.cm-hud-btns{display:flex;gap:.4rem;flex-wrap:wrap}
+.cm-hud-btns button{padding:.45rem .7rem;font-size:.88rem}
+.cm-donemsg{font-size:.85rem;color:#b9f5cf;line-height:1.4}
+.cm-donemsg a{color:#fff;font-weight:700}
 .cm-map .maplibregl-canvas{cursor:crosshair}
 .cm-stats{display:flex;gap:1.2rem;flex-wrap:wrap;align-items:baseline;font-size:.95rem}
 .cm-stats b{font-size:1.25rem}

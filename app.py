@@ -26,7 +26,7 @@ from .waivers import bp as waivers_bp
 from .road import bp as road_bp
 from .coursemap import bp as coursemap_bp
 
-APP_VERSION = "1.98.0-course-maps"
+APP_VERSION = "1.98.1-course-map-finish"
 
 LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width, initial-scale=1">
