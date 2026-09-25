@@ -676,6 +676,7 @@ def _xc_tabs(mid, active, road=False, organizer=False):
             + mid_tab
             + tab(f"/meets/{mid}/xc-day", "🏁 Race day", "meetday")
             + tab(f"/meets/{mid}/results", "📊 Results", "results")
+            + tab(f"/meets/{mid}/course", "🗺 Course", "course")
             + '</div>')
 
 
@@ -1848,6 +1849,15 @@ def results_page(mid):
     return shell(g.principal, body, active="meets")
 
 
+def _course_button(m):
+    """The public results page's way in to the course map -- only once a host has drawn one."""
+    from .coursemap import has_course
+    if not has_course(m):
+        return ""
+    return (f'<a class="xls" style="background:#e8622a" href="/r/{escape(m["public_token"])}/course">'
+            f'🗺 Course map</a>')
+
+
 def _meet_by_token(token):
     conn = db.connect()
     m = conn.execute("SELECT * FROM meets WHERE public_token=?", (token,)).fetchone()
@@ -2158,6 +2168,7 @@ def _public_xc(m, mode):
   <div style="display:flex;align-items:center;gap:.8rem">{_host_logo_tag(m)}
     <div><div class="mt">{escape(m['name'])} — Combined</div><div class="sub">{sub}</div></div>
   </div>
+  {_course_button(m)}
 </div>
 <main>
   <div id="livebox"></div>
@@ -2364,6 +2375,7 @@ def _public_road(m, mode):
   <div style="display:flex;align-items:center;gap:.8rem">{_host_logo_tag(m)}
     <div><div class="mt">🛣 {escape(m['name'])}</div><div class="sub">{sub}</div></div>
   </div>
+  {_course_button(m)}
 </div>
 <main>
   <div id="livebox"></div>

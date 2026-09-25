@@ -24,8 +24,9 @@ from .insights import bp as insights_bp
 from .phone import bp as phone_bp
 from .waivers import bp as waivers_bp
 from .road import bp as road_bp
+from .coursemap import bp as coursemap_bp
 
-APP_VERSION = "1.97.1-infer-gender"
+APP_VERSION = "1.98.0-course-maps"
 
 LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width, initial-scale=1">
@@ -504,7 +505,7 @@ def create_app():
     app.before_request(auth.demo_readonly_guard)
 
     for bp in (auth_bp, tenancy_bp, schools_bp, meets_bp, xc_bp, track_bp,
-               admin_bp, insights_bp, phone_bp, waivers_bp, road_bp):
+               admin_bp, insights_bp, phone_bp, waivers_bp, road_bp, coursemap_bp):
         app.register_blueprint(bp)
 
     # --- CSRF protection (double-submit cookie), compliance Phase 2 ---

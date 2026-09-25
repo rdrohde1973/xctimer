@@ -1,0 +1,80 @@
+/* XCTimer course maps — editor (.cm-*) and spectator fly-over (.cv-*). */
+
+/* ---------- shared map furniture ---------- */
+/* Flags and mile badges are labels: clicks go straight through them to the map or to a
+   point underneath -- a finish flag sitting on the loop's first point mustn't block it. */
+.cflag,.cmile{pointer-events:none}
+.cflag{display:flex;align-items:center;gap:.3rem;padding:.28rem .55rem;border-radius:999px;
+  background:#fff;color:#12385f;font:800 .8rem/1 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;
+  box-shadow:0 2px 8px rgba(0,0,0,.35);white-space:nowrap;transform:translateY(-6px)}
+.cflag.start{border:2px solid #16a34a}
+.cflag.finish{border:2px solid #111}
+.cflag .fi{font-size:1rem}
+.cmile{padding:.18rem .45rem;border-radius:7px;background:#12385f;color:#fff;
+  font:800 .72rem/1 system-ui,-apple-system,Segoe UI,Roboto,sans-serif;border:2px solid #fff;
+  box-shadow:0 1px 5px rgba(0,0,0,.4);transition:transform .35s cubic-bezier(.2,1.6,.4,1),background .35s}
+.cmile.hit{transform:scale(1.6);background:#e8622a}
+.maplibregl-ctrl-attrib{font-size:10px}
+
+/* ---------- editor ---------- */
+.cm-bar{display:flex;flex-direction:column;gap:.55rem}
+.cm-row{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap}
+.cm-row input[type=text],.cm-row #cm-q{flex:1;min-width:14rem}
+.cm-row select{max-width:16rem}
+.cm-check{display:flex;gap:.4rem;align-items:center;font-weight:600;white-space:nowrap}
+.cm-check input{width:auto}
+.cm-map{height:62vh;min-height:360px;border-radius:12px;overflow:hidden;margin:.6rem 0;
+  border:1px solid var(--line)}
+.cm-map .maplibregl-canvas{cursor:crosshair}
+.cm-stats{display:flex;gap:1.2rem;flex-wrap:wrap;align-items:baseline;font-size:.95rem}
+.cm-stats b{font-size:1.25rem}
+.cm-help{margin:0;font-size:.85rem;line-height:1.45}
+.cm-pt{width:13px;height:13px;border-radius:50%;background:#fff;border:3px solid #12385f;
+  box-shadow:0 1px 4px rgba(0,0,0,.5);cursor:grab}
+.cm-pt.sel{background:#e8622a;border-color:#fff;width:17px;height:17px}
+.cm-legend{display:inline-flex;gap:.6rem;flex-wrap:wrap}
+.cm-legend span{display:inline-flex;align-items:center;gap:.3rem;font-size:.85rem}
+.cm-legend i{width:18px;height:5px;border-radius:3px;display:inline-block}
+.cm-saved{color:var(--ok);font-weight:700}
+
+/* ---------- spectator fly-over (mobile first) ---------- */
+html,body.cv{height:100%;margin:0;background:#0a1728;overflow:hidden;
+  font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+#cv-map{position:absolute;inset:0;background:linear-gradient(#7fb6e6,#cfe6f7)}
+.cv-top{position:absolute;left:0;right:0;top:0;display:flex;align-items:center;gap:.8rem;
+  padding:calc(.7rem + env(safe-area-inset-top)) 1rem 1.6rem;color:#fff;
+  background:linear-gradient(rgba(10,23,40,.85),rgba(10,23,40,0));pointer-events:none}
+.cv-top a,.cv-top button{pointer-events:auto}
+.cv-back{color:#fff;text-decoration:none;font-weight:700;background:rgba(255,255,255,.16);
+  padding:.4rem .7rem;border-radius:9px;white-space:nowrap}
+.cv-title{font-weight:800;font-size:1.05rem;line-height:1.2;text-shadow:0 1px 3px rgba(0,0,0,.6)}
+.cv-title small{display:block;font-weight:600;font-size:.8rem;opacity:.9}
+.cv-chips{position:absolute;top:calc(4.2rem + env(safe-area-inset-top));left:0;right:0;
+  display:flex;gap:.4rem;justify-content:center;flex-wrap:wrap;padding:0 .8rem}
+.cv-chips button{border:0;border-radius:999px;padding:.4rem .8rem;font-weight:700;
+  background:rgba(255,255,255,.85);color:#12385f}
+.cv-chips button.on{background:#e8622a;color:#fff}
+.cv-toast{position:absolute;left:50%;top:32%;transform:translate(-50%,-50%) scale(.8);opacity:0;
+  background:rgba(10,23,40,.88);color:#fff;font-weight:800;font-size:1.5rem;padding:.6rem 1.2rem;
+  border-radius:14px;transition:opacity .3s,transform .3s;pointer-events:none;white-space:nowrap}
+.cv-toast.on{opacity:1;transform:translate(-50%,-50%) scale(1)}
+.cv-bottom{position:absolute;left:0;right:0;bottom:0;display:flex;gap:.6rem;align-items:flex-end;
+  justify-content:space-between;flex-wrap:wrap;
+  padding:1.6rem 1rem calc(.8rem + env(safe-area-inset-bottom));color:#fff;
+  background:linear-gradient(rgba(10,23,40,0),rgba(10,23,40,.85));pointer-events:none}
+.cv-bottom button{pointer-events:auto;border:0;border-radius:10px;padding:.6rem 1rem;font-weight:800;
+  background:#e8622a;color:#fff;font-size:.95rem}
+.cv-stats{font-weight:700;text-shadow:0 1px 3px rgba(0,0,0,.6);line-height:1.4}
+.cv-stats b{font-size:1.4rem}
+.cv-stats .cm-legend span{font-size:.8rem}
+.cv-head{width:16px;height:16px;border-radius:50%;background:#ffd400;border:3px solid #fff;
+  box-shadow:0 0 0 6px rgba(255,212,0,.35),0 2px 6px rgba(0,0,0,.5);
+  transition:background .8s,box-shadow .8s}
+.cv-loading{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;
+  justify-content:center;gap:.9rem;background:#0a1728;color:#fff;font-weight:800;font-size:1.05rem;z-index:5}
+.cv-loading[hidden]{display:none}
+.cv-spin{width:42px;height:42px;border-radius:50%;border:4px solid rgba(255,255,255,.2);
+  border-top-color:#e8622a;animation:cvspin .9s linear infinite}
+@keyframes cvspin{to{transform:rotate(360deg)}}
+#cv-confetti{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:50}
+.maplibregl-ctrl-bottom-right,.maplibregl-ctrl-bottom-left{margin-bottom:5.2rem}

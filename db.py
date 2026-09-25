@@ -482,6 +482,10 @@ def migrate(conn):
     if "age_brackets" not in rcols:      # road events: per-event age-group override (JSON list)
         conn.execute("ALTER TABLE races ADD COLUMN age_brackets TEXT")
 
+    if "course_json" not in _column_names(conn, "meets"):
+        # Course map: the points the host clicked, per course. Everything else --
+        # smoothing, distance, loops, mile marks -- is derived in static/course.js.
+        conn.execute("ALTER TABLE meets ADD COLUMN course_json TEXT")
     if "shirt_size" not in _column_names(conn, "athletes"):
         # Free text on purpose: rosters write "YM", "Youth M", "Adult Small", "AS"...
         conn.execute("ALTER TABLE athletes ADD COLUMN shirt_size TEXT")

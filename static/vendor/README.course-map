@@ -1,0 +1,3 @@
+maplibre-gl 4.7.1 (BSD-3-Clause) and canvas-confetti 1.9.3 (ISC), vendored 2026-09-25 so the
+course-map pages load them from this origin under the strict CSP. Refresh by re-downloading
+the same files from cdn.jsdelivr.net/npm/<pkg>@<version>/dist/.
