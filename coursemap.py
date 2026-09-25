@@ -240,8 +240,9 @@ def course_editor(mid):
   finish — the running distance shows in the corner of the map, and <b>⌫ Delete last point</b> (or
   Backspace) takes back a click. <b>3.</b> Press <b>✅ Finish course</b>: it smooths the route and saves it.
   Drag a point to move it. <b>Going round again?</b> Click the dots from the last loop — the new
-  point lands right on them, and a loop over ground already covered follows the same line in a new
-  colour. Or draw a loop once, <b>right-click</b> (or Shift-click) the point where it starts, and press
+  point lands right on them and that loop draws on the same line in a new colour. To break away
+  (say, off the last lap to the finish), just click off the old line — more than 2 m away, a point
+  goes exactly where you click. Or draw a loop once, <b>right-click</b> (or Shift-click) the point where it starts, and press
   <b>Repeat loop</b>. Right-click a point and press <b>Delete point</b> to remove it. Tick
   <b>Smooth the route</b> once it's all in to round off the corners slightly — it keeps to the line you clicked.</p>
 </div>

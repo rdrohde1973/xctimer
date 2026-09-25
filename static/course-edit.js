@@ -81,11 +81,12 @@
     $("cm-donemsg").hidden = true;
     changed();
   }
-  // A click just beside an existing dot means that dot: a second loop lands exactly on the first.
+  // A click within 2 m of an existing dot means that dot, so a repeat loop lands exactly on
+  // the old one. Any further off is a free point -- that's how you break away from a loop.
   function near(px) {
-    var best = null, bd = 12;
+    var ll = map.unproject(px), at = [ll.lng, ll.lat], best = null, bd = 2;
     course().points.forEach(function (p) {
-      var q = map.project(p), d = Math.hypot(q.x - px.x, q.y - px.y);
+      var d = G.hav(p, at);
       if (d < bd) { bd = d; best = p; }
     });
     return best;

@@ -91,24 +91,33 @@
     return out;
   }
 
+  // Closest point to p on the segment a-b (flat x/y metres), and the distance to it.
+  function nearestOnSeg(p, a, b) {
+    var ux = b[0] - a[0], uy = b[1] - a[1], L = ux * ux + uy * uy;
+    var t = L ? Math.max(0, Math.min(1, ((p[0] - a[0]) * ux + (p[1] - a[1]) * uy) / L)) : 0;
+    return [a[0] + ux * t, a[1] + uy * t];
+  }
+  function segDist(p, a, b) { var q = nearestOnSeg(p, a, b); return Math.hypot(p[0] - q[0], p[1] - q[1]); }
+
   /* Which lap of the ground under each sample is this? 1 = first time over it, 2 = the
    * second time (a repeat loop), and so on. A sample counts the separate earlier visits
-   * within RADIUS metres, ignoring the stretch just behind it. Short brushes -- crossing
+   * of the route within RADIUS metres of it, ignoring the stretch just behind it. Short brushes -- crossing
    * an earlier path, a start line near the finish chute -- are shorter than MIN_RUN and
    * don't count as a new loop. */
   function passes(samples, radius, minRun) {
-    // 25 m: a lap drawn by hand lands within a few metres of the first on a zoomed-in map,
-    // but can drift 15-20 m when the host clicks from further out.
-    radius = radius || 25;
+    // 4 m: a repeat loop is plotted by clicking the earlier loop's dots, so it lies right on
+    // top of it. Anything further off is the host deliberately going somewhere new -- e.g.
+    // breaking off the last lap for the finish -- and is new ground, not a repeat.
+    radius = radius || 4;
     minRun = minRun || 80;
     var gap = 150, n = samples.length, raw = new Array(n);
     var pr = n ? projector(samples[0].p) : null;
     var xy = samples.map(function (s) { return pr.fwd(s.p); });
     for (var i = 0; i < n; i++) {
       var visits = 0, lastHit = -1e9;
-      for (var j = 0; j < i; j++) {
-        if (samples[j].d > samples[i].d - gap) break;
-        if (Math.hypot(xy[i][0] - xy[j][0], xy[i][1] - xy[j][1]) <= radius) {
+      for (var j = 0; j + 1 < i; j++) {
+        if (samples[j + 1].d > samples[i].d - gap) break;
+        if (segDist(xy[i], xy[j], xy[j + 1]) <= radius) {
           if (samples[j].d - lastHit > gap) visits++;
           lastHit = samples[j].d;
         }
@@ -129,13 +138,13 @@
     return out;
   }
 
-  /* A repeat loop is the same trail, but hand clicks land a few metres off it. Pull every
-   * repeat-pass sample onto the nearest earlier stretch of the route (fully within SNAP
-   * metres, easing off out to the lap radius) so loop 2 draws right on top of loop 1
-   * instead of wandering beside it. Distances stay as plotted; only the drawing moves. */
+  /* Pull repeat-pass samples that are within SNAP (2 m) of an earlier stretch of the route
+   * right onto it, so loop 2 draws exactly on top of loop 1. Anything further off is drawn
+   * exactly where it was clicked -- the host can always break away from an old loop.
+   * Distances stay as plotted; only the drawing moves. */
   function follow(samples, laps, snap, radius) {
-    snap = snap || 20;
-    radius = radius || 25;
+    snap = snap || 2;
+    radius = radius || 2.5;
     var gap = 150, n = samples.length;
     if (n < 3) return samples;
     var pr = projector(samples[0].p);
@@ -146,12 +155,9 @@
       var best = Infinity, bx = 0, by = 0;
       for (var j = 0; j + 1 < n; j++) {
         if (samples[j + 1].d > samples[i].d - gap) break;
-        var ax = xy[j][0], ay = xy[j][1], ux = xy[j + 1][0] - ax, uy = xy[j + 1][1] - ay;
-        var L = ux * ux + uy * uy;
-        var t = L ? Math.max(0, Math.min(1, ((xy[i][0] - ax) * ux + (xy[i][1] - ay) * uy) / L)) : 0;
-        var qx = ax + ux * t, qy = ay + uy * t;
-        var dd = Math.hypot(xy[i][0] - qx, xy[i][1] - qy);
-        if (dd < best) { best = dd; bx = qx; by = qy; }
+        var q = nearestOnSeg(xy[i], xy[j], xy[j + 1]);
+        var dd = Math.hypot(xy[i][0] - q[0], xy[i][1] - q[1]);
+        if (dd < best) { best = dd; bx = q[0]; by = q[1]; }
       }
       if (best > radius) continue;
       var w = best <= snap ? 1 : (radius - best) / (radius - snap);
