@@ -48,7 +48,7 @@
             paint: { "line-color": ["get", "color"], "line-width": ["+", ["get", "width"], 14],
                      "line-blur": 9, "line-opacity": 0.5 } },
           { id: "route-casing", type: "line", source: "route", layout: lineLayout,
-            paint: { "line-color": "#0a1728", "line-width": 9, "line-opacity": 0.5 } },
+            paint: { "line-color": "#0a1728", "line-width": 11, "line-opacity": 0.5 } },
           { id: "route", type: "line", source: "route", layout: lineLayout,
             paint: { "line-color": ["get", "color"], "line-width": ["get", "width"] } },
           // The comet: the last stretch behind the dot, fading in to bright white at the dot.
@@ -194,7 +194,7 @@
 
   function setRoute(upto) {
     map.getSource("route").setData(fc(G.runs(A.samples, A.laps, upto, A.loop).map(function (r) {
-      return line(r.coords, { color: G.lapColor(r.loop), width: G.lapWidth(r.pass, 6) });
+      return line(r.coords, { color: G.lapColor(r.loop), width: G.lapWidth(r.pass, 8) });
     })));
   }
 

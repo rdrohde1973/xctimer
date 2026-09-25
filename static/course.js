@@ -304,7 +304,9 @@
   function lapColor(n) { return LAP_COLORS[(Math.max(1, n) - 1) % LAP_COLORS.length]; }
   // Repeat loops ride on the same line, each a narrower stripe down the middle of the one
   // before, so every loop's colour still shows without drawing a second trail beside it.
-  function lapWidth(n, base) { return Math.max(1.5, base * Math.pow(0.55, Math.max(1, n) - 1)); }
+  // Each loop is half the width of the one under it, so a good edge of the loop below
+  // shows on both sides (at 0.55 it was hard to see).
+  function lapWidth(n, base) { return Math.max(1.5, base * Math.pow(0.5, Math.max(1, n) - 1)); }
 
   var api = { hav: hav, length: length, dedupe: dedupe, smooth: smooth, resample: resample, passes: passes,
               pointAt: pointAt, bearing: bearing, mileMarks: mileMarks, runs: runs, follow: follow,

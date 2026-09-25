@@ -36,7 +36,7 @@
           { id: "raw", type: "line", source: "raw", layout: lineLayout,
             paint: { "line-color": "#ffffff", "line-width": 1.5, "line-opacity": 0.75, "line-dasharray": [2, 2] } },
           { id: "route-casing", type: "line", source: "route", layout: lineLayout,
-            paint: { "line-color": "#0a1728", "line-width": 8, "line-opacity": 0.55 } },
+            paint: { "line-color": "#0a1728", "line-width": 10, "line-opacity": 0.55 } },
           { id: "route", type: "line", source: "route", layout: lineLayout,
             paint: { "line-color": ["get", "color"], "line-width": ["get", "width"] } }
         ]
@@ -220,7 +220,7 @@
     var runs = G.runs(a.samples, a.laps, null, a.loop);
     map.getSource("route").setData(fc(runs.map(function (r) {
       // Repeat loops sit on the first loop's line, a narrower stripe in their own colour.
-      return line(r.coords, { color: G.lapColor(r.loop), width: G.lapWidth(r.pass, 5) });
+      return line(r.coords, { color: G.lapColor(r.loop), width: G.lapWidth(r.pass, 7) });
     })));
     map.getSource("raw").setData(fc(c.smooth && c.points.length > 1 ? [line(c.points)] : []));
     lastA = a;
