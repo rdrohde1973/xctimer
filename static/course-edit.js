@@ -217,10 +217,10 @@
   function render() {
     if (!ready) return;
     var c = course(), a = G.analyse(c.points, c.smooth);
-    var runs = G.runs(a.samples, a.laps);
+    var runs = G.runs(a.samples, a.laps, null, a.loop);
     map.getSource("route").setData(fc(runs.map(function (r) {
       // Repeat loops sit on the first loop's line, a narrower stripe in their own colour.
-      return line(r.coords, { color: G.lapColor(r.pass), width: G.lapWidth(r.pass, 5) });
+      return line(r.coords, { color: G.lapColor(r.loop), width: G.lapWidth(r.pass, 5) });
     })));
     map.getSource("raw").setData(fc(c.smooth && c.points.length > 1 ? [line(c.points)] : []));
     lastA = a;

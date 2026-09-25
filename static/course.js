@@ -195,11 +195,16 @@
     return out;
   }
 
-  /* Split a route into runs of the same lap, for colouring:
-   * [{pass:1, coords:[[lng,lat],...], d0, d1}, ...]. Runs share their joining point so
-   * the drawn line has no gaps. Optional `upto` cuts the route at that distance (the
-   * fly-over draws it progressively). */
-  function runs(samples, laps, upto) {
+  /* Split a route into runs for drawing:
+   * [{pass:2, loop:2, coords:[[lng,lat],...], d0, d1}, ...].
+   *   pass -- how many times this ground has been covered (sets the stripe width: a repeat
+   *           loop is a narrower stripe down the middle of the one under it)
+   *   loop -- which loop the runner is on (sets the colour; never goes back down, so the
+   *           run to the finish after loop 2 stays loop 2's colour even on new ground)
+   * Runs share their joining point so the drawn line has no gaps. Optional `upto` cuts
+   * the route at that distance (the fly-over draws it progressively). */
+  function runs(samples, laps, upto, loop) {
+    loop = loop || laps;
     var out = [], cur = null;
     for (var i = 0; i < samples.length; i++) {
       var s = samples[i];
@@ -207,9 +212,9 @@
         if (cur && i > 0) cur.coords.push(pointAt(samples, upto).p);
         break;
       }
-      if (!cur || laps[i] !== cur.pass) {
+      if (!cur || laps[i] !== cur.pass || loop[i] !== cur.loop) {
         var join = cur ? cur.coords[cur.coords.length - 1] : null;
-        cur = { pass: laps[i], coords: join ? [join] : [], d0: s.d, d1: s.d };
+        cur = { pass: laps[i], loop: loop[i], coords: join ? [join] : [], d0: s.d, d1: s.d };
         out.push(cur);
       }
       cur.coords.push(s.p);
@@ -225,9 +230,10 @@
     var laps = samples.length ? passes(samples) : [];
     samples = follow(samples, laps);
     var loops = laps.reduce(function (m, x) { return Math.max(m, x); }, 0);
+    var hi = 1, loop = laps.map(function (x) { hi = Math.max(hi, x); return hi; });   // loop the runner is on
     if (loops > 1) path = samples.map(function (s) { return s.p; });   // the line as drawn
     return {
-      path: path, samples: samples, laps: laps, loops: loops,
+      path: path, samples: samples, laps: laps, loop: loop, loops: loops,
       meters: samples.length ? samples[samples.length - 1].d : 0,
       miles: (samples.length ? samples[samples.length - 1].d : 0) / MILE,
       marks: mileMarks(samples),

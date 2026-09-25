@@ -193,8 +193,8 @@
   }
 
   function setRoute(upto) {
-    map.getSource("route").setData(fc(G.runs(A.samples, A.laps, upto).map(function (r) {
-      return line(r.coords, { color: G.lapColor(r.pass), width: G.lapWidth(r.pass, 6) });
+    map.getSource("route").setData(fc(G.runs(A.samples, A.laps, upto, A.loop).map(function (r) {
+      return line(r.coords, { color: G.lapColor(r.loop), width: G.lapWidth(r.pass, 6) });
     })));
   }
 
@@ -373,7 +373,7 @@
           toast("💧 Water station");
           hitWater++;
         }
-        var lap = A.laps[p.i] || 1;
+        var lap = A.loop[p.i] || 1;
         if (lap > shownLap) {                               // a new loop begins: fade to its colour
           shownLap = lap;
           el.style.background = G.lapColor(lap);
