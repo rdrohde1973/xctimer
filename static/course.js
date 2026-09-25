@@ -235,8 +235,6 @@
     };
   }
 
-  // Blues, greens and purples, alternating so a loop's stripe always contrasts with the
-  // loop underneath it; bright enough to read over grass and trees.
   // ---------------------------------------------------------------- elevation
   /* Terrarium elevation tiles (the same ones the 3D terrain uses) store metres in the
    * pixel colour: (R * 256 + G + B / 256) - 32768. */
@@ -294,7 +292,9 @@
     return { d: d, off: best };
   }
 
-  var LAP_COLORS = ["#38bdf8", "#4ade80", "#a855f7", "#2563eb", "#10b981", "#e879f9"];
+  // Blue, orange, purple (then deeper shades of each): every loop's stripe stands out
+  // against the loop underneath it -- green on blue didn't -- and reads over grass and trees.
+  var LAP_COLORS = ["#38bdf8", "#fb923c", "#a855f7", "#2563eb", "#f97316", "#e879f9"];
   function lapColor(n) { return LAP_COLORS[(Math.max(1, n) - 1) % LAP_COLORS.length]; }
   // Repeat loops ride on the same line, each a narrower stripe down the middle of the one
   // before, so every loop's colour still shows without drawing a second trail beside it.
