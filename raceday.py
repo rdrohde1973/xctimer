@@ -3,9 +3,10 @@ host set them), the results link, their school's bib list, and -- when the host 
 course map -- the map and driving directions.
 
 Run by the xctimer-raceday.timer systemd --user unit early on meet mornings (Mountain
-Time). Goes to coaches of every school entered in an XC meet dated today who have
-actually logged in to XCTimer (an invite nobody accepted gets nothing). Practice time
-trials are skipped. Each coach gets one email per meet, ever: sends are recorded in
+Time). Goes to every coach linked to a school entered in an XC meet dated today --
+whether or not they have logged in yet (Rob, 2026-09-28: the email is useful to a coach
+who has never opened XCTimer, and it is how some of them will first see it). Practice
+time trials are skipped. Each coach gets one email per meet, ever: sends are recorded in
 meet_mail_log, so a rerun or a restart the same morning can't double-send.
 
     python raceday.py                               # today's meets, for real
@@ -60,13 +61,13 @@ def todays_meets(conn, day):
 
 
 def recipients(conn, mid):
-    """{user_id: (email, name, [school rows])} -- coaches of the meet's schools who have logged in."""
+    """{user_id: (email, name, [school rows])} -- every coach of the meet's schools."""
     out = {}
     for r in conn.execute(
             "SELECT u.id, u.email, u.name, s.id AS sid, s.name AS sname "
             "FROM meet_schools ms JOIN schools s ON s.id=ms.school_id "
             "JOIN user_schools us ON us.school_id=s.id JOIN users u ON u.id=us.user_id "
-            "WHERE ms.meet_id=? AND u.role='coach' AND u.last_login IS NOT NULL "
+            "WHERE ms.meet_id=? AND u.role='coach' "
             "AND COALESCE(u.is_demo,0)=0 AND u.email LIKE '%@%' ORDER BY u.id, s.name", (mid,)):
         e = out.setdefault(r["id"], (r["email"], r["name"], []))
         e[2].append((r["sid"], r["sname"]))
