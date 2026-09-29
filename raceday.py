@@ -61,13 +61,14 @@ def todays_meets(conn, day):
 
 
 def recipients(conn, mid):
-    """{user_id: (email, name, [school rows])} -- every coach of the meet's schools."""
+    """{user_id: (email, name, [school rows])} -- every coach of the meet's schools, and any
+    district admin whose home school is one of them (a coach promoted to admin keeps it)."""
     out = {}
     for r in conn.execute(
             "SELECT u.id, u.email, u.name, s.id AS sid, s.name AS sname "
             "FROM meet_schools ms JOIN schools s ON s.id=ms.school_id "
             "JOIN user_schools us ON us.school_id=s.id JOIN users u ON u.id=us.user_id "
-            "WHERE ms.meet_id=? AND u.role='coach' "
+            "WHERE ms.meet_id=? AND u.role IN ('coach','district_admin') "
             "AND COALESCE(u.is_demo,0)=0 AND u.email LIKE '%@%' ORDER BY u.id, s.name", (mid,)):
         e = out.setdefault(r["id"], (r["email"], r["name"], []))
         e[2].append((r["sid"], r["sname"]))

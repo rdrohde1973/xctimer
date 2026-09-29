@@ -316,6 +316,11 @@ def delete_district(did):
 
 
 # --------------------------------- users ---------------------------------
+# Roles that can be linked to a school: coaches and timers are scoped to it; a district
+# admin's school is just their home school (race-day emails), never a limit on access.
+SCHOOL_ROLES = ("coach", "timer", "district_admin")
+
+
 def _creatable_roles(principal):
     if principal.is_super:
         return ["district_admin", "coach", "timer"]
@@ -418,12 +423,14 @@ def list_users():
         # school (/users/<id>/role only ever clears them), so this is the one place an
         # existing user can be given one. Editable only with a district in context,
         # since that is where the option list comes from.
-        if u["role"] in ("coach", "timer"):
+        # A district admin can keep a HOME school too (so a coach promoted to admin
+        # still gets their school's race-day emails); only a super admin sets it.
+        if u["role"] in SCHOOL_ROLES:
             # A coach belongs to exactly one school (or none), so this is a plain
             # dropdown -- same submit-on-change shape as the Role cell next to it.
             _cur = sorted(user_school_ids.get(u["id"], ()))
             cur = _cur[0] if _cur else None
-            if schools:
+            if schools and u["role"] in _creatable_roles(p):
                 s_opts = '<option value="">&mdash; none &mdash;</option>' + "".join(
                     f'<option value="{s["id"]}" {"selected" if s["id"] == cur else ""}>'
                     f'{escape(s["name"])}</option>' for s in schools)
@@ -490,7 +497,7 @@ def list_users():
 
     if not p.is_super or all_districts():
         school_block = (
-            f'<label>School <span class="muted">— coach/timer scope</span></label>'
+            f'<label>School <span class="muted">— a coach/timer\'s school, or an admin\'s home school</span></label>'
             f'<select name="school_id" id="u_schools">'
             f'<option value="">&mdash; none &mdash;</option>{school_opts}</select>'
             if school_opts else
@@ -568,8 +575,8 @@ def create_user_route():
     # One school per coach: the form posts a single school_id ("" meaning none).
     _sid = (request.form.get("school_id") or "").strip()
     school_ids = [int(_sid)] if _sid.isdigit() else []
-    # Only coaches/timers are school-scoped; ignore any school for admins.
-    if role not in ("coach", "timer"):
+    # Coaches/timers are school-scoped; a district admin may have a home school.
+    if role not in SCHOOL_ROLES:
         school_ids = []
     # Guard: chosen schools must belong to this district.
     if school_ids:
@@ -628,7 +635,7 @@ def change_role(uid):
         conn = db.connect()
         conn.execute("UPDATE users SET role=? WHERE id=?", (new_role, uid))
         # Dropping to a non-scoped role: clear school assignments (coach/timer only).
-        if new_role not in ("coach", "timer"):
+        if new_role not in SCHOOL_ROLES:
             conn.execute("DELETE FROM user_schools WHERE user_id=?", (uid,))
         conn.commit()
         conn.close()
@@ -656,8 +663,8 @@ def change_user_schools(uid):
         abort(404)
     if u["district_id"] is not None:
         require_district(u["district_id"])
-    # Never touch a super admin, and only school-scoped roles have schools at all.
-    if u["role"] == "super_admin" or u["role"] not in ("coach", "timer"):
+    # Never touch a super admin, and only school roles have schools at all.
+    if u["role"] == "super_admin" or u["role"] not in SCHOOL_ROLES:
         abort(403)
     if u["role"] not in _creatable_roles(p):
         abort(403)
