@@ -1586,26 +1586,34 @@ def race_insert(rid):
 
 
 # ------------------------------- scoring -------------------------------
-def team_scores(runners):
+def team_scores(runners, fill_missing=False):
     """MileSplit/Hy-Tek scoring. `runners` = time-sorted list of dicts with
     keys school, place-eligible. Drops teams <5, re-ranks, sums top 5, tracks
-    6th/7th displacers. Returns ranked list of team dicts."""
+    6th/7th displacers. Returns ranked list of team dicts.
+
+    fill_missing (the District Championship's 9th-grade rule): every school scores, even
+    with fewer than 5 runners -- each "missing" runner counts as the number of finishers
+    plus 1. Places are then taken among all school runners, since every team scores."""
     by_school = defaultdict(list)
     for r in runners:
         if r["school"]:
             by_school[r["school"]].append(r)
-    complete = [s for s, rs in by_school.items() if len(rs) >= 5]
+    complete = [s for s, rs in by_school.items() if len(rs) >= 5 or fill_missing]
     scoring = [r for r in runners if r["school"] in complete]
     for i, r in enumerate(scoring):
         r["score_place"] = i + 1  # re-ranked among complete-team runners only
+    fill = len(scoring) + 1
     teams = []
     for s in complete:
         rs = [r for r in scoring if r["school"] == s][:7]
         top5 = rs[:5]
+        missing = 5 - len(top5)
+        places = [r["score_place"] for r in top5] + [fill] * missing
         teams.append({
             "school": s,
-            "score": sum(r["score_place"] for r in top5),
-            "places": [r["score_place"] for r in top5],
+            "score": sum(places),
+            "places": places,
+            "filled": missing, "fill": fill,
             "sixth": rs[5]["score_place"] if len(rs) > 5 else None,
             "seventh": rs[6]["score_place"] if len(rs) > 6 else None,
         })
@@ -1831,7 +1839,21 @@ def _results_inner(meet, results, name_mode=None):
             f'<th>School</th><th>Gr</th></tr></thead><tbody>{rows}</tbody></table></div>')
     # Team scores broken out by grade × gender (real jr-high XC scores per grade race).
     tparts = []
-    for label, teams in _team_grade_gender_groups(meet["id"]):
+    if _is_championship(meet["id"]):
+        ov, inel = champ_overall(meet["id"])
+        if ov or inel:
+            orows = "".join(
+                f'<tr><td>{t["rank"]}</td><td>{escape(t["school"])}</td><td>{t["boys"]}</td>'
+                f'<td>{t["girls"]}</td><td><b>{t["total"]}</b></td></tr>' for t in ov)
+            nel = ("<p class=\"muted\">Not eligible (need 5+ boys and 5+ girls): " +
+                   ", ".join(f"{escape(s)} ({b} boys, {g} girls)" for s, b, g in inel) + "</p>") if inel else ""
+            html.append(
+                f'<div class="card"><h2>🏆 Overall Team Championship — Boys + Girls</h2>'
+                f'<p class="muted">Each school\'s top 7 boys and top 7 girls by time, across all grades. '
+                f'Boys\' team score + girls\' team score; lowest total wins.</p>'
+                f'<table><thead><tr><th>Rank</th><th>School</th><th>Boys</th><th>Girls</th><th>Total</th>'
+                f'</tr></thead><tbody>{orows}</tbody></table>{nel}</div>')
+    for label, teams, note in _team_grade_gender_groups(meet["id"]):
         if not teams:
             continue
         team_rows = "".join(
@@ -1843,7 +1865,8 @@ def _results_inner(meet, results, name_mode=None):
         tparts.append(
             f'<h3>{escape(label)} — Team scores</h3>'
             f'<table><thead><tr><th>Rank</th><th>School</th><th>Score</th>'
-            f'<th>Top 5 (6th,7th)</th></tr></thead><tbody>{team_rows}</tbody></table>')
+            f'<th>Top 5 (6th,7th)</th></tr></thead><tbody>{team_rows}</tbody></table>'
+            + (f'<p class="muted">{escape(note)}</p>' if note else ''))
     if tparts:
         html.append(f'<div class="card"><h2>🏆 Team scores — by grade &amp; gender</h2>{"".join(tparts)}</div>')
     return "".join(html)
@@ -2048,10 +2071,19 @@ def _grade_gender_groups(mid):
     return groups
 
 
+def _is_championship(mid):
+    conn = db.connect()
+    r = conn.execute("SELECT championship FROM meets WHERE id=?", (mid,)).fetchone()
+    conn.close()
+    return bool(r and "championship" in r.keys() and r["championship"])
+
+
 def _team_grade_gender_groups(mid):
     """Team scores computed WITHIN each grade×gender group, sorted grade then gender.
     Real jr-high XC runs grade-level races, so teams score per grade + gender —
-    not lumped across all grades."""
+    not lumped across all grades. Returns (label, teams, note) -- note explains a
+    special rule when one applied, else ''."""
+    champ = _is_championship(mid)
     conn = db.connect()
     ts = conn.execute("SELECT team_scoring, time_trial FROM meets WHERE id=?", (mid,)).fetchone()
     conn.close()
@@ -2072,11 +2104,53 @@ def _team_grade_gender_groups(mid):
         runners = [{"school": f["snap_school"]}
                    for f in sorted(buckets[key], key=lambda f: f["elapsed_seconds"])
                    if not f["dq"] and f["snap_school"]]
-        teams = team_scores(runners) if team_on else []
+        # District Championship: so many 9th graders run at the high school that most
+        # teams can't field 5, so 9th grade scores every team, filling the gaps.
+        ninth = champ and str(grade).strip() == "9"
+        teams = team_scores(runners, fill_missing=ninth) if team_on else []
         gword = {"F": "Girls", "M": "Boys"}.get(gender, "Other")
         label = f"{grade}th Grade {gword}" if grade is not None else gword
-        groups.append((label, teams))
+        note = ""
+        if ninth and teams:
+            note = (f"Championship 9th-grade rule: a team with fewer than 5 runners scores each missing "
+                    f"runner as {teams[0]['fill']} (the number of finishers plus 1). Used for the 9th "
+                    f"grade title only, not the overall championship.")
+        groups.append((label, teams, note))
     return groups
+
+
+def champ_overall(mid):
+    """District Championship overall team trophy: each school's top 7 boys and top 7
+    girls by time across ALL grades; boys' team score + girls' team score, lowest wins.
+    A school needs at least 5 runners of each gender to be eligible. Each gender is
+    scored the usual way among the eligible schools' top 7s: places 1..n, the top 5
+    count, the 6th and 7th only push other teams' runners back.
+    Returns (ranked team dicts, [(school, boys, girls)] not eligible)."""
+    fins = [f for f in _meet_finishers(mid)
+            if f["elapsed_seconds"] is not None and not f["dq"] and f["snap_school"]]
+    by = {"M": defaultdict(list), "F": defaultdict(list)}
+    for f in sorted(fins, key=lambda f: f["elapsed_seconds"]):
+        if f["snap_gender"] in by:
+            by[f["snap_gender"]][f["snap_school"]].append(f)
+    schools = set(by["M"]) | set(by["F"])
+    eligible = sorted(s for s in schools if len(by["M"][s]) >= 5 and len(by["F"][s]) >= 5)
+    ineligible = sorted((s, len(by["M"][s]), len(by["F"][s])) for s in schools if s not in eligible)
+    part = {}
+    for g in ("M", "F"):
+        pool = sorted((f for s in eligible for f in by[g][s][:7]), key=lambda f: f["elapsed_seconds"])
+        runners = [{"school": f["snap_school"]} for f in pool]
+        part[g] = {t["school"]: t for t in team_scores(runners)}
+    teams = []
+    for s in eligible:
+        b, gl = part["M"][s], part["F"][s]
+        sixth = (b["sixth"] or 9999) + (gl["sixth"] or 9999)
+        teams.append({"school": s, "boys": b["score"], "girls": gl["score"],
+                      "boys_places": b["places"], "girls_places": gl["places"],
+                      "total": b["score"] + gl["score"], "tie": sixth})
+    teams.sort(key=lambda t: (t["total"], t["tie"]))
+    for i, t in enumerate(teams):
+        t["rank"] = i + 1
+    return teams, ineligible
 
 
 def _host_logo_tag(m, cls="hostlogo"):
@@ -2161,7 +2235,21 @@ def _public_xc(m, mode):
         or '<div class="sec"><h2>No results yet</h2></div>'
 
     team_parts = []
-    for label, teams in _team_grade_gender_groups(mid):
+    if _is_championship(mid):
+        ov, inel = champ_overall(mid)
+        if ov or inel:
+            orows = "".join(
+                f'<tr><td class="pl">{t["rank"]}</td><td>{escape(t["school"])}</td><td>{t["boys"]}</td>'
+                f'<td>{t["girls"]}</td><td class="tm">{t["total"]}</td></tr>' for t in ov)
+            nel = ('<p class="mut" style="padding:.5rem .8rem;margin:0">Not eligible (need 5+ boys and 5+ girls): ' +
+                   ", ".join(f"{escape(s)}" for s, b, g in inel) + "</p>") if inel else ""
+            team_parts.append(
+                f'<div class="sec"><h2>🏆 Overall Team Championship — Boys + Girls</h2><table><thead>'
+                f'<tr><th>Rank</th><th>School</th><th>Boys</th><th>Girls</th><th>Total</th></tr>'
+                f'</thead><tbody>{orows}</tbody></table>'
+                f'<p class="mut" style="padding:.5rem .8rem;margin:0">Top 7 boys + top 7 girls by time, all grades. '
+                f'Lowest combined score wins.</p>{nel}</div>')
+    for label, teams, note in _team_grade_gender_groups(mid):
         if not teams:
             continue
         trows = "".join(
@@ -2173,7 +2261,9 @@ def _public_xc(m, mode):
         team_parts.append(
             f'<div class="sec"><h2>{escape(label)} — Team Scores</h2><table><thead>'
             f'<tr><th>Rank</th><th>School</th><th>Score</th><th>Top 5 (6th, 7th)</th></tr>'
-            f'</thead><tbody>{trows}</tbody></table></div>')
+            f'</thead><tbody>{trows}</tbody></table>'
+            + (f'<p class="mut" style="padding:.5rem .8rem;margin:0">{escape(note)}</p>' if note else '')
+            + '</div>')
     team = "".join(team_parts) or '<div class="sec"><h2>No complete teams yet (need 5+ per school in a grade)</h2></div>'
     # A time trial scores no teams, so it gets NO Team tab at all — not an empty one
     # saying "no complete teams yet", which reads like a meet that failed to score.
@@ -2717,6 +2807,23 @@ def _results_workbook(mid, name_mode):
             for t in g_["teams"]:
                 ws.append([t["rank"], t["school"], t["score"],
                            " + ".join(str(p) for p in t["places"])])
+    if any_tab and _is_championship(mid):
+        ov, inel = champ_overall(mid)
+        ws = wb.create_sheet("Overall Team")
+        ws.append(["Overall Team Championship: top 7 boys + top 7 girls by time, all grades; lowest total wins"])
+        ws.append(["Rank", "School", "Boys", "Girls", "Total", "Boys places", "Girls places"])
+        for t in ov:
+            ws.append([t["rank"], t["school"], t["boys"], t["girls"], t["total"],
+                       " + ".join(map(str, t["boys_places"])), " + ".join(map(str, t["girls_places"]))])
+        for sname, b, g in inel:
+            ws.append([None, sname, f"not eligible ({b} boys, {g} girls; need 5+ each)"])
+        for label, teams, note in _team_grade_gender_groups(mid):
+            if not teams:
+                continue
+            ws.append([])
+            ws.append([f"{label} team scores"] + ([note] if note else []))
+            for t in teams:
+                ws.append([t["rank"], t["school"], t["score"], " + ".join(map(str, t["places"]))])
     if not any_tab:
         wb.create_sheet("Results").append(["No results yet"])
     buf = io.BytesIO()
