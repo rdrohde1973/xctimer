@@ -19,7 +19,7 @@ from . import db
 from .auth import login_required, role_required, create_user, send_setup_email
 from .meets import load_meet, can_view_meet, can_setup_meet, _purge_meet
 from .xc import _is_org, _match_event
-from .ui import shell, CSRF_JS, BRAND_HTML, POWERED_BY_HTML, HEAD_EXTRA
+from .ui import shell, CSRF_JS, BRAND_HTML, POWERED_BY_HTML, HEAD_EXTRA, STICKER_TIP
 
 HOST_FEE_CENTS = int(os.environ.get("XC_HOST_FEE_CENTS", "5000"))   # self-serve event fee ($50)
 
@@ -452,7 +452,7 @@ def participants(mid):
     print_bar = (
         f'<div class="card" style="display:flex;gap:.6rem;align-items:center;flex-wrap:wrap">'
         f'<b>🏁 Print bibs</b> {road_sticker_controls(mid, self_serve=ss)} '
-        f'<span class="muted">{tag_note}Use Avery 5163 (2"×4") sticker sheets.</span></div>')
+        f'<span class="muted">{tag_note}{STICKER_TIP}</span></div>')
     body = (
         f'<p class="muted"><a href="/meets/{mid}">← {escape(m["name"])}</a></p>'
         f'<h1>{escape(m["name"])} — Participants</h1>'
@@ -1446,7 +1446,8 @@ How XCTimer self-serve works (rely on these facts):
 - Public registration: share the registration link/QR; runners self-register (name, age, gender,
   city, club) and pick their race — no account needed.
 - Participants tab: import a CSV, add runners by hand, or let them self-register. Print bibs here on
-  Avery 5163 (2"x4") sticker sheets — camera-readable ArUco tags — with your logo, plus a few blank
+  Avery 5523 weatherproof 2"x4" stickers (any Avery 5163-size sheet works) — camera-readable
+  ArUco tags — with your logo, plus a few blank
   spares for walk-ups.
 - Race day tab: the Phone Timer App — share its QR/link with helpers to open the timing app for your
   event, no login. Timing is tap-then-scan: a helper taps each runner as they cross the finish line

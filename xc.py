@@ -17,7 +17,7 @@ from flask import Blueprint, request, redirect, g, abort, jsonify, Response
 from . import db, demo
 from .auth import login_required
 from .tenancy import active_district_id, all_districts
-from .ui import shell, BRAND_HTML, POWERED_BY_HTML, CSS, HEAD_EXTRA
+from .ui import shell, BRAND_HTML, POWERED_BY_HTML, CSS, HEAD_EXTRA, STICKER_TIP
 from .meets import (load_meet, can_view_meet, can_setup_meet, can_record_meet)
 
 bp = Blueprint("xc", __name__)
@@ -864,14 +864,14 @@ def xc_meet_day(mid):
         ss = is_web_event(m)
         print_bar = (
             f'<div class="card"><b>Print:</b> {road_sticker_controls(mid, self_serve=ss)} '
-            '<span class="muted">Event logo on each. Use Avery 5163 (2"×4") sticker sheets.</span></div>')
+            f'<span class="muted">Event logo on each. {STICKER_TIP}</span></div>')
     else:
         # ArUco only — the camera cannot read a QR bib (see meets.aruco_only).
         print_bar = (
             f'<div class="card"><b>Print:</b> '
             f'<a class="btn ghost" href="/meets/{mid}/stickers.pdf?code=aruco" target="_blank">Stickers</a> '
             f'<a class="btn ghost" href="/meets/{mid}/biblist.pdf" target="_blank">Bib lists</a>'
-            f'<br><span class="muted" style="font-size:.85rem">Use Avery 5163 (2"×4") sticker sheets.</span></div>')
+            f'<br><span class="muted" style="font-size:.85rem">{STICKER_TIP}</span></div>')
     walkup = "" if _is_org(m) else _walkup_card(m, mid)
     from .meets import timer_qr_card
     body = (f'<p class="muted"><a href="/meets">← Meets</a></p><h1>{escape(m["name"])}</h1>'

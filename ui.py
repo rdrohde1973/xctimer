@@ -12,6 +12,12 @@ BRAND_HTML = '<span class="bx">xc</span><span class="bt">t<span class="bx">i</sp
 POWERED_BY_HTML = ('<a href="https://xctimer.com/welcome" target="_blank" rel="noopener" '
                    'style="color:inherit;text-decoration:none">Powered by '
                    + BRAND_HTML + '</a>')
+# The bib sticker we recommend: Avery 5523, the weatherproof version of the 2"x4" 10-up
+# sheet every bib PDF is laid out for (Avery 5163) -- it survives rain and sweat.
+STICKER_URL = "https://www.amazon.com/dp/B00006IBUW"
+STICKER_TIP = ('Best: <a href="' + STICKER_URL + '" target="_blank" rel="noopener">Avery 5523</a> '
+               'weatherproof 2"×4" stickers — they hold up to rain and sweat. '
+               'Any Avery 5163-size sheet prints too.')
 LOGO_URL = "/static/branding/xctimer.png"        # light bg — landing / login card
 LOGO_DARK_URL = "/static/branding/xctimerdark.png?v=4"      # UI header (v= busts Cloudflare cache)
 LOGO_APP_URL = "/static/branding/xctimerdarkdark.png?v=1"   # phone app

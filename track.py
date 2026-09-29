@@ -21,7 +21,7 @@ from flask import Blueprint, request, redirect, g, abort, jsonify, Response
 from . import db, ai, pdfs, demo
 from .auth import login_required
 from .tenancy import active_district_id, all_districts
-from .ui import shell, GUN_CONTROLS_HTML, GUN_JS
+from .ui import shell, GUN_CONTROLS_HTML, GUN_JS, STICKER_TIP
 from .meets import load_meet, can_view_meet, can_setup_meet, can_record_meet
 
 bp = Blueprint("track", __name__)
@@ -976,7 +976,7 @@ def assign_page(mid):
   {_tqr}
   <a class="btn ghost" href="/meets/{mid}/school/{sid}/stickers.pdf?code=aruco">{_tlbl}</a>
   <a class="btn ghost" href="/meets/{mid}/school/{sid}/biblist.pdf">Bib list + events</a>
-  <span class="muted" style="font-size:.85rem;flex-basis:100%">Use Avery 5163 (2"×4") sticker sheets.</span></div>
+  <span class="muted" style="font-size:.85rem;flex-basis:100%">{STICKER_TIP}</span></div>
 <div class="card">
   <div class="row" style="justify-content:space-between;align-items:center;flex-wrap:wrap;gap:.5rem">
     <h2 style="margin:0">{escape(school['name'])} — assign athletes</h2>

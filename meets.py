@@ -19,7 +19,7 @@ import os
 from . import db, pdfs
 from .auth import login_required
 from .tenancy import active_district_id, all_districts
-from .ui import shell
+from .ui import shell, STICKER_TIP
 
 bp = Blueprint("meets", __name__)
 
@@ -850,7 +850,7 @@ def meet_detail(mid):
         if locked:
             prints = (f'{sticker_btns}<a class="btn ghost" href="/meets/{mid}/biblist.pdf">Bib lists</a>{hs} '
                       f'<span class="muted">🔒 locked</span>'
-                      f'<br><span class="muted" style="font-size:.85rem">Use Avery 5163 (2"×4") sticker sheets.</span>')
+                      f'<br><span class="muted" style="font-size:.85rem">{STICKER_TIP}</span>')
         else:
             prints = '<span class="muted">🔒 Lock the bib numbers to enable printing.</span>'
         print_bar = (

@@ -457,7 +457,7 @@ Timing uses each phone's own clock, so it's accurate even on a bad cell connecti
 TRACK — SCAN-BACK: If you time on paper, photograph the printed heat sheet (or the High Jump grid)
 in the Scan tab and the AI reads the handwritten marks back onto the right runners.
 
-CROSS COUNTRY: Create an XC meet with Boys/Girls races. Print ArUco bib stickers (Avery 5163) with
+CROSS COUNTRY: Create an XC meet with Boys/Girls races. Print ArUco bib stickers (Avery 5523 weatherproof 2x4 recommended; any 5163-size sheet) with
 your logo. Race day is tap-then-scan: tap each runner as they cross the chute, then camera-scan (or
 type) their bib to attach names — works even after you stop the clock; a bib that isn't entered
 records silently as "Bib N". Insert a missed runner mid-list and everyone shifts down. Share the
