@@ -369,9 +369,76 @@ def list_users():
     conn.close()
 
     show_d = p.is_super and did is None
-    hdr = ("<tr><th>User</th><th>Role</th><th>Schools</th>"
-           + ("<th>District</th>" if show_d else "")
-           + "<th>Status</th><th>MFA</th><th></th></tr>")
+
+    # Sortable columns, the same way the roster sorts: ?sort=role,-school -- up to two
+    # keys in the order they were tapped (a leading "-" = descending). Tapping a key in
+    # use flips it; User resets to plain A-Z by name (tap again to reverse). Blanks
+    # always sink and name is the last tiebreak. Keys come from a whitelist.
+    SORT_KEYS = ("role", "school", "district", "status", "mfa")
+    keys = []
+    for tok in (request.args.get("sort") or "").split(","):
+        tok = tok.strip()
+        k, d = tok.lstrip("-"), tok.startswith("-")
+        if k in SORT_KEYS and k not in [x for x, _ in keys]:
+            keys.append((k, d))
+    keys = keys[:2]
+    name_sort = request.args.get("sort") in ("name", "-name")
+    name_desc = request.args.get("sort") == "-name"
+    ROLE_ORDER = {"super_admin": 0, "district_admin": 1, "coach": 2, "timer": 3, "race_director": 4}
+
+    def _val(u, k):
+        """(blank?, value) -- blank values sink whichever way the column is sorted."""
+        if k == "name":
+            v = (u["name"] or u["email"] or "").lower()
+        elif k == "role":
+            v = ROLE_ORDER.get(u["role"], 9)
+        elif k == "school":
+            v = ", ".join(sorted(user_school_names.get(u["id"], []))).lower()
+        elif k == "district":
+            v = (u["dname"] or "").lower()
+        elif k == "status":        # active (most recent sign-in first), then pending
+            try:
+                seen = datetime.fromisoformat(str(u["last_login"])).timestamp() if u["last_login"] else 0
+            except ValueError:
+                seen = 0
+            v = (0 if u["password_hash"] else 1, -seen)
+        else:                      # mfa: on first
+            v = 0 if ("mfa_enabled" in u.keys() and u["mfa_enabled"]) else 1
+        return v == "", v
+
+    if keys or name_sort:
+        rows = list(rows)
+        rows.sort(key=lambda u: _val(u, "name")[1], reverse=name_desc)       # last tiebreak
+        for k, d in reversed(keys):                                         # stable, least key first
+            rows.sort(key=lambda u: _val(u, k)[1], reverse=d)
+            rows.sort(key=lambda u: _val(u, k)[0])                           # blanks sink
+
+    def _enc(ks):
+        return ",".join(("-" if d else "") + k for k, d in ks)
+
+    def _sort_url(key):
+        if key == "name":
+            return "/users?sort=" + ("-name" if name_sort and not name_desc else "name")
+        used = [k for k, _ in keys]
+        if key in used:
+            return "/users?sort=" + _enc([(k, (not d) if k == key else d) for k, d in keys])
+        return "/users?sort=" + _enc((keys + [(key, False)])[-2:])
+
+    def _mark(key):
+        if key == "name":
+            return (" ▼" if name_desc else " ▲") if name_sort else ""
+        for i, (k, d) in enumerate(keys):
+            if k == key:
+                return (" ▼" if d else " ▲") + ("¹²"[i] if len(keys) > 1 else "")
+        return ""
+
+    def _sh(label, key):
+        return (f'<th><a href="{_sort_url(key)}" title="Sort by {label}" '
+                f'style="color:inherit;text-decoration:none">{label}{_mark(key)}</a></th>')
+
+    hdr = ("<tr>" + _sh("User", "name") + _sh("Role", "role") + _sh("Schools", "school")
+           + (_sh("District", "district") if show_d else "")
+           + _sh("Status", "status") + _sh("MFA", "mfa") + "<th></th></tr>")
 
     def _fmt_login(iso):
         if not iso:
