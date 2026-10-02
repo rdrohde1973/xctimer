@@ -1124,6 +1124,35 @@ def _race_grade(name):
     return None
 
 
+def heat_takes_grade(heat_grade, runner_grade, heat_grades):
+    """Can a runner of `runner_grade` run in a heat for `heat_grade`?
+
+    `heat_grades` = the grades this meet has heats for. A heat that names no grade, or a
+    runner with no grade on file, always matches (nobody becomes untappable at the line).
+    A grade with no heat of its own runs with the nearest grade above it -- at the 2026
+    District Championship, American Heritage's 6th graders run in the 7th grade races and
+    are scored separately (their grade is still 6 on the results)."""
+    runner_grade = _as_int(runner_grade)
+    if not heat_grade or not runner_grade or runner_grade == heat_grade:
+        return True
+    if runner_grade in heat_grades:
+        return False
+    above = [g for g in heat_grades if g > runner_grade]
+    return bool(above) and heat_grade == min(above)
+
+
+def _as_int(v):
+    try:
+        return int(str(v).strip())
+    except (TypeError, ValueError):
+        return None
+
+
+def _meet_heat_grades(conn, mid):
+    return {g for g in (_race_grade(r[0]) for r in conn.execute(
+        "SELECT name FROM races WHERE meet_id=?", (mid,)).fetchall()) if g}
+
+
 @bp.get("/races/<int:rid>/eligible")
 @login_required
 def race_eligible(rid):
@@ -1174,13 +1203,14 @@ def race_eligible(rid):
             "ORDER BY (seed IS NULL), seed, a.name", (r["name"], rid, m["id"])).fetchall()
         want = _race_gender(r["name"])
         want_gr = _race_grade(r["name"])
+        heat_grades = _meet_heat_grades(conn, m["id"])
         for a in rows:
             if a["bib"] in used:
                 continue
             # A championship heat is one grade: the 7th Girls picker must not list 8th
             # and 9th graders too. Same escape hatch as gender -- a runner with no grade
             # on file stays pickable rather than becoming untappable at the line.
-            if want_gr and a["grade"] and a["grade"] != want_gr:
+            if not heat_takes_grade(want_gr, a["grade"], heat_grades):
                 continue
             # A Girls race lists girls, a Boys race lists boys. Races whose name says
             # nothing about gender are unfiltered, and so is an athlete with no gender
@@ -2126,8 +2156,14 @@ def champ_overall(mid):
     scored the usual way among the eligible schools' top 7s: places 1..n, the top 5
     count, the 6th and 7th only push other teams' runners back.
     Returns (ranked team dicts, [(school, boys, girls)] not eligible)."""
+    conn = db.connect()
+    heat_grades = _meet_heat_grades(conn, mid)
+    conn.close()
+    # "Across all three grades": runners from a grade with no heat of its own (6th graders
+    # running in the 7th grade race) are scored separately and don't count here.
     fins = [f for f in _meet_finishers(mid)
-            if f["elapsed_seconds"] is not None and not f["dq"] and f["snap_school"]]
+            if f["elapsed_seconds"] is not None and not f["dq"] and f["snap_school"]
+            and (not heat_grades or _as_int(f["snap_grade"]) is None or _as_int(f["snap_grade"]) in heat_grades)]
     by = {"M": defaultdict(list), "F": defaultdict(list)}
     for f in sorted(fins, key=lambda f: f["elapsed_seconds"]):
         if f["snap_gender"] in by:
@@ -3341,9 +3377,10 @@ def camera_record(mid):
         gr = a["grade"] if "grade" in a.keys() else None
         # Gender AND grade: a championship runs three Girls heats, and without the grade a
         # girl would match all three and be refused as ambiguous.
+        heat_grades = {g for g in (_race_grade(h["name"]) for h in heats) if g}
         cand = [h for h in heats
                 if (not _race_gender(h["name"]) or not want or _race_gender(h["name"]) == want)
-                and (not _race_grade(h["name"]) or not gr or _race_grade(h["name"]) == gr)]
+                and heat_takes_grade(_race_grade(h["name"]), gr, heat_grades)]
         live = [h for h in cand if h["start_time"] and not h["stop_time"]]
         if len(live) == 1:
             r = live[0]
