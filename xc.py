@@ -1131,7 +1131,7 @@ def heat_takes_grade(heat_grade, runner_grade, heat_grades):
     runner with no grade on file, always matches (nobody becomes untappable at the line).
     A grade with no heat of its own runs with the nearest grade above it -- at the 2026
     District Championship, American Heritage's 6th graders run in the 7th grade races and
-    are scored separately (their grade is still 6 on the results)."""
+    get their own individual results; for team points they count with the 7th grade."""
     runner_grade = _as_int(runner_grade)
     if not heat_grade or not runner_grade or runner_grade == heat_grade:
         return True
@@ -1146,6 +1146,20 @@ def _as_int(v):
         return int(str(v).strip())
     except (TypeError, ValueError):
         return None
+
+
+def team_grade(grade, heat_grades):
+    """The grade a runner SCORES with for team points: their own, unless their grade has
+    no heat of its own -- then the heat grade they ran with (6th graders running in the
+    7th grade race count on their school's 7th grade team, and toward the overall trophy,
+    per Mike Wood 2026-10-04). Individual results and awards keep their real grade."""
+    g = _as_int(grade)
+    if g is None:
+        return grade
+    if not heat_grades or g in heat_grades:
+        return g
+    above = [h for h in heat_grades if h > g]
+    return min(above) if above else g
 
 
 def _meet_heat_grades(conn, mid):
@@ -2119,10 +2133,15 @@ def _team_grade_gender_groups(mid):
     conn.close()
     # A time trial never scores teams whatever the stored flag says — practice, single team.
     team_on = (bool(ts["team_scoring"]) and not ts["time_trial"]) if ts else True
+    conn = db.connect()
+    heat_grades = _meet_heat_grades(conn, mid)
+    conn.close()
     fins = [f for f in _meet_finishers(mid) if f["elapsed_seconds"] is not None]
     buckets = {}
     for f in fins:
-        buckets.setdefault((f["snap_grade"], f["snap_gender"]), []).append(f)
+        # Team grade, not real grade: a 6th grader running with the 7th grade scores for
+        # their school's 7th grade team (no separate 6th grade team score).
+        buckets.setdefault((team_grade(f["snap_grade"], heat_grades), f["snap_gender"]), []).append(f)
 
     def sk(k):
         grade, gender = k
@@ -2156,14 +2175,10 @@ def champ_overall(mid):
     scored the usual way among the eligible schools' top 7s: places 1..n, the top 5
     count, the 6th and 7th only push other teams' runners back.
     Returns (ranked team dicts, [(school, boys, girls)] not eligible)."""
-    conn = db.connect()
-    heat_grades = _meet_heat_grades(conn, mid)
-    conn.close()
-    # "Across all three grades": runners from a grade with no heat of its own (6th graders
-    # running in the 7th grade race) are scored separately and don't count here.
+    # Every graded runner counts -- including 6th graders running with the 7th grade,
+    # who score for their school's team (Mike Wood, 2026-10-04).
     fins = [f for f in _meet_finishers(mid)
-            if f["elapsed_seconds"] is not None and not f["dq"] and f["snap_school"]
-            and (not heat_grades or _as_int(f["snap_grade"]) is None or _as_int(f["snap_grade"]) in heat_grades)]
+            if f["elapsed_seconds"] is not None and not f["dq"] and f["snap_school"]]
     by = {"M": defaultdict(list), "F": defaultdict(list)}
     for f in sorted(fins, key=lambda f: f["elapsed_seconds"]):
         if f["snap_gender"] in by:
