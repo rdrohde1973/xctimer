@@ -3303,11 +3303,15 @@ def meet_camera(mid):
     bib is routed to the race that participant is registered for. Community events
     only (participants carry a race); no need to pick a race."""
     m = load_meet(mid)
-    # School meets get this too now: at Sage Canyon the crew did not realise the camera
-    # was bound to one heat, so the Girls race went unscanned until someone switched it.
     if not can_record_meet(m):
         abort(403)
     phone = request.args.get("phone") == "1" or bool(getattr(g.principal, "meet_scope", None))
+    # School meets time each heat with that heat's own camera (Rob, 2026-10-05). The
+    # one-camera-for-every-heat version (1.91.0) guessed each runner's heat from gender
+    # and grade, and never recorded at the District Championship test -- its status
+    # poll was still community-only. A stale link lands back on the heat list.
+    if not _is_org(m):
+        return redirect("/phone" if phone else f"/meets/{mid}/xc-day")
     back = "/phone" if phone else f"/meets/{mid}"
     backlbl = "‹ Timer" if phone else f"← {escape(m['name'])}"
     body = (_CAMERA_PAGE
@@ -3356,63 +3360,26 @@ def camera_record(mid):
     m = load_meet(mid)
     if not can_record_meet(m):
         abort(403)
+    if not _is_org(m):                  # school meets: each heat's own camera only
+        abort(404)
     raw = (request.get_json(silent=True) or {}).get("bib")
     try:
         bib = int(str(raw).strip())
     except (TypeError, ValueError):
         return jsonify(ok=False, reason="bad bib")
     conn = db.connect()
-    if _is_org(m):
-        # Community event: the participant signed up for a specific race, so it is on them.
-        p = conn.execute("SELECT race_id FROM participants WHERE meet_id=? AND bib=?",
-                         (mid, bib)).fetchone()
-        if not p:
-            conn.close()
-            return jsonify(ok=False, bib=bib, reason=f"Bib {bib} not registered")
-        rid = p["race_id"]
-        r = conn.execute("SELECT * FROM races WHERE id=? AND meet_id=?",
-                         (rid, mid)).fetchone() if rid else None
-        if not r:
-            conn.close()
-            return jsonify(ok=False, bib=bib, reason=f"Bib {bib} has no race")
-    else:
-        # School meet: nobody registers for a heat, so pick it the way the tap-select
-        # list already does — the runner's gender against the heat's name — and then
-        # insist on a RUNNING heat, so a scan can never land in one that has not begun.
-        from .meets import athlete_by_meet_bib
-        a = athlete_by_meet_bib(conn, mid, bib)
-        if not a:
-            conn.close()
-            return jsonify(ok=False, bib=bib, reason=f"Bib {bib} not in this meet")
-        heats = conn.execute("SELECT * FROM races WHERE meet_id=? ORDER BY id", (mid,)).fetchall()
-        # An unnamed/mixed heat takes anyone, and a runner with no gender on file may go
-        # in any heat — the same two escape hatches race_eligible uses, so nobody becomes
-        # unscannable while runners are crossing.
-        want = a["gender"]
-        gr = a["grade"] if "grade" in a.keys() else None
-        # Gender AND grade: a championship runs three Girls heats, and without the grade a
-        # girl would match all three and be refused as ambiguous.
-        heat_grades = {g for g in (_race_grade(h["name"]) for h in heats) if g}
-        cand = [h for h in heats
-                if (not _race_gender(h["name"]) or not want or _race_gender(h["name"]) == want)
-                and heat_takes_grade(_race_grade(h["name"]), gr, heat_grades)]
-        live = [h for h in cand if h["start_time"] and not h["stop_time"]]
-        if len(live) == 1:
-            r = live[0]
-        elif not live:
-            conn.close()
-            nm = cand[0]["name"] if cand else "No heat"
-            return jsonify(ok=False, bib=bib, name=a["name"], race=nm,
-                           reason=f"{nm} not running")
-        else:
-            # Two heats they could belong to are both live (e.g. JV and Varsity Boys):
-            # guessing would put a runner in the wrong race, so say so and let the
-            # timer scan from that heat's own camera instead.
-            conn.close()
-            return jsonify(ok=False, bib=bib, name=a["name"],
-                           reason="%s could be in %s — scan from the heat"
-                                  % (a["name"], " or ".join(h["name"] for h in live)))
-        rid = r["id"]
+    # Community event: the participant signed up for a specific race, so it is on them.
+    p = conn.execute("SELECT race_id FROM participants WHERE meet_id=? AND bib=?",
+                     (mid, bib)).fetchone()
+    if not p:
+        conn.close()
+        return jsonify(ok=False, bib=bib, reason=f"Bib {bib} not registered")
+    rid = p["race_id"]
+    r = conn.execute("SELECT * FROM races WHERE id=? AND meet_id=?",
+                     (rid, mid)).fetchone() if rid else None
+    if not r:
+        conn.close()
+        return jsonify(ok=False, bib=bib, reason=f"Bib {bib} has no race")
     if not r["start_time"] or r["stop_time"]:
         conn.close()
         return jsonify(ok=False, bib=bib, race=r["name"], reason=f"{r['name']} not running")
