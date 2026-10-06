@@ -103,7 +103,14 @@ def list_organizers():
         dl = "".join(
             f'<li>{escape(u["name"] or u["email"])} '
             f'<span class="muted">{escape(u["email"])}'
-            f'{" · invite pending" if not u["last_login"] else ""}</span></li>'
+            f'{" · invite pending" if not u["last_login"] else ""}</span> '
+            f'<form class="inline" method="post" '
+            f'action="/organizers/{o["id"]}/directors/{u["id"]}/delete" '
+            f'onsubmit="return confirm(\'Remove {escape(u["email"])} as a race director of '
+            f'“{escape(o["name"])}”? Their login is deleted; the organizer\\\'s events and results '
+            f'are kept.\')">'
+            f'<button class="danger ghost" type="submit" title="Remove this race director" '
+            f'style="padding:.1rem .45rem;font-size:.8rem">✕ Remove</button></form></li>'
             for u in dir_by_org.get(o["id"], [])) or '<li class="muted">No race directors yet.</li>'
         cards.append(
             f'<div class="card"><div style="display:flex;justify-content:space-between;'
@@ -229,6 +236,29 @@ def add_director(oid):
     except Exception:  # duplicate email etc.
         return redirect("/organizers")
     send_setup_email(email, token)
+    return redirect("/organizers")
+
+
+@bp.post("/organizers/<int:oid>/directors/<int:uid>/delete")
+@role_required("super_admin")
+def remove_director(oid, uid):
+    """Remove ONE race director from an organizer. Deletes that login (and its sessions
+    and MFA state) -- the organizer, its events, participants and results are untouched.
+    Before this the only way to drop a director was to delete the whole organizer, and
+    the Users page hides directors whenever a district is selected (they have none)."""
+    if not _organizer(oid):
+        abort(404)
+    conn = db.connect()
+    u = conn.execute("SELECT id FROM users WHERE id=? AND role='race_director' AND organizer_id=?",
+                     (uid, oid)).fetchone()
+    if not u:
+        conn.close()
+        abort(404)
+    for t in ("user_schools", "sessions", "mfa_challenges", "mfa_devices"):
+        conn.execute(f"DELETE FROM {t} WHERE user_id=?", (uid,))
+    conn.execute("DELETE FROM users WHERE id=?", (uid,))
+    conn.commit()
+    conn.close()
     return redirect("/organizers")
 
 
