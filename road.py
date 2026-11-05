@@ -1307,6 +1307,27 @@ def _consume_promo(code):
     return pct if ok else None
 
 
+def _meet_token(conn, mid):
+    """meets.public_token: random and never reused, unlike meets.id (SQLite reuses the top rowid
+    after a reap, so an id comparison could mistake a brand-new event for the reaped one)."""
+    r = conn.execute("SELECT public_token FROM meets WHERE id=?", (mid,)).fetchone()
+    return r["public_token"] if r else None
+
+
+def _record_redemption(code, mid):
+    """Log (host email, code, meet) in promo_redemptions so first_event_only survives reaping."""
+    from .auth import _iso, _now
+    s = _load_settings(mid)
+    email = (s.get("owner_email") or "").strip().lower()
+    if not email:
+        return
+    conn = db.connect()
+    conn.execute("INSERT INTO promo_redemptions (email, code, meet_token, created_at) VALUES (?,?,?,?)",
+                 (email, code, _meet_token(conn, mid), _iso(_now())))
+    conn.commit()
+    conn.close()
+
+
 def _first_event_violation(code, mid):
     """True if `code` is a first_event_only code and the host who owns meet `mid` already has
     ANOTHER event that is paid/published (settings host_paid). Ownership key = owner_user_id in the
@@ -1325,9 +1346,14 @@ def _first_event_violation(code, mid):
             ms = json.loads((me["settings_json"] if me else None) or "{}")
         except (ValueError, TypeError):
             ms = {}
-        uid, email = ms.get("owner_user_id"), (ms.get("owner_email") or "").lower()
+        uid, email = ms.get("owner_user_id"), (ms.get("owner_email") or "").strip().lower()
         if uid is None and not email:
             return False
+        # Durable log first: survives reap.py deleting the earlier event and the host's login.
+        if email and conn.execute("SELECT 1 FROM promo_redemptions WHERE email=? AND code=? "
+                                  "AND (meet_token IS NULL OR meet_token<>?) LIMIT 1",
+                                  (email, code, _meet_token(conn, mid))).fetchone():
+            return True
         for r in conn.execute("SELECT settings_json FROM meets WHERE id<>? AND settings_json IS NOT NULL",
                               (mid,)).fetchall():
             try:
@@ -1361,6 +1387,7 @@ def host_redeem(mid):
     pct = _consume_promo(code)
     if pct is None:
         return jsonify(error="That promo code isn’t valid (or it’s been used up)."), 400
+    _record_redemption(code, mid)
     if pct >= 100:                              # free -> publish now, skip Square
         s = _load_settings(mid)
         s["host_paid"] = True

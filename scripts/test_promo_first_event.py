@@ -76,4 +76,18 @@ print("PASS 3: different new host can still redeem")
 r = redeem(a, a2, "ALWAYS")
 assert r.status_code == 200 and paid(a2) and used("ALWAYS") == 1, ("case4", r.data)
 print("PASS 4: normal code still works for repeat events")
+# Case 5: redeem, REAP the event + owner login, host signs up again, still rejected.
+c_ = host("c@example.com"); c1 = event(c_, "c@example.com", "C1")
+conn.execute("UPDATE meets SET date='2020-01-01' WHERE id=?", (c1,))
+conn.commit()
+assert redeem(c_, c1, "ONCE").status_code == 200 and used("ONCE") == 3
+from xctimerpkg.road import reap_web_events
+assert reap_web_events(conn, "2026-11-05") >= 1
+assert not conn.execute("SELECT 1 FROM meets WHERE id=?", (c1,)).fetchone()
+assert not conn.execute("SELECT 1 FROM users WHERE id=?", (c_,)).fetchone()
+assert conn.execute("SELECT COUNT(*) FROM promo_redemptions WHERE email='c@example.com'").fetchone()[0] == 1
+c2u = host("c@example.com"); c2 = event(c2u, "c@example.com", "C2"); conn.commit()
+r = redeem(c2u, c2, "ONCE")
+assert r.status_code == 400 and "first event only" in r.get_json()["error"] and not paid(c2) and used("ONCE") == 3, ("case5", r.data)
+print("PASS 5: after reaping, same host (same email) still rejected, used_count unchanged")
 print("ALL PASS")
