@@ -550,6 +550,16 @@ def migrate(conn):
         "id INTEGER PRIMARY KEY, email TEXT NOT NULL, code TEXT NOT NULL, meet_token TEXT, created_at TEXT)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_promo_redemptions_email_code ON promo_redemptions(email, code)")
 
+    # First-touch marketing attribution for self-serve hosts (WP-0009). Keyed by lower-cased email + meet_token
+    # (no FK) so reap.py, which deletes expired fun-run events and owner logins, never removes it.
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS host_attribution ("
+        "id INTEGER PRIMARY KEY, email TEXT NOT NULL, utm_source TEXT, utm_medium TEXT, utm_campaign TEXT, "
+        "utm_content TEXT, fbclid INTEGER DEFAULT 0, referrer_host TEXT, signed_up_at TEXT NOT NULL, "
+        "meet_token TEXT, published_at TEXT)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_host_attribution_email ON host_attribution(email)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_host_attribution_signed ON host_attribution(signed_up_at)")
+
     ptcols = _column_names(conn, "points_tables")
     if "relay_multiplier" not in ptcols:
         conn.execute("ALTER TABLE points_tables ADD COLUMN relay_multiplier REAL DEFAULT 1.0")
