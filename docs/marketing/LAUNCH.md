@@ -12,6 +12,15 @@
 
 ## Before Launch
 
+### 0. Confirm the contact mailbox receives mail
+
+The site shows `rob@xctimer.com` as its contact address [src: app.py:234]. DEPLOY.md currently lists a null MX for xctimer.com (`xctimer.com. MX 0 "."`), which declares that the domain accepts no mail, so mail to that address may bounce [src: DEPLOY.md:112]. Organizers who write to it would get nothing.
+
+- [ ] **[Rob-only]** Check the DNS for xctimer.com in Cloudflare: is the null MX record actually set, or is a real MX record set up for a mailbox?
+- [ ] **[Rob-only]** From another address, send a test email to `rob@xctimer.com` and confirm it arrives in an inbox you read.
+- [ ] **[Rob-only]** If it does not arrive, fix it before launch, by either: (a) replacing the null MX with the MX records of the mail host you choose and creating the `rob@xctimer.com` mailbox or alias (take the values from that provider; none are given here), or (b) changing the contact address shown on the site to one that does receive mail, then redeploy in step 1.
+- [ ] **[Rob-only]** If you add mail for xctimer.com, review the SPF and DMARC records in DEPLOY.md section 8 so they do not block it [src: DEPLOY.md:108].
+
 ### 1. Deploy main to xctimer.com
 
 - [ ] **[Rob-only]** Run the deploy command from DEPLOY.md section 6 [src: DEPLOY.md]:
