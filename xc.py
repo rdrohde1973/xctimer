@@ -354,7 +354,7 @@ def _road_setup_section(m, setup, races, counts, _json, rename_js):
         else:
             link_html = '<span class="muted">Turn on “Registration open” to share the link.</span>'
         event_card = (
-            '<div class="card"><h2>Event page &amp; registration</h2>'
+            '<div class="card" id="reg-settings"><h2>Event page &amp; registration</h2>'
             f'<div style="display:flex;gap:1rem;align-items:center;flex-wrap:wrap">{logo_thumb}'
             f'<form method="post" action="/meets/{m["id"]}/logo" enctype="multipart/form-data">'
             '<input type="file" name="logo" accept="image/*"> <button type="submit">Upload logo</button>'

@@ -1250,6 +1250,7 @@ def host_start():
 <div class="card" id="create"><form method="post" action="/host">{hidden}
 <label>Event name</label><input name="name" required placeholder="e.g. Maple Grove Community 5K">
 <label>Event date</label><input name="date" type="date" required>
+<p style="font-size:.85rem;color:#6a7c8e;margin:.2rem 0 .6rem">Your event is removed 30 days after this date — download results first.</p>
 <label>Your name</label><input name="who" required>
 <label>Your email</label><input name="email" type="email" required>
 <p style="font-size:.85rem;color:#6a7c8e">We'll email you a private link to build and manage your event.</p>
@@ -1348,7 +1349,9 @@ def host_create():
                           f'<div class="card"><h1>That email is already registered</h1>'
                           f'<p><b>{escape(email)}</b> already has an XCTimer login, so we can’t create a '
                           f'separate community-event sign-in for it. Please <a href="/host">go back</a> and use '
-                          f'a different email to host your event.</p></div>'), 400
+                          f'a different email to host your event, or '
+                          f'<a href="mailto:rob@xctimer.com?subject=XCTimer%20community%20event">get in touch</a> '
+                          f'and we’ll help.</p></div>'), 400
     token = secrets.token_urlsafe(32)
     uid = conn.execute(
         "INSERT INTO users (organizer_id, email, name, role, setup_token, token_expires) "
@@ -1366,7 +1369,12 @@ def host_create():
     _send_host_link(email, token)
     return _host_page("Check your email",
                       f'<div class="card"><h1>✅ Check your email</h1><p>We emailed <b>{escape(email)}</b> a '
-                      f'private link to build and manage <b>{escape(name)}</b>. Tap it to get started.</p></div>')
+                      f'private link to build and manage <b>{escape(name)}</b>. Tap it to get started.</p>'
+                      f'<p>It comes from <b>XCTimer</b>. Check your spam folder if it doesn’t arrive in a few '
+                      f'minutes. Wrong address? <a href="/host">Go back</a></p>'
+                      f'<form method="post" action="/host/resend">'
+                      f'<input type="hidden" name="email" value="{escape(email)}">'
+                      f'<button class="btn" type="submit">Email my link again</button></form></div>')
 
 
 @bp.post("/host/resend")
@@ -1639,8 +1647,15 @@ def host_banner(m):
     fee = _fee_str(HOST_FEE_CENTS)
     mid = m["id"]
     if host_paid(m):
+        try:
+            reg_open = bool(json.loads(m["settings_json"] or "{}").get("reg_open"))
+        except (ValueError, TypeError):
+            reg_open = False
         return ('<div class="card" style="border-color:#2e8b57"><b style="color:#2e8b57">✅ '
-                'Published.</b> <span class="muted">Registration can be opened in the settings below.</span></div>')
+                'Published.</b> <span class="muted">Registration can be opened in the settings below.</span>'
+                + ('' if reg_open else
+                   '<p style="margin:.5rem 0 0"><b>Next: open registration.</b> '
+                   '<a class="btn" href="#reg-settings">Open registration →</a></p>') + '</div>')
     from . import square
     msg = ""
     if request.args.get("payerr"):
