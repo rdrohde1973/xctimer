@@ -5,12 +5,12 @@
 ## Summary
 
 - **The flow already works end to end.** /host form, emailed magic link, event build, then go live by Square card payment or promo code. [src: road.py:1093] [src: road.py:1143] [src: road.py:1200] [src: road.py:1306]
-- **Landing URL decision (judgment call):** until a dedicated page is built, the Page CTA and every post link to `https://xctimer.com/host` plus UTM tags (see Tracking Events). /host already is a one-CTA page with a form. A purpose-built `/fun-run` page is a later WP (Gap 1), not a launch blocker.
+- **Landing URL decision (judgment call):** until a dedicated page is built, the Page CTA and every post link to `https://xctimer.com/host` plus UTM tags (see Tracking Events). /host already is a one-CTA page with a form. A purpose-built `/fun-run` page is a later WP (G1), not a launch blocker.
 - **Offer:** "Your first race is free with code FIRSTRACE, then $50 per event." FIRSTRACE is final [src: ADR-0016]. The $50 fee is the default [src: road.py:24]; the offer wording stays PROVISIONAL(Q-0007) in the sense that the per-event price is Rob's to change.
 - **Launch dependency:** FIRSTRACE must be a first-event-only code. That flag is being added by WP-0008 (in progress). Do not post the code before it is deployed and created (see Rob-only launch steps).
-- **Biggest friction:** the promo box is hidden on the event page after signup, so a host has to find it. Biggest tracking gaps: no UTM capture, no Pixel/CAPI, and the privacy page promises no third-party tracking scripts. [src: road.py:1414] [src: app.py:820]
-- **Meta events:** `Lead` at /host email submit, `CompleteRegistration` at magic-link verify, custom `PublishEvent` at go-live (not `Purchase`, because the first event is free). `Purchase` fires additionally only when real money is paid.
-- **Rob decisions:** approve a Pixel (and the privacy wording change), approve the candidate code WPs below, and run the launch checklist.
+- **Biggest friction:** the promo box is hidden on the event page after signup, so a host has to find it. UTM capture and an admin funnel report are in progress in WP-0009 (first-party, no Pixel) [src: ADR-0017]; Pixel/CAPI is deferred to the paid phase. [src: road.py:1414]
+- **Tracking:** first-party only while organic [src: ADR-0017]: UTMs into `host_attribution` and an admin funnel report, both WP-0009. Meta events (`Lead`, `CompleteRegistration`, custom `PublishEvent`) are mapped for the future paid phase only.
+- **Rob decisions:** approve the candidate code WPs below and run the launch checklist. No Pixel decision is needed until paid ads start.
 
 ## Landing Page
 
@@ -96,20 +96,20 @@
 
 | # | Friction | Fix | Needs code? |
 |---|---|---|---|
-| F1 | /host has no mention of FIRSTRACE, so the offer is invisible at signup. | Add one line under the form: "First race free with code FIRSTRACE." | Yes, Gap 1 |
-| F2 | The check-your-email page does not say where the email comes from or to check spam. | Add: "From XCTimer. Check spam if it does not arrive in a few minutes. Wrong address? Go back." | Yes, Gap 2 |
-| F3 | Email is the only path in; a typo loses the host with no recovery signal. | Add a confirm-email hint and a visible "Email my link" retry on the confirmation page. | Yes, Gap 2 |
-| F4 | A host whose email already has a coach or admin login gets a dead end (400). | Keep the guard but add a plain-language alternative ("use a different email or contact admin@xctimer.com"). | Yes, Gap 2 |
-| F5 | The promo box sits inside the go-live banner and is easy to miss; the code is typed by hand. | Support a `?code=FIRSTRACE` prefill from the landing URL, stored with the event, and pre-fill the box. | Yes, Gap 3 |
-| F6 | Event date is required but not explained; the event is deleted 30 days after it. | Helper text under the date: "Your event is removed 30 days after this date. Download results first." | Yes, Gap 2 |
-| F7 | After publishing, registration still has to be opened by hand. | Show a "Next: open registration" step with a direct link right after publish. | Yes, Gap 2 |
+| F1 | /host has no mention of FIRSTRACE, so the offer is invisible at signup. | Add one line under the form: "First race free with code FIRSTRACE." | Yes, G1 |
+| F2 | The check-your-email page does not say where the email comes from or to check spam. | Add: "From XCTimer. Check spam if it does not arrive in a few minutes. Wrong address? Go back." | Yes, G2 |
+| F3 | Email is the only path in; a typo loses the host with no recovery signal. | Add a confirm-email hint and a visible "Email my link" retry on the confirmation page. | Yes, G2 |
+| F4 | A host whose email already has a coach or admin login gets a dead end (400). | Keep the guard but add a plain-language alternative ("use a different email or contact admin@xctimer.com"). | Yes, G2 |
+| F5 | The promo box sits inside the go-live banner and is easy to miss; the code is typed by hand. | Support a `?code=FIRSTRACE` prefill from the landing URL, stored with the event, and pre-fill the box. | Yes, G3 |
+| F6 | Event date is required but not explained; the event is deleted 30 days after it. | Helper text under the date: "Your event is removed 30 days after this date. Download results first." | Yes, G2 |
+| F7 | After publishing, registration still has to be opened by hand. | Show a "Next: open registration" step with a direct link right after publish. | Yes, G2 |
 | F8 | Default race is named "5K" regardless of what the host planned. | Mention in nudge emails that races can be renamed or added; no code needed. | No |
 | F9 | A partial-discount code is consumed when checkout starts, even if the host abandons checkout. | Not relevant to FIRSTRACE (a full-discount code) [src: road.py:1306]. Note only; do not use partial codes in the campaign. | Optional, later |
-| F10 | No signup source recorded, so Facebook-sourced hosts cannot be told apart. | UTM capture (Gap 1). | Yes |
+| F10 | No signup source recorded, so Facebook-sourced hosts cannot be told apart. | Being built in WP-0009 (`host_attribution`). | In progress |
 
 ## Onboarding Nudges
 
-Emails go through the existing email sender (Resend, SMTP fallback). [src: auth.py:454] Today only the magic-link email exists. [src: road.py:1115] All nudges need a scheduled job (Gap 4). Each is short, plain text, with one link, and an unsubscribe line. Send them to hosts only, never to registered runners.
+Emails go through the existing email sender (Resend, SMTP fallback). [src: auth.py:454] Today only the magic-link email exists. [src: road.py:1115] All nudges need a scheduled job (G4). Each is short, plain text, with one link, and an unsubscribe line. Send them to hosts only, never to registered runners.
 
 | # | Trigger | Timing | Subject | Core message (one idea) | Link |
 |---|---|---|---|---|---|
@@ -148,55 +148,61 @@ Rules: stop the sequence once the stage is passed (never email E2 to a published
 
 ## Tracking Events
 
-### Funnel to Meta event map
+**Organic phase = first-party attribution only** [src: ADR-0017]. UTM tags are captured on /host and stored in a `host_attribution` table that survives reaping; a super_admin funnel report shows signups, events created, published and FIRSTRACE redemptions by source. Both are being built in WP-0009 (in progress). The Meta Pixel and Conversions API (CAPI) are deferred to the paid phase and need their own ADR first [src: ADR-0017], so no Pixel fires at launch.
 
-| Step | Route or trigger | Meta event | Pixel / CAPI | Parameters (no sensitive data) |
+### Funnel step map (organic phase, WP-0009)
+
+The `host_attribution` record and report-stage names below follow ADR-0017's stage list; WP-0009 owns the exact column and label names, so treat those cells as the intent and check them against WP-0009 when it merges.
+
+| Step | Route or trigger | host_attribution record (WP-0009) | Admin funnel-report stage (WP-0009) | Future paid-phase Meta event |
 |---|---|---|---|---|
-| Visit | GET /host (or /fun-run) | `PageView` | Pixel | none |
-| Email submitted | POST /host, success branch ("Check your email" page) | `Lead` | Pixel on confirmation page plus CAPI | `event_id`, hashed email only with consent; `content_name`=fun_run_host |
-| Magic link verified | GET /host/go/token, after session created | `CompleteRegistration` | CAPI (server redirect has no page to carry a Pixel) with Pixel on the event page `?welcome=1` | `event_id`, `status`=true |
-| Event published free | POST /meets/id/host-redeem returning paid, or landing on `/meets/id?paid=1` | custom `PublishEvent` | CAPI plus Pixel on the `?paid=1` page | `event_id`, `promo`=FIRSTRACE |
-| Event published paid | GET /meets/id/host-square-return, or the Square webhook marking paid | `Purchase` plus custom `PublishEvent` | CAPI | `value`=amount actually charged, `currency`=USD |
-| Registration opened (optional) | POST settings save with reg open set | custom `OpenRegistration` | CAPI | `event_id` |
+| Visit | GET /host | UTM tags and click ID read from the URL and carried into the form | not counted (no person yet) | `PageView` |
+| Email submitted | POST /host, success branch ("Check your email" page) | row created with the source tags, linked to the new host/event | Signups | `Lead` |
+| Event created | same POST /host (draft event and "5K" race are created with the user) [src: road.py:1176] | row linked to the draft event | Events created | none |
+| Magic link verified | GET /host/go/token, after session created [src: road.py:1200] | row unchanged; last sign-in is already stored on the user [src: road.py:1222] | covered by Events created (no separate stage named in ADR-0017) | `CompleteRegistration` |
+| Event published free | POST /meets/id/host-redeem, 100% branch [src: road.py:1321] | row linked to the published event; promo code recorded | Published, and FIRSTRACE redemptions | custom `PublishEvent` (not `Purchase`: no money moves) |
+| Event published paid | GET /meets/id/host-square-return, or the Square webhook marking paid [src: road.py:1277] [src: road.py:1358] | row linked to the published event | Published | `Purchase` (value actually charged) plus custom `PublishEvent` |
+| Registration opened | POST settings save with reg open set [src: road.py:721] | not in ADR-0017's stage list | not reported unless WP-0009 adds it | custom `OpenRegistration` |
 
 Notes:
-- A free publish is not a `Purchase`; do not send a value of zero as a purchase. Use the custom `PublishEvent`. Standard names are case-sensitive; custom names are allowed only where no standard event fits. [src: https://www.facebook.com/business/help/2254103654917599]
-- The Square webhook can publish an event when the buyer never returns [src: road.py:1358], so the paid event must fire from the server (CAPI), not only from the browser page.
-- De-duplicate with a shared `event_id` across Pixel and CAPI. [src: https://developers.facebook.com/docs/marketing-api/conversions-api/deduplicate-pixel-and-server-events]
-- Fire `Lead` on form success, not on button click. Do not send event dates, event names or anything tied to minors; the funnel concerns adult organizers only. [src: ADR-0013]
-- Consent: the privacy page says there are no third-party tracking scripts [src: app.py:820]. That text must be changed before a Pixel loads (Rob decision), and the Content-Security-Policy must allow Meta's script and image hosts. [src: app.py:994]
+- The Square webhook can publish an event when the buyer never returns [src: road.py:1358], so whichever record is written at publish must be written server-side, not from a browser page.
+- Reaping deletes the event and the owner login after the event date [src: reap.py]; `host_attribution` is designed to survive that [src: ADR-0017], so the report keeps its history. Store only the UTM tags and click ID, not event content.
+- The campaign has to carry UTM tags on every Facebook link, following the convention in `fb-playbook.md`. [src: ADR-0017]
 
-### UTM capture and storage
+### UTM convention and landing URL
 
 | Item | Spec |
 |---|---|
-| Standard tags on every Facebook/Instagram link | `utm_source` (facebook or instagram), `utm_medium` (social), `utm_campaign` (firstrace), `utm_content` (post or ad name) |
+| Standard tags on every Facebook/Instagram link | `utm_source` (facebook or instagram), `utm_medium` (social), `utm_campaign` (firstrace), `utm_content` (post name) |
 | Page CTA URL | `https://xctimer.com/host?utm_source=facebook&utm_medium=social&utm_campaign=firstrace&utm_content=page_cta` |
-| Capture | On GET /host, read the four UTM params and a `fbclid` if present; keep them in the form as hidden fields and a short first-party cookie so they survive a reload |
-| Storage | On POST /host, save them into the new event's settings (the existing `settings_json` on the meet) as `utm_source`, `utm_medium`, `utm_campaign`, `utm_content`, `fbclid` — no schema change needed |
-| Use | Read back at magic-link verify and at publish, so every later event is attributed to the original source |
-| Privacy | Store only these tags and the click ID; they are removed with the event 30 days after its date [src: reap.py] |
+| Capture and storage | In progress in WP-0009: captured on /host, stored in `host_attribution` per ADR-0017. Not a gap in this spec. |
+
+### Future paid-phase item: Meta Pixel and CAPI (deferred)
+
+Not part of launch and not a candidate WP now. When Rob starts paid ads (fb-playbook.md Phase C), a new ADR must decide it. For that decision:
+- The last column of the step map gives the intended Meta event names (standard names are case-sensitive; custom names only where no standard event fits). [src: https://www.facebook.com/business/help/2254103654917599]
+- It needs a shared `event_id` between Pixel and CAPI to de-duplicate. [src: https://developers.facebook.com/docs/marketing-api/conversions-api/deduplicate-pixel-and-server-events]
+- It conflicts with the privacy page, which says there are no third-party tracking scripts, and with the Content-Security-Policy. [src: app.py:820] [src: app.py:994]
+- Any Pixel ID or CAPI access token must live in environment variables only, never in code, logs or git.
 
 ## Implementation Gaps
 
-Candidate code WPs, for Rob to approve. WP-0008 (first-event-only flag on promo codes) is in progress and is not listed. This WP edits no code. `road.py` and `db.py` are named below only as files a future WP would touch.
+Candidate code WPs, for Rob to approve. Already in progress and so not listed: WP-0008 (first-event-only flag on promo codes) and WP-0009 (first-party UTM capture on /host, `host_attribution`, admin funnel report; ADR-0017). This WP edits no code. `road.py` is named below only as a file a future WP would touch.
 
 | # | Candidate WP | What it does | Files it would touch |
 |---|---|---|---|
-| G1 | /host landing copy and UTM capture | FIRSTRACE line, hero copy and FAQ on /host; read UTM params; hidden fields; store in `settings_json` on create. Optional later `/fun-run` page that reuses it. | `road.py` (host_start, host_create), `app.py` (route for /fun-run, landing link), `ui.py` (shared styles) |
+| G1 | /host landing copy | FIRSTRACE line, hero copy and FAQ on /host. Optional later `/fun-run` page that reuses it. Coordinate with WP-0009, which also edits /host. | `road.py` (host_start), `app.py` (route for /fun-run, landing link), `ui.py` (shared styles) |
 | G2 | Host-flow friction fixes | Items F2, F3, F4, F6, F7: better confirmation page, hints, next-step prompt after publish. | `road.py` (host_create, host_banner), `ui.py` |
 | G3 | Promo prefill | `?code=FIRSTRACE` prefill carried from landing to the go-live box. | `road.py` (host_banner, host_go) |
-| G4 | Onboarding nudge emails | Scheduled job sending E1 to E8, stop rules, unsubscribe line, a sent-log to avoid repeats. | new `nudges.py`, `db.py` (sent-log table or settings flags), `auth.py` (send_email reuse), systemd timer like `reap.py` [src: reap.py] |
-| G5 | Meta Pixel and Conversions API | Pixel snippet on the /host pages and event page; CAPI sender called at the points in the event map; consent and privacy wording; CSP update. | `ui.py` (head snippet, `_host_page`), `app.py` (CSP at app.py:994, privacy text at app.py:820), `road.py` (fire points), new `meta_capi.py` |
-| G6 | Funnel stage reporting | Admin view counting hosts per stage and source: signed up, verified, published, registration opened. | `admin.py`, `road.py` (stage flags in settings), `db.py` (only if a table is wanted) |
+| G4 | Onboarding nudge emails | Scheduled job sending E1 to E8, stop rules, unsubscribe line, a sent-log to avoid repeats. | new `nudges.py`, `db.py` (sent-log table), `auth.py` (send_email reuse), systemd timer like `reap.py` [src: reap.py] |
 
-**Secrets:** the Pixel ID is not a secret, but the CAPI access token is. Both load from environment variables only (for example `META_PIXEL_ID`, `META_CAPI_TOKEN`), never in code, logs or git; add placeholders to `env.example`. If the variables are unset, the code sends nothing.
+Funnel stage reporting is covered by WP-0009's admin report and is not a separate gap. Pixel and CAPI are a deferred paid-phase item (see Tracking Events), not a gap.
 
-Priority for launch: G1 is small and enables attribution; the Page can launch with the UTM-tagged /host URL and an unmodified /host page, so nothing here blocks the first organic posts except the WP-0008 and FIRSTRACE steps above.
+Priority for launch: the Page can launch with the UTM-tagged /host URL. Nothing here blocks the first organic posts except the WP-0008, WP-0009 and FIRSTRACE steps.
 
 ## Source Check
 
 - Offer and code: [src: ADR-0016], [src: ADR-0014]; the price default is read from `HOST_FEE_CENTS` [src: road.py:24]. Per-event price after the first event stays PROVISIONAL(Q-0007).
+- Attribution approach: [src: ADR-0017]; the WP-0009 table and stage names were not available to read, so they are taken from the ADR only.
 - Everything in the Host Signup Flow table was read in `road.py` (lines 1037 to 1470); Square internals were not re-read.
 - Not verified live: no request was made to xctimer.com in this WP; copy for /host is quoted from the code. [src: road.py:1093]
-- Meta event names checked against the playbook's Tracking Plan. [src: docs/marketing/fb-playbook.md]
