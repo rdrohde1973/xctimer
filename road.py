@@ -140,6 +140,7 @@ def list_organizers():
         f'<tr><td><b>{escape(c["code"])}</b></td>'
         f'<td class="muted">{escape(c["label"] or "")}</td>'
         f'<td>{_disc(c)}</td>'
+        f'<td>{"First event only" if c["first_event_only"] else "—"}</td>'
         f'<td>{c["used_count"]}{("/" + str(c["max_uses"])) if c["max_uses"] is not None else ""}</td>'
         f'<td>{"✅ active" if c["active"] else "⛔ off"}</td>'
         f'<td style="text-align:right"><form class="inline" method="post" '
@@ -151,7 +152,7 @@ def list_organizers():
         '<p class="muted">Codes for the $50 self-serve event fee. <b>100% = free</b> (publishes with no '
         'payment); a partial % sends the host to card checkout for the reduced amount. A host enters the '
         'code on their Go-live banner. Leave “max uses” blank for unlimited.</p>'
-        + (f'<table><tr><th>Code</th><th>Label</th><th>Discount</th><th>Used</th><th>Status</th><th></th></tr>'
+        + (f'<table><tr><th>Code</th><th>Label</th><th>Discount</th><th>Scope</th><th>Used</th><th>Status</th><th></th></tr>'
            f'{crows}</table>' if codes else '<p class="muted">No codes yet.</p>')
         + '<form method="post" action="/host-codes" class="row" style="gap:.5rem;flex-wrap:wrap;margin-top:.6rem">'
           '<div><label>New code</label><input name="code" placeholder="e.g. FRIEND" required></div>'
@@ -159,6 +160,8 @@ def list_organizers():
           '<div style="max-width:90px"><label>% off</label>'
           '<input name="percent" type="number" min="1" max="100" value="100"></div>'
           '<div style="max-width:100px"><label>Max uses</label><input name="max_uses" type="number" min="1" placeholder="∞"></div>'
+          '<div style="display:flex;align-items:flex-end"><label style="font-weight:normal">'
+          '<input type="checkbox" name="first_event_only" value="1" style="width:auto"> First event only</label></div>'
           '<div style="display:flex;align-items:flex-end"><button type="submit">+ Add code</button></div>'
           '</form></div>')
     body = (
@@ -185,11 +188,12 @@ def add_promo_code():
     max_uses = int(mu) if mu.isdigit() and int(mu) > 0 else None
     pu = (request.form.get("percent") or "").strip()
     percent = min(100, max(1, int(pu))) if pu.isdigit() else 100
+    first_only = 1 if request.form.get("first_event_only") else 0
     if code:
         conn = db.connect()
         conn.execute("INSERT OR IGNORE INTO promo_codes "
-                     "(code, label, active, max_uses, used_count, percent_off, created_at) "
-                     "VALUES (?,?,1,?,0,?,?)", (code, label, max_uses, percent, _iso(_now())))
+                     "(code, label, active, max_uses, used_count, percent_off, created_at, first_event_only) "
+                     "VALUES (?,?,1,?,0,?,?,?)", (code, label, max_uses, percent, _iso(_now()), first_only))
         conn.commit()
         conn.close()
     return redirect("/organizers")
@@ -1303,6 +1307,69 @@ def _consume_promo(code):
     return pct if ok else None
 
 
+def _meet_token(conn, mid):
+    """meets.public_token: random and never reused, unlike meets.id (SQLite reuses the top rowid
+    after a reap, so an id comparison could mistake a brand-new event for the reaped one)."""
+    r = conn.execute("SELECT public_token FROM meets WHERE id=?", (mid,)).fetchone()
+    return r["public_token"] if r else None
+
+
+def _record_redemption(code, mid):
+    """Log (host email, code, meet) in promo_redemptions so first_event_only survives reaping."""
+    from .auth import _iso, _now
+    s = _load_settings(mid)
+    email = (s.get("owner_email") or "").strip().lower()
+    if not email:
+        return
+    conn = db.connect()
+    conn.execute("INSERT INTO promo_redemptions (email, code, meet_token, created_at) VALUES (?,?,?,?)",
+                 (email, code, _meet_token(conn, mid), _iso(_now())))
+    conn.commit()
+    conn.close()
+
+
+def _first_event_violation(code, mid):
+    """True if `code` is a first_event_only code and the host who owns meet `mid` already has
+    ANOTHER event that is paid/published (settings host_paid). Ownership key = owner_user_id in the
+    meet's settings_json (all self-serve events share one 'XCTimer Web' organizer, so organizer_id
+    can't tell hosts apart; users.email is unique, so one user == one email). Falls back to
+    owner_email for events lacking owner_user_id. Read-only: runs before _consume_promo."""
+    code = (code or "").strip().upper()
+    conn = db.connect()
+    try:
+        row = conn.execute("SELECT first_event_only FROM promo_codes WHERE code=? AND active=1",
+                           (code,)).fetchone()
+        if not row or not row["first_event_only"]:
+            return False
+        me = conn.execute("SELECT settings_json FROM meets WHERE id=?", (mid,)).fetchone()
+        try:
+            ms = json.loads((me["settings_json"] if me else None) or "{}")
+        except (ValueError, TypeError):
+            ms = {}
+        uid, email = ms.get("owner_user_id"), (ms.get("owner_email") or "").strip().lower()
+        if uid is None and not email:
+            return False
+        # Durable log first: survives reap.py deleting the earlier event and the host's login.
+        if email and conn.execute("SELECT 1 FROM promo_redemptions WHERE email=? AND code=? "
+                                  "AND (meet_token IS NULL OR meet_token<>?) LIMIT 1",
+                                  (email, code, _meet_token(conn, mid))).fetchone():
+            return True
+        for r in conn.execute("SELECT settings_json FROM meets WHERE id<>? AND settings_json IS NOT NULL",
+                              (mid,)).fetchall():
+            try:
+                o = json.loads(r["settings_json"] or "{}")
+            except (ValueError, TypeError):
+                continue
+            if not o.get("host_paid"):
+                continue
+            if (uid is not None and o.get("owner_user_id") == uid) or \
+               (email and (o.get("owner_email") or "").lower() == email):
+                return True
+        return False
+    finally:
+        conn.close()
+
+
 @bp.post("/meets/<int:mid>/host-redeem")
 @login_required
 def host_redeem(mid):
@@ -1315,9 +1382,12 @@ def host_redeem(mid):
         return jsonify(paid=True)
     code = ((request.get_json(silent=True) or {}).get("code")
             or request.form.get("code") or request.args.get("code") or "").strip().upper()
+    if _first_event_violation(code, mid):      # before consuming, so a rejection doesn't burn a use
+        return jsonify(error="This code is for your first event only."), 400
     pct = _consume_promo(code)
     if pct is None:
         return jsonify(error="That promo code isn’t valid (or it’s been used up)."), 400
+    _record_redemption(code, mid)
     if pct >= 100:                              # free -> publish now, skip Square
         s = _load_settings(mid)
         s["host_paid"] = True
