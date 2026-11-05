@@ -541,6 +541,8 @@ def migrate(conn):
         "max_uses INTEGER, used_count INTEGER DEFAULT 0, percent_off INTEGER DEFAULT 100, created_at TEXT)")
     if "percent_off" not in _column_names(conn, "promo_codes"):
         conn.execute("ALTER TABLE promo_codes ADD COLUMN percent_off INTEGER DEFAULT 100")
+    if "first_event_only" not in _column_names(conn, "promo_codes"):   # 1 => one free event per host
+        conn.execute("ALTER TABLE promo_codes ADD COLUMN first_event_only INTEGER DEFAULT 0")
 
     ptcols = _column_names(conn, "points_tables")
     if "relay_multiplier" not in ptcols:
