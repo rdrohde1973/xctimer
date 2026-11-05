@@ -4,11 +4,11 @@
 
 ## Summary
 
-- **The flow already works end to end.** /host form, emailed magic link, event build, then go live by Square card payment or promo code. [src: road.py:1093] [src: road.py:1143] [src: road.py:1200] [src: road.py:1306]
+- **The flow already works end to end.** /host form, emailed magic link, event build, then go live by Square card payment or promo code. [src: road.py:1229 (host_start)] [src: road.py:1279 (host_create)] [src: road.py:1337 (host_go)] [src: road.py:1509 (host_redeem)]
 - **Landing URL decision (judgment call):** until a dedicated page is built, the Page CTA and every post link to `https://xctimer.com/host` plus UTM tags (see Tracking Events). /host already is a one-CTA page with a form. A purpose-built `/fun-run` page is a later WP (G1), not a launch blocker.
-- **Offer:** "Your first race is free with code FIRSTRACE, then $50 per event." FIRSTRACE is final [src: ADR-0016]. The $50 fee is the default [src: road.py:24]; the offer wording stays PROVISIONAL(Q-0007) in the sense that the per-event price is Rob's to change.
+- **Offer:** "Your first race is free with code FIRSTRACE, then $50 per event." FIRSTRACE is final [src: ADR-0016]. The $50 fee is the default [src: road.py:25 (HOST_FEE_CENTS)]; the offer wording stays PROVISIONAL(Q-0007) in the sense that the per-event price is Rob's to change.
 - **Launch dependency:** FIRSTRACE must be a first-event-only code. That flag is being added by WP-0008 (in progress). Do not post the code before it is deployed and created (see Rob-only launch steps).
-- **Biggest friction:** the promo box is hidden on the event page after signup, so a host has to find it. UTM capture and an admin funnel report are in progress in WP-0009 (first-party, no Pixel) [src: ADR-0017]; Pixel/CAPI is deferred to the paid phase. [src: road.py:1414]
+- **Biggest friction:** the promo box is hidden on the event page after signup, so a host has to find it. UTM capture and an admin funnel report are in progress in WP-0009 (first-party, no Pixel) [src: ADR-0017]; Pixel/CAPI is deferred to the paid phase. [src: road.py:1623 (host_banner, promo input)]
 - **Tracking:** first-party only while organic [src: ADR-0017]: UTMs into `host_attribution` and an admin funnel report, both WP-0009. Meta events (`Lead`, `CompleteRegistration`, custom `PublishEvent`) are mapped for the future paid phase only.
 - **Rob decisions:** approve the candidate code WPs below and run the launch checklist. No Pixel decision is needed until paid ads start.
 
@@ -56,23 +56,23 @@
 
 | Block | Copy | Source for the claim |
 |---|---|---|
-| H1 | Time your own fun run. | [src: road.py:1097] |
-| Sub | A public sign-up page, printed bibs, phone or camera timing, and live results the whole crowd can follow. | [src: road.py:1097] |
-| CTA button | Create my event | [src: road.py:1107] |
+| H1 | Time your own fun run. | [src: road.py:1231 (host_start)] |
+| Sub | A public sign-up page, printed bibs, phone or camera timing, and live results the whole crowd can follow. | [src: road.py:1231 (host_start)] |
+| CTA button | Create my event | [src: road.py:1241 (host_start)] |
 | Under CTA | Build it free. Your first race is free with code FIRSTRACE. | [src: ADR-0016] |
-| Step 1 | Name your event and give us your email. We send you a private link. | [src: road.py:1103] |
-| Step 2 | Build your races and age groups, and get a public sign-up page with a link and QR. | [src: road.py:849] [src: road.py:1470] |
-| Step 3 | Go live with FIRSTRACE and open registration. | [src: road.py:1306] |
-| Bullet: bibs | Printed bib stickers with camera-readable tags and your event logo. | [src: road.py:733] |
-| Bullet: timing | Time it with a phone: one helper taps each finisher, then scans or types the bib. | [src: phone.py] [src: road.py:1482] |
-| Bullet: results | Live results by gender and age group, with a share link. | [src: road.py:1486] |
+| Step 1 | Name your event and give us your email. We send you a private link. | [src: road.py:1240 (host_start)] |
+| Step 2 | Build your races and age groups, and get a public sign-up page with a link and QR. | [src: road.py:984 (register)] [src: road.py:1676 (_HOST_HELP_SYS)] |
+| Step 3 | Go live with FIRSTRACE and open registration. | [src: road.py:1509 (host_redeem)] |
+| Bullet: bibs | Printed bib stickers with camera-readable tags and your event logo. | [src: road.py:868 (participant_stickers)] |
+| Bullet: timing | Time it with a phone: one helper taps each finisher, then scans or types the bib. | [src: phone.py] [src: road.py:1688 (_HOST_HELP_SYS)] |
+| Bullet: results | Live results by gender and age group, with a share link. | [src: road.py:1692 (_HOST_HELP_SYS)] |
 | Bullet: course | A course map with water stations for road events. | [src: coursemap.py:127] |
-| Bullet: help | A built-in setup assistant walks first-timers through it. | [src: road.py:1492] |
-| Price box | First event free with FIRSTRACE. After that, $50 per event. PROVISIONAL(Q-0007) | [src: ADR-0016] [src: road.py:24] |
+| Bullet: help | A built-in setup assistant walks first-timers through it. | [src: road.py:1698 (host_chat)] |
+| Price box | First event free with FIRSTRACE. After that, $50 per event. PROVISIONAL(Q-0007) | [src: ADR-0016] [src: road.py:25 (HOST_FEE_CENTS)] |
 | FAQ: what happens to my event after? | Your event and its owner login are removed 30 days after the event date, so download your results first. | [src: reap.py] |
-| FAQ: can runners pay online? | Entry fees, if you charge any, go through your Venmo or at packet pickup, not by card. | [src: road.py:866] |
-| FAQ: do I need an account? | No password. You sign in from the private link in your email. Runners need no account. | [src: road.py:1222] [src: road.py:849] |
-| FAQ: how do I get my link again? | Use "Email my link" on the page. | [src: road.py:1109] |
+| FAQ: can runners pay online? | Entry fees, if you charge any, go through your Venmo or at packet pickup, not by card. | [src: road.py:1000 (register, fee line)] |
+| FAQ: do I need an account? | No password. You sign in from the private link in your email. Runners need no account. | [src: road.py:1364 (host_go, create_session)] [src: road.py:984 (register)] |
+| FAQ: how do I get my link again? | Use "Email my link" on the page. | [src: road.py:1246 (host_start)] |
 | Schools line (footer, one line) | Coaching a school team? XCTimer also runs cross-country and track meets. | [src: xc.py] [src: track.py] |
 
 **Do not claim:** waivers for fun runs, card payment for runners, long-term result archives, chip-mat accuracy, or any compliance certification. [src: docs/marketing/positioning.md]
@@ -83,13 +83,13 @@
 
 | # | Step | What happens | Source |
 |---|---|---|---|
-| 1 | Land on /host | Form: event name, date, your name, email. Also an "Email my link" form for returning hosts. | [src: road.py:1093] |
-| 2 | POST /host | Validates name and email. If the email already belongs to a web host, resend the link; if it belongs to any other login, show "already registered" (400). Otherwise create user, a draft event with one race "5K", a 60-day token, and email the link. | [src: road.py:1143] |
-| 3 | "Check your email" | Static confirmation page. | [src: road.py:1186] |
-| 4 | Open magic link /host/go/token | Validates token and expiry, records last login, creates a 60-day event-owner session, redirects to the event page. | [src: road.py:1200] |
-| 5 | Build the event | Setup tab: races, age groups, logo, registration text, fee, Venmo. Registration cannot be opened until paid. | [src: road.py:719] |
-| 6 | Go live | Banner offers Square card payment or a promo box. 100% code publishes at once; partial code goes to Square for the reduced amount. | [src: road.py:1379] [src: road.py:1306] |
-| 7 | Open registration | Host ticks "reg open" in settings after publishing. | [src: road.py:721] |
+| 1 | Land on /host | Form: event name, date, your name, email. Also an "Email my link" form for returning hosts. | [src: road.py:1229 (host_start)] |
+| 2 | POST /host | Validates name and email. If the email already belongs to a web host, resend the link; if it belongs to any other login, show "already registered" (400). Otherwise create user, a draft event with one race "5K", a 60-day token, and email the link. Since WP-0009 it also writes the first-touch `host_attribution` row (one per email, blank if no UTMs). | [src: road.py:1279 (host_create)] [src: road.py:140 (_record_attribution)] |
+| 3 | "Check your email" | Static confirmation page. | [src: road.py:1321 (host_create)] |
+| 4 | Open magic link /host/go/token | Validates token and expiry, records last login, writes the attribution row if the POST did not, creates a 60-day event-owner session, redirects to the event page. | [src: road.py:1337 (host_go)] |
+| 5 | Build the event | Setup tab: races, age groups, logo, registration text, fee, Venmo. Registration cannot be opened until paid. | [src: road.py:856 (event_settings)] |
+| 6 | Go live | Banner offers Square card payment or a promo box. A first-event-only code is rejected if the host already has another published or paid event (WP-0008); a 100% code publishes at once; a partial code goes to Square for the reduced amount. | [src: road.py:1585 (host_banner)] [src: road.py:1465 (_first_event_violation)] [src: road.py:1509 (host_redeem)] |
+| 7 | Open registration | Host ticks "reg open" in settings after publishing. | [src: road.py:856 (event_settings)] |
 | 8 | Race day, results, auto-delete | Timing and live results; event removed 30 days after its date. | [src: reap.py] |
 
 ### Friction points and fixes
@@ -104,12 +104,12 @@
 | F6 | Event date is required but not explained; the event is deleted 30 days after it. | Helper text under the date: "Your event is removed 30 days after this date. Download results first." | Yes, G2 |
 | F7 | After publishing, registration still has to be opened by hand. | Show a "Next: open registration" step with a direct link right after publish. | Yes, G2 |
 | F8 | Default race is named "5K" regardless of what the host planned. | Mention in nudge emails that races can be renamed or added; no code needed. | No |
-| F9 | A partial-discount code is consumed when checkout starts, even if the host abandons checkout. | Not relevant to FIRSTRACE (a full-discount code) [src: road.py:1306]. Note only; do not use partial codes in the campaign. | Optional, later |
+| F9 | A partial-discount code is consumed when checkout starts, even if the host abandons checkout. | Not relevant to FIRSTRACE (a full-discount code) [src: road.py:1525 (host_redeem)]. Note only; do not use partial codes in the campaign. | Optional, later |
 | F10 | No signup source recorded, so Facebook-sourced hosts cannot be told apart. | Being built in WP-0009 (`host_attribution`). | In progress |
 
 ## Onboarding Nudges
 
-Emails go through the existing email sender (Resend, SMTP fallback). [src: auth.py:454] Today only the magic-link email exists. [src: road.py:1115] All nudges need a scheduled job (G4). Each is short, plain text, with one link, and an unsubscribe line. Send them to hosts only, never to registered runners.
+Emails go through the existing email sender (Resend, SMTP fallback). [src: auth.py:454] Today only the magic-link email exists. [src: road.py:1250 (_send_host_link)] All nudges need a scheduled job (G4). Each is short, plain text, with one link, and an unsubscribe line. Send them to hosts only, never to registered runners.
 
 | # | Trigger | Timing | Subject | Core message (one idea) | Link |
 |---|---|---|---|---|---|
@@ -129,19 +129,19 @@ Rules: stop the sequence once the stage is passed (never email E2 to a published
 
 | Stage | What the host sees | Mechanism | Source |
 |---|---|---|---|
-| First event | "First race free with code FIRSTRACE" | 100% promo publishes with no payment; WP-0008 limits it to a host's first event | [src: ADR-0016] [src: road.py:1321] |
-| Second and later events | $50 per event, pay by Square card | Existing go-live payment | [src: road.py:24] [src: road.py:1268] |
-| Venmo path | Honor-system publish button exists in code | Not promoted in copy (unverified payment) | [src: road.py:1234] |
-| Partial discounts | Not used in the campaign | Would route to Square | [src: road.py:1330] |
+| First event | "First race free with code FIRSTRACE" | 100% promo publishes with no payment; WP-0008 limits it to a host's first event | [src: ADR-0016] [src: road.py:1525 (host_redeem)] |
+| Second and later events | $50 per event, pay by Square card | Existing go-live payment | [src: road.py:25 (HOST_FEE_CENTS)] [src: road.py:1386 (host_pay_square)] |
+| Venmo path | An honor-system publish route exists, but the go-live banner does not show a button for it | Not promoted in copy (unverified payment) | [src: road.py:1373 (host_publish)] |
+| Partial discounts | Not used in the campaign | Would route to Square | [src: road.py:1532 (host_redeem)] |
 
-**Repeat-organizer path:** the account and its event are deleted 30 days after the event date [src: reap.py], so a repeat organizer starts again at /host with the same email (no leftover account to collide with). Nudge E8 covers this. Open question for Rob: should a repeat host get a loyalty code (for example a partial discount)? Not needed for launch; note only.
+**Repeat-organizer path:** the account and its event are deleted 30 days after the event date [src: reap.py], so a repeat organizer starts again at /host with the same email (no leftover account to collide with). FIRSTRACE will be refused the second time: WP-0008 logs each redemption by email so the first-event-only rule survives reaping [src: road.py:1451 (_record_redemption)] [src: road.py:1465 (_first_event_violation)]. Their second event is $50 per event PROVISIONAL(Q-0007). Nudge E8 covers this. Open question for Rob: should a repeat host get a loyalty code (for example a partial discount)? Not needed for launch; note only.
 
 **Not in this offer:** the 30-day trial and monthly pricing do not apply to fun runs. [src: ADR-0014]
 
 ### Rob-only launch steps
 
 - [ ] **[Rob-only]** Wait until WP-0008 (first-event-only flag on promo codes) is merged and deployed.
-- [ ] **[Rob-only]** In /organizers, create code FIRSTRACE: 100% off, first event only, max uses left blank. [src: ADR-0016] [src: road.py:178]
+- [ ] **[Rob-only]** In /organizers, create code FIRSTRACE: 100% off, first event only, max uses left blank. [src: ADR-0016] [src: road.py:312 (add_promo_code)]
 - [ ] **[Rob-only]** Test it yourself with a throwaway email: sign up, publish with FIRSTRACE, then try FIRSTRACE on a second event from the same email and confirm it is rejected.
 - [ ] **[Rob-only]** Set the Page CTA to Sign Up pointing at the landing URL with UTM tags (see below).
 - [ ] **[Rob-only]** Only then post the code publicly.
@@ -158,14 +158,14 @@ The `host_attribution` record and report-stage names below follow ADR-0017's sta
 |---|---|---|---|---|
 | Visit | GET /host | UTM tags and click ID read from the URL and carried into the form | not counted (no person yet) | `PageView` |
 | Email submitted | POST /host, success branch ("Check your email" page) | row created with the source tags, linked to the new host/event | Signups | `Lead` |
-| Event created | same POST /host (draft event and "5K" race are created with the user) [src: road.py:1176] | row linked to the draft event | Events created | none |
-| Magic link verified | GET /host/go/token, after session created [src: road.py:1200] | row unchanged; last sign-in is already stored on the user [src: road.py:1222] | covered by Events created (no separate stage named in ADR-0017) | `CompleteRegistration` |
-| Event published free | POST /meets/id/host-redeem, 100% branch [src: road.py:1321] | row linked to the published event; promo code recorded | Published, and FIRSTRACE redemptions | custom `PublishEvent` (not `Purchase`: no money moves) |
-| Event published paid | GET /meets/id/host-square-return, or the Square webhook marking paid [src: road.py:1277] [src: road.py:1358] | row linked to the published event | Published | `Purchase` (value actually charged) plus custom `PublishEvent` |
-| Registration opened | POST settings save with reg open set [src: road.py:721] | not in ADR-0017's stage list | not reported unless WP-0009 adds it | custom `OpenRegistration` |
+| Event created | same POST /host (draft event and "5K" race are created with the user) [src: road.py:1279 (host_create)] | row linked to the draft event | Events created | none |
+| Magic link verified | GET /host/go/token, after session created [src: road.py:1337 (host_go)] | row unchanged; last sign-in is already stored on the user [src: road.py:1364 (host_go, create_session)] | covered by Events created (no separate stage named in ADR-0017) | `CompleteRegistration` |
+| Event published free | POST /meets/id/host-redeem, 100% branch [src: road.py:1525 (host_redeem)] | row linked to the published event; promo code recorded | Published, and FIRSTRACE redemptions | custom `PublishEvent` (not `Purchase`: no money moves) |
+| Event published paid | GET /meets/id/host-square-return, or the Square webhook marking paid [src: road.py:1408 (host_square_return)] [src: road.py:1562 (square_webhook)] | row linked to the published event | Published | `Purchase` (value actually charged) plus custom `PublishEvent` |
+| Registration opened | POST settings save with reg open set [src: road.py:856 (event_settings)] | not in ADR-0017's stage list | not reported unless WP-0009 adds it | custom `OpenRegistration` |
 
 Notes:
-- The Square webhook can publish an event when the buyer never returns [src: road.py:1358], so whichever record is written at publish must be written server-side, not from a browser page.
+- The Square webhook can publish an event when the buyer never returns [src: road.py:1562 (square_webhook)], so whichever record is written at publish must be written server-side, not from a browser page.
 - Reaping deletes the event and the owner login after the event date [src: reap.py]; `host_attribution` is designed to survive that [src: ADR-0017], so the report keeps its history. Store only the UTM tags and click ID, not event content.
 - The campaign has to carry UTM tags on every Facebook link, following the convention in `fb-playbook.md`. [src: ADR-0017]
 
@@ -202,7 +202,7 @@ Priority for launch: the Page can launch with the UTM-tagged /host URL. Nothing 
 
 ## Source Check
 
-- Offer and code: [src: ADR-0016], [src: ADR-0014]; the price default is read from `HOST_FEE_CENTS` [src: road.py:24]. Per-event price after the first event stays PROVISIONAL(Q-0007).
+- Offer and code: [src: ADR-0016], [src: ADR-0014]; the price default is read from `HOST_FEE_CENTS` [src: road.py:25 (HOST_FEE_CENTS)]. Per-event price after the first event stays PROVISIONAL(Q-0007).
 - Attribution approach: [src: ADR-0017]; the WP-0009 table and stage names were not available to read, so they are taken from the ADR only.
-- Everything in the Host Signup Flow table was read in `road.py` (lines 1037 to 1470); Square internals were not re-read.
-- Not verified live: no request was made to xctimer.com in this WP; copy for /host is quoted from the code. [src: road.py:1093]
+- Everything in the Host Signup Flow table was read in `road.py` as merged with WP-0008 and WP-0009 (roughly lines 125 to 165, 312 to 332, 845 to 866, 984 to 1000 and 1177 to 1700); Square internals (`square.py`) were not re-read. Citations give a line plus the function name so they can be found again if lines shift.
+- Not verified live: no request was made to xctimer.com in this WP; copy for /host is quoted from the code. [src: road.py:1229 (host_start)]
