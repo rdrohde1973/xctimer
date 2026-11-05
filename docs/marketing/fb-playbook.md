@@ -31,7 +31,7 @@ Verify and tune the existing Page. Nothing here costs money.
 - [ ] **[Rob-only]** Confirm the Page is attached to the Business account (business.facebook.com). Turn on two-factor authentication on Rob's personal Facebook login (house advice, not a cited Meta rule). [src: https://www.facebook.com/business/help/1710077379203657]
 - [ ] **[Rob-only]** Name the Page **XCTimer**.
 - [ ] **[Rob-only]** Set the Page category (pick the closest Meta offers for a software product), profile image, cover image and About text. About text may only say what XCTimer does today; check it against xctimer.com before saving.
-- [ ] **[Rob-only]** Set the Page call-to-action button to **Sign Up**, linking to the landing URL PROVISIONAL(WP-0005: landing page not built yet; use the xctimer.com signup URL until it exists, then switch).
+- [ ] **[Rob-only]** Set the Page call-to-action button to **Sign Up**, linking to `https://xctimer.com/host?utm_source=facebook&utm_medium=social&utm_campaign=firstrace&utm_content=page_cta` (landing URL settled in docs/marketing/funnel-spec.md; /host is the landing page until a dedicated page is built).
 - [ ] **[Rob-only]** Verify the xctimer.com domain in the Business account (Brand Safety → Domains; DNS TXT record or meta-tag method). [src: https://www.facebook.com/business/help/286768115176155]
 - [ ] **[Rob-only]** Add any other admins (at least one second admin for recovery).
 - [ ] **[Rob-only]** Optional: link or create an Instagram professional account and connect it to the Page (needed later for Instagram placements).
