@@ -21,7 +21,11 @@ What actually exists:
   fits construction draw requests. The domain 321draw.com is currently parked/for sale
   at GoDaddy, so its real public URL is unknown.
 
-Until Rob answers Q-0001, only product-neutral work runs.
+**Resolved 2026-11-05 (Q-0001 → ADR-0006):** Rob chose **XCTimer**. Target audiences
+are junior high/middle school XC and track coaches and meet hosts, athletic directors,
+district administrators, and community fun-run/5K organizers. Contractors are out of
+scope. Note: XCTimer has no self-serve coach signup or subscription billing today,
+so a free tier that converts to monthly paid needs code work (scoped in WP-0005).
 
 ## Use cases (whichever product is confirmed)
 1. Prospect sees a Facebook/Instagram ad or organic post aimed at their pain.
@@ -48,7 +52,7 @@ Until Rob answers Q-0001, only product-neutral work runs.
 - Hardcode or commit secrets (pixel tokens, API keys).
 
 ## Open questions (see the tracker)
-- Q-0001 Which product is being marketed? (blocking product-specific work)
+- ~~Q-0001 Which product?~~ Answered: XCTimer (ADR-0006)
 - Q-0002 Ad budget and whether to start organic-only ($0)
 - Q-0003 Free tier: what it includes, and what paid plans cost
 - Q-0004 Meta Business account, Page and ad account ownership/access
