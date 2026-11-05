@@ -27,6 +27,11 @@ district administrators, and community fun-run/5K organizers. Contractors are ou
 scope. Note: XCTimer has no self-serve coach signup or subscription billing today,
 so a free tier that converts to monthly paid needs code work (scoped in WP-0005).
 
+**Owner override 2026-11-05 (ADR-0013):** Market mainly the **fun-run / "time your own
+event"** flow (xctimer.com/host: build free, $50 to go live). Junior high schools get only
+a secondary mention. Offer (provisional, Q-0007): first event free with a promo code,
+then $50 per event. Ad spend is $0, organic only (ADR-0007).
+
 ## Use cases (whichever product is confirmed)
 1. Prospect sees a Facebook/Instagram ad or organic post aimed at their pain.
 2. Clicks to a landing page with one message and one call to action: start free.
