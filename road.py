@@ -3,6 +3,7 @@ their race-director logins, and Events. An event is a `meets` row owned by an
 organizer (district_id NULL, sport='road') — so it reuses the whole timing/results
 engine, minus schools, rosters, and PII.
 """
+import base64
 import csv
 import io
 import json
@@ -80,6 +81,135 @@ def _resolve_org():
     return None
 
 
+# ------------------------------- Marketing attribution (WP-0009) -------------------------------
+# First-touch UTM capture in a short-lived cookie (no third-party scripts / Pixel; ADR-0007).
+ATTR_COOKIE = "xc_attr"
+ATTR_FIELDS = ("utm_source", "utm_medium", "utm_campaign", "utm_content")
+ATTR_MAX = 100
+ATTR_TTL = 7 * 24 * 3600
+
+
+def _attr_clean(v):
+    """Short plain string: control chars dropped, truncated. HTML-escaped at output time, never here."""
+    v = "".join(ch for ch in (v or "") if ch.isprintable()).strip()
+    return v[:ATTR_MAX]
+
+
+def _attr_from_request():
+    """Attribution fields visible on THIS request (query string + referrer), or {} if there are none."""
+    from urllib.parse import urlparse
+    out = {k: _attr_clean(request.args.get(k)) for k in ATTR_FIELDS}
+    out = {k: v for k, v in out.items() if v}
+    if request.args.get("fbclid"):
+        out["fbclid"] = 1
+    if out:       # referrer is only interesting alongside a campaign touch
+        try:
+            ref = (urlparse(request.referrer or "").hostname or "").lower()
+        except ValueError:
+            ref = ""
+        if ref and ref != (request.host or "").split(":")[0].lower():
+            out["referrer_host"] = _attr_clean(ref)
+    return out
+
+
+def _attr_from_cookie():
+    try:
+        d = json.loads(base64.urlsafe_b64decode(request.cookies.get(ATTR_COOKIE, "").encode()).decode())
+    except (ValueError, TypeError):
+        return {}
+    if not isinstance(d, dict):
+        return {}
+    clean = {k: _attr_clean(str(d.get(k) or "")) for k in ATTR_FIELDS + ("referrer_host",)}
+    clean = {k: v for k, v in clean.items() if v}
+    if d.get("fbclid"):
+        clean["fbclid"] = 1
+    return clean
+
+
+def capture_attribution(resp):
+    """Set the first-touch cookie on `resp` if this request carries UTMs and no cookie exists yet."""
+    if not request.cookies.get(ATTR_COOKIE):
+        a = _attr_from_request()
+        if a:
+            val = base64.urlsafe_b64encode(json.dumps(a, separators=(",", ":")).encode()).decode()
+            resp.set_cookie(ATTR_COOKIE, val, max_age=ATTR_TTL, httponly=True, samesite="Lax",
+                            secure=bool(os.environ.get("XC_SECURE_COOKIES")))
+    return resp
+
+
+def _record_attribution(conn, email, meet_token=None):
+    """Insert the first-touch row for this host from the cookie (first touch wins: one row per email).
+    Caller commits. No cookie => an all-blank row, so organic signups still count in the report."""
+    from .auth import _iso, _now
+    email = (email or "").strip().lower()
+    if not email or conn.execute("SELECT 1 FROM host_attribution WHERE email=?", (email,)).fetchone():
+        return
+    a = _attr_from_cookie()
+    conn.execute(
+        "INSERT INTO host_attribution (email, utm_source, utm_medium, utm_campaign, utm_content, fbclid, "
+        "referrer_host, signed_up_at, meet_token) VALUES (?,?,?,?,?,?,?,?,?)",
+        (email, a.get("utm_source"), a.get("utm_medium"), a.get("utm_campaign"), a.get("utm_content"),
+         1 if a.get("fbclid") else 0, a.get("referrer_host"), _iso(_now()), meet_token))
+
+
+def _attr_mark_published(mid):
+    from .auth import _iso, _now
+    conn = db.connect()
+    tok = _meet_token(conn, mid)
+    if tok:
+        conn.execute("UPDATE host_attribution SET published_at=COALESCE(published_at, ?) WHERE meet_token=?",
+                     (_iso(_now()), tok))
+        conn.commit()
+    conn.close()
+
+
+def _attribution_rows(days=90):
+    from .auth import _iso, _now
+    since = _iso(_now() - timedelta(days=days))
+    conn = db.connect()
+    rows = conn.execute(
+        "SELECT COALESCE(NULLIF(a.utm_source,''),'(none)') AS src, COALESCE(NULLIF(a.utm_campaign,''),'(none)') AS camp, "
+        "COUNT(*) AS signups, SUM(a.meet_token IS NOT NULL) AS created, SUM(a.published_at IS NOT NULL) AS published, "
+        "SUM(EXISTS(SELECT 1 FROM promo_redemptions p WHERE p.email=a.email AND UPPER(p.code)='FIRSTRACE')) AS promo "
+        "FROM host_attribution a WHERE a.signed_up_at >= ? GROUP BY src, camp ORDER BY signups DESC, src, camp",
+        (since,)).fetchall()
+    conn.close()
+    return [tuple(r) for r in rows]
+
+
+@bp.get("/organizers/attribution")
+@role_required("super_admin")
+def attribution_report():
+    rows = _attribution_rows()
+    tot = [sum(r[i] or 0 for r in rows) for i in range(2, 6)]
+    trs = "".join("<tr><td>%s</td><td>%s</td>%s</tr>" % (escape(r[0]), escape(r[1]),
+                  "".join("<td>%d</td>" % (v or 0) for v in r[2:])) for r in rows) \
+        or '<tr><td colspan=6 class="muted">No host signups in the last 90 days.</td></tr>'
+    body = ('<h1>Host signup funnel</h1><p class="muted">Last 90 days, first touch, grouped by utm_source / '
+            'utm_campaign. <a href="/organizers">← Organizers</a> · <a href="/organizers/attribution.csv">Download CSV</a></p>'
+            '<div class="card"><table><tr><th>Source</th><th>Campaign</th><th>Signups</th><th>Events created</th>'
+            '<th>Events published</th><th>FIRSTRACE used</th></tr>' + trs +
+            '<tr><th colspan=2>Total</th>' + "".join("<th>%d</th>" % t for t in tot) + '</tr></table></div>')
+    return shell(g.principal, body, active="organizers")
+
+
+def _csv_safe(v):
+    v = str(v)
+    return "'" + v if v[:1] in ("=", "+", "-", "@", "\t", "\r") else v
+
+
+@bp.get("/organizers/attribution.csv")
+@role_required("super_admin")
+def attribution_csv():
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(["utm_source", "utm_campaign", "host_signups", "events_created", "events_published", "firstrace_redemptions"])
+    for r in _attribution_rows():
+        w.writerow([_csv_safe(r[0]), _csv_safe(r[1])] + [v or 0 for v in r[2:]])
+    return Response(buf.getvalue(), mimetype="text/csv",
+                    headers={"Content-Disposition": "attachment; filename=host-attribution-90d.csv"})
+
+
 # ------------------------------- Organizers (super admin) -------------------------------
 @bp.get("/organizers")
 @role_required("super_admin")
@@ -140,6 +270,7 @@ def list_organizers():
         f'<tr><td><b>{escape(c["code"])}</b></td>'
         f'<td class="muted">{escape(c["label"] or "")}</td>'
         f'<td>{_disc(c)}</td>'
+        f'<td>{"First event only" if c["first_event_only"] else "—"}</td>'
         f'<td>{c["used_count"]}{("/" + str(c["max_uses"])) if c["max_uses"] is not None else ""}</td>'
         f'<td>{"✅ active" if c["active"] else "⛔ off"}</td>'
         f'<td style="text-align:right"><form class="inline" method="post" '
@@ -151,7 +282,7 @@ def list_organizers():
         '<p class="muted">Codes for the $50 self-serve event fee. <b>100% = free</b> (publishes with no '
         'payment); a partial % sends the host to card checkout for the reduced amount. A host enters the '
         'code on their Go-live banner. Leave “max uses” blank for unlimited.</p>'
-        + (f'<table><tr><th>Code</th><th>Label</th><th>Discount</th><th>Used</th><th>Status</th><th></th></tr>'
+        + (f'<table><tr><th>Code</th><th>Label</th><th>Discount</th><th>Scope</th><th>Used</th><th>Status</th><th></th></tr>'
            f'{crows}</table>' if codes else '<p class="muted">No codes yet.</p>')
         + '<form method="post" action="/host-codes" class="row" style="gap:.5rem;flex-wrap:wrap;margin-top:.6rem">'
           '<div><label>New code</label><input name="code" placeholder="e.g. FRIEND" required></div>'
@@ -159,10 +290,13 @@ def list_organizers():
           '<div style="max-width:90px"><label>% off</label>'
           '<input name="percent" type="number" min="1" max="100" value="100"></div>'
           '<div style="max-width:100px"><label>Max uses</label><input name="max_uses" type="number" min="1" placeholder="∞"></div>'
+          '<div style="display:flex;align-items:flex-end"><label style="font-weight:normal">'
+          '<input type="checkbox" name="first_event_only" value="1" style="width:auto"> First event only</label></div>'
           '<div style="display:flex;align-items:flex-end"><button type="submit">+ Add code</button></div>'
           '</form></div>')
     body = (
         '<h1>Organizers</h1>'
+        '<p><a href="/organizers/attribution">Host signup funnel (UTM report) →</a></p>'
         '<p class="muted">Community race organizers. Each runs its own road events '
         '(5K, 10K, half) with participants who register directly — no schools or rosters.</p>'
         '<div class="card"><h2>New organizer</h2>'
@@ -185,11 +319,12 @@ def add_promo_code():
     max_uses = int(mu) if mu.isdigit() and int(mu) > 0 else None
     pu = (request.form.get("percent") or "").strip()
     percent = min(100, max(1, int(pu))) if pu.isdigit() else 100
+    first_only = 1 if request.form.get("first_event_only") else 0
     if code:
         conn = db.connect()
         conn.execute("INSERT OR IGNORE INTO promo_codes "
-                     "(code, label, active, max_uses, used_count, percent_off, created_at) "
-                     "VALUES (?,?,1,?,0,?,?)", (code, label, max_uses, percent, _iso(_now())))
+                     "(code, label, active, max_uses, used_count, percent_off, created_at, first_event_only) "
+                     "VALUES (?,?,1,?,0,?,?,?)", (code, label, max_uses, percent, _iso(_now()), first_only))
         conn.commit()
         conn.close()
     return redirect("/organizers")
@@ -1104,26 +1239,64 @@ h1{{color:#164271;margin-top:0}} a{{color:#164271}}</style></head><body><div cla
 <p><a href="/">← XCTimer</a></p>{inner}</div></body></html>""")
 
 
+PROMO_CODE_RE = re.compile(r"[A-Z0-9]{1,20}")
+
+
+def _clean_promo(v):
+    """Promo code from the query string / hidden field: uppercase alphanumeric, <=20 chars, else None."""
+    v = (v or "").strip()
+    return v if PROMO_CODE_RE.fullmatch(v) else None
+
+
+def _fee_whole(cents):
+    """'$50' for whole dollars, '$50.50' otherwise (landing copy)."""
+    return f"${cents // 100:,}" if cents % 100 == 0 else f"${cents / 100:,.2f}"
+
+
 @bp.get("/host")
 def host_start():
-    fee = _fee_str(HOST_FEE_CENTS)
-    inner = (f"""<h1>Run your own fun run</h1>
-<p>Set up a community 5K / 10K / fun run yourself — a public sign-up page, printed bibs, phone or
-camera timing, and live results the whole crowd can follow. <b>{fee} per event</b>, paid when you
-open registration.</p>
-<div class="card"><form method="post" action="/host">
+    fee = _fee_whole(HOST_FEE_CENTS)
+    code = _clean_promo(request.args.get("code"))
+    hidden = f'<input type="hidden" name="code" value="{code}">' if code else ""
+    cta = '<button class="btn" type="submit">Create my event →</button>'
+    inner = (f"""<h1>Time your own fun run.</h1>
+<p>A public sign-up page, printed bibs, phone or camera timing, and live results the whole crowd can follow.</p>
+<div class="card" id="create"><form method="post" action="/host">{hidden}
 <label>Event name</label><input name="name" required placeholder="e.g. Maple Grove Community 5K">
 <label>Event date</label><input name="date" type="date" required>
+<p style="font-size:.85rem;color:#6a7c8e;margin:.2rem 0 .6rem">Your event is removed 30 days after this date — download results first.</p>
 <label>Your name</label><input name="who" required>
 <label>Your email</label><input name="email" type="email" required>
 <p style="font-size:.85rem;color:#6a7c8e">We'll email you a private link to build and manage your event.</p>
-<button class="btn" type="submit">Create my event →</button>
+{cta}
+<p style="font-size:.9rem;color:#6a7c8e;margin:.6rem 0 0">Build it free. Your first race is free with code FIRSTRACE.</p>
 </form></div>
+<div class="card" style="display:flex;gap:.8rem;flex-wrap:wrap;justify-content:space-around;text-align:center;font-weight:600">
+<span>📝 Public sign-up page</span><span>🏷️ Printed bibs</span><span>📊 Live results</span></div>
+<div class="card"><h2 style="margin-top:0">How it works</h2><ol style="padding-left:1.2rem;margin:0">
+<li>Name your event and give us your email. We send you a private link.</li>
+<li>Build your races and age groups, and get a public sign-up page with a link and QR.</li>
+<li>Go live with FIRSTRACE and open registration.</li></ol></div>
+<div class="card"><h2 style="margin-top:0">What you get</h2><ul style="padding-left:1.2rem;margin:0">
+<li>Printed bib stickers with camera-readable tags and your event logo.</li>
+<li>Time it with a phone: one helper taps each finisher, then scans or types the bib.</li>
+<li>Live results by gender and age group, with a share link.</li>
+<li>A course map with water stations for road events.</li>
+<li>A built-in setup assistant walks first-timers through it.</li></ul></div>
+<div class="card" style="border:2px solid #ea6a2d;text-align:center"><h2 style="margin-top:0">Simple pricing</h2>
+<p style="margin:.2rem 0"><b>First event free with code FIRSTRACE, then {fee} per event</b></p>
+<a class="btn" href="#create">Create my event →</a></div>
+<div class="card"><h2 style="margin-top:0">FAQ</h2>
+<p><b>What happens to my event after?</b><br>Your event and its owner login are removed 30 days after the event date, so download your results first.</p>
+<p><b>Can runners pay online?</b><br>Entry fees, if you charge any, go through your Venmo or at packet pickup, not by card.</p>
+<p><b>Do I need an account?</b><br>No password. You sign in from the private link in your email. Runners need no account.</p>
+<p><b>How do I get my link again?</b><br>Use "Email my link" on the page.</p></div>
 <div class="card"><b>Already started one?</b>
 <form method="post" action="/host/resend" style="display:flex;gap:.5rem;margin-top:.4rem">
 <input name="email" type="email" placeholder="your email" required>
-<button class="btn" type="submit" style="white-space:nowrap;background:#3d6fa5">Email my link</button></form></div>""")
-    return _host_page("Run your own fun run", inner)
+<button class="btn" type="submit" style="white-space:nowrap;background:#3d6fa5">Email my link</button></form></div>
+<p style="font-size:.9rem;color:#6a7c8e">Running a school or team meet? <a href="/welcome">See XCTimer for schools</a>.</p>""")
+    return capture_attribution(make_response(_host_page("Time your own fun run", inner)))
 
 
 def _send_host_link(email, token):
@@ -1154,6 +1327,14 @@ def _email_existing_host(email):
     return True
 
 
+def _new_host_settings(uid, email):
+    st = {"host_paid": False, "owner_user_id": uid, "owner_email": email}
+    code = _clean_promo(request.form.get("code"))
+    if code:
+        st["promo_prefill"] = code
+    return st
+
+
 @bp.post("/host")
 def host_create():
     from .auth import _iso, _now
@@ -1182,7 +1363,9 @@ def host_create():
                           f'<div class="card"><h1>That email is already registered</h1>'
                           f'<p><b>{escape(email)}</b> already has an XCTimer login, so we can’t create a '
                           f'separate community-event sign-in for it. Please <a href="/host">go back</a> and use '
-                          f'a different email to host your event.</p></div>'), 400
+                          f'a different email to host your event, or '
+                          f'<a href="mailto:rob@xctimer.com?subject=XCTimer%20community%20event">get in touch</a> '
+                          f'and we’ll help.</p></div>'), 400
     token = secrets.token_urlsafe(32)
     uid = conn.execute(
         "INSERT INTO users (organizer_id, email, name, role, setup_token, token_expires) "
@@ -1192,14 +1375,20 @@ def host_create():
         "INSERT INTO meets (organizer_id, sport, name, date, public_token, team_scoring, settings_json) "
         "VALUES (?,?,?,?,?,0,?)",
         (web, "road", name, date, secrets.token_urlsafe(8),
-         json.dumps({"host_paid": False, "owner_user_id": uid, "owner_email": email}))).lastrowid
+         json.dumps(_new_host_settings(uid, email)))).lastrowid
     conn.execute("INSERT INTO races (meet_id, name, capture_mode) VALUES (?,?,?)", (mid, "5K", "tapselect"))
+    _record_attribution(conn, email, _meet_token(conn, mid))
     conn.commit()
     conn.close()
     _send_host_link(email, token)
     return _host_page("Check your email",
                       f'<div class="card"><h1>✅ Check your email</h1><p>We emailed <b>{escape(email)}</b> a '
-                      f'private link to build and manage <b>{escape(name)}</b>. Tap it to get started.</p></div>')
+                      f'private link to build and manage <b>{escape(name)}</b>. Tap it to get started.</p>'
+                      f'<p>It comes from <b>XCTimer</b>. Check your spam folder if it doesn’t arrive in a few '
+                      f'minutes. Wrong address? <a href="/host">Go back</a></p>'
+                      f'<form method="post" action="/host/resend">'
+                      f'<input type="hidden" name="email" value="{escape(email)}">'
+                      f'<button class="btn" type="submit">Email my link again</button></form></div>')
 
 
 @bp.post("/host/resend")
@@ -1268,6 +1457,7 @@ def owner_session_response(u):
     # The magic link IS how a self-serve host signs in (they never set a password), so
     # record the sign-in — otherwise they'd read as "invite pending" forever.
     conn.execute("UPDATE users SET last_login=? WHERE id=?", (_iso(_now()), u["id"]))
+    _record_attribution(conn, u["email"], _meet_token(conn, m["id"]))   # no-op if the POST /host row exists
     conn.commit()
     conn.close()
     tok = create_session(u["id"], kind="event_owner", meet_id=m["id"], ttl_days=60)
@@ -1286,6 +1476,7 @@ def host_publish(mid):
     s = _load_settings(mid)
     s["host_paid"] = True     # honor-system Venmo confirmation
     _save_settings(mid, s)
+    _attr_mark_published(mid)
     return redirect(f"/meets/{mid}")
 
 
@@ -1349,6 +1540,69 @@ def _consume_promo(code):
     return pct if ok else None
 
 
+def _meet_token(conn, mid):
+    """meets.public_token: random and never reused, unlike meets.id (SQLite reuses the top rowid
+    after a reap, so an id comparison could mistake a brand-new event for the reaped one)."""
+    r = conn.execute("SELECT public_token FROM meets WHERE id=?", (mid,)).fetchone()
+    return r["public_token"] if r else None
+
+
+def _record_redemption(code, mid):
+    """Log (host email, code, meet) in promo_redemptions so first_event_only survives reaping."""
+    from .auth import _iso, _now
+    s = _load_settings(mid)
+    email = (s.get("owner_email") or "").strip().lower()
+    if not email:
+        return
+    conn = db.connect()
+    conn.execute("INSERT INTO promo_redemptions (email, code, meet_token, created_at) VALUES (?,?,?,?)",
+                 (email, code, _meet_token(conn, mid), _iso(_now())))
+    conn.commit()
+    conn.close()
+
+
+def _first_event_violation(code, mid):
+    """True if `code` is a first_event_only code and the host who owns meet `mid` already has
+    ANOTHER event that is paid/published (settings host_paid). Ownership key = owner_user_id in the
+    meet's settings_json (all self-serve events share one 'XCTimer Web' organizer, so organizer_id
+    can't tell hosts apart; users.email is unique, so one user == one email). Falls back to
+    owner_email for events lacking owner_user_id. Read-only: runs before _consume_promo."""
+    code = (code or "").strip().upper()
+    conn = db.connect()
+    try:
+        row = conn.execute("SELECT first_event_only FROM promo_codes WHERE code=? AND active=1",
+                           (code,)).fetchone()
+        if not row or not row["first_event_only"]:
+            return False
+        me = conn.execute("SELECT settings_json FROM meets WHERE id=?", (mid,)).fetchone()
+        try:
+            ms = json.loads((me["settings_json"] if me else None) or "{}")
+        except (ValueError, TypeError):
+            ms = {}
+        uid, email = ms.get("owner_user_id"), (ms.get("owner_email") or "").strip().lower()
+        if uid is None and not email:
+            return False
+        # Durable log first: survives reap.py deleting the earlier event and the host's login.
+        if email and conn.execute("SELECT 1 FROM promo_redemptions WHERE email=? AND code=? "
+                                  "AND (meet_token IS NULL OR meet_token<>?) LIMIT 1",
+                                  (email, code, _meet_token(conn, mid))).fetchone():
+            return True
+        for r in conn.execute("SELECT settings_json FROM meets WHERE id<>? AND settings_json IS NOT NULL",
+                              (mid,)).fetchall():
+            try:
+                o = json.loads(r["settings_json"] or "{}")
+            except (ValueError, TypeError):
+                continue
+            if not o.get("host_paid"):
+                continue
+            if (uid is not None and o.get("owner_user_id") == uid) or \
+               (email and (o.get("owner_email") or "").lower() == email):
+                return True
+        return False
+    finally:
+        conn.close()
+
+
 @bp.post("/meets/<int:mid>/host-redeem")
 @login_required
 def host_redeem(mid):
@@ -1361,14 +1615,18 @@ def host_redeem(mid):
         return jsonify(paid=True)
     code = ((request.get_json(silent=True) or {}).get("code")
             or request.form.get("code") or request.args.get("code") or "").strip().upper()
+    if _first_event_violation(code, mid):      # before consuming, so a rejection doesn't burn a use
+        return jsonify(error="This code is for your first event only."), 400
     pct = _consume_promo(code)
     if pct is None:
         return jsonify(error="That promo code isn’t valid (or it’s been used up)."), 400
+    _record_redemption(code, mid)
     if pct >= 100:                              # free -> publish now, skip Square
         s = _load_settings(mid)
         s["host_paid"] = True
         s["promo_code"] = code
         _save_settings(mid, s)
+        _attr_mark_published(mid)
         return jsonify(paid=True)
     # Partial discount -> pay the reduced amount through Square.
     from . import square
@@ -1396,6 +1654,7 @@ def _mark_host_paid(mid, order_id):
         s["host_paid"] = True
         s["square_order_id"] = order_id
         _save_settings(mid, s)
+        _attr_mark_published(mid)
 
 
 @bp.post("/square/webhook")
@@ -1434,8 +1693,15 @@ def host_banner(m):
     fee = _fee_str(HOST_FEE_CENTS)
     mid = m["id"]
     if host_paid(m):
+        try:
+            reg_open = bool(json.loads(m["settings_json"] or "{}").get("reg_open"))
+        except (ValueError, TypeError):
+            reg_open = False
         return ('<div class="card" style="border-color:#2e8b57"><b style="color:#2e8b57">✅ '
-                'Published.</b> <span class="muted">Registration can be opened in the settings below.</span></div>')
+                'Published.</b> <span class="muted">Registration can be opened in the settings below.</span>'
+                + ('' if reg_open else
+                   '<p style="margin:.5rem 0 0"><b>Next: open registration.</b> '
+                   '<a class="btn" href="#reg-settings">Open registration →</a></p>') + '</div>')
     from . import square
     msg = ""
     if request.args.get("payerr"):
@@ -1459,8 +1725,12 @@ def host_banner(m):
                  if not square.is_configured() else "")
     # Promo code: 100% off publishes free; a partial % routes to Square for the reduced amount.
     # Uses jpost + JS navigation (a form POST->square.link would be blocked by CSP form-action).
+    try:
+        pre = _clean_promo(json.loads(m["settings_json"] or "{}").get("promo_prefill")) or ""
+    except (ValueError, TypeError):
+        pre = ""
     promo = (f'<span style="display:inline-flex;gap:.35rem;align-items:center;margin-left:.3rem">'
-             f'<input id="promocode" placeholder="Promo code" autocomplete="off" '
+             f'<input id="promocode" placeholder="Promo code" autocomplete="off" value="{pre}" '
              f'style="max-width:130px;padding:.5rem" aria-label="Promo code" '
              f'onkeydown="if(event.key===\'Enter\'){{event.preventDefault();applyPromo();}}">'
              f'<button type="button" class="ghost" id="promobtn" onclick="applyPromo()">Apply</button></span>'
