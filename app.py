@@ -10,7 +10,7 @@ import hmac
 import os
 import secrets
 
-from flask import Flask, jsonify, g, redirect, request
+from flask import Flask, jsonify, g, redirect, request, make_response
 
 from . import db, auth, audit
 from .auth import bp as auth_bp
@@ -26,7 +26,7 @@ from .waivers import bp as waivers_bp
 from .road import bp as road_bp
 from .coursemap import bp as coursemap_bp
 
-APP_VERSION = "1.107.0-promo-first-event-only"
+APP_VERSION = "1.108.0-host-attribution"
 
 LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width, initial-scale=1">
@@ -937,14 +937,16 @@ def create_app():
         if getattr(g, "principal", None):
             from .ui import home_url
             return redirect(home_url(g.principal))
-        return LANDING
+        from .road import capture_attribution
+        return capture_attribution(make_response(LANDING))
 
     @app.get("/welcome")
     def welcome():
         # Always the public marketing page, regardless of any session — "/" redirects a
         # logged-in / phone-timer visitor to their home, so public "Powered by" links
         # (e.g. on results pages, seen by people who also carry a timer session) point here.
-        return LANDING
+        from .road import capture_attribution
+        return capture_attribution(make_response(LANDING))
 
     @app.get("/security")
     def security():
