@@ -341,6 +341,8 @@ def _road_setup_section(m, setup, races, counts, _json, rename_js):
                   f'border-radius:8px;padding:4px">' if logo else '<span class="muted">No logo yet</span>')
     event_card = ""
     if setup:
+        from .road import is_web_event, host_paid
+        unpaid_web = is_web_event(m) and not host_paid(m)
         reg_open = bool(s.get("reg_open"))
         if reg_open:
             import base64 as _b64
@@ -361,10 +363,16 @@ def _road_setup_section(m, setup, races, counts, _json, rename_js):
             '<div class="muted" style="font-size:.8rem">Shows on the registration page and bib stickers.</div>'
             '</form></div>'
             f'<form method="post" action="/meets/{m["id"]}/event-settings" style="margin-top:.8rem">'
-            f'<label style="display:flex;gap:.5rem;align-items:center"><input type="checkbox" name="reg_open" '
-            f'style="width:auto" {"checked" if reg_open else ""}> <b>Registration open</b> '
-            '<span class="muted">— let runners sign up at the public link</span></label>'
-            '<label style="margin-top:.5rem">Registration page text (welcome / instructions)</label>'
+            + ('<p style="color:var(--err);font-weight:600;margin:.2rem 0">⚠ Registration stays closed '
+               'until the event is published — pay the event fee or enter a promo code above.</p>'
+               if request.args.get("regpay") else "")
+            + f'<label style="display:flex;gap:.5rem;align-items:center"><input type="checkbox" name="reg_open" '
+            f'style="width:auto" {"checked" if reg_open else ""}{" disabled" if unpaid_web else ""}> '
+            f'<b>Registration open</b> '
+            + ('<span class="muted">— publish the event (above) to open sign-ups</span></label>'
+               if unpaid_web else
+               '<span class="muted">— let runners sign up at the public link</span></label>')
+            + '<label style="margin-top:.5rem">Registration page text (welcome / instructions)</label>'
             f'<textarea name="reg_text" rows="3" style="width:100%">{escape(s.get("reg_text") or "")}</textarea>'
             '<label style="margin-top:.4rem">Entry fee (optional, $)</label>'
             f'<input name="fee" value="{fee_val}" placeholder="0.00" style="max-width:140px">'

@@ -172,11 +172,15 @@ def can_edit_course(m):
     HOST school -- never visiting coaches or meet-day timers. A community road event has no
     host school; its race director (or self-serve owner) maps their own course."""
     p = g.principal
-    if not p or p.meet_scope:
+    if not p:
+        return False
+    if getattr(p, "owns_meet", None) is not None:
+        return can_setup_meet(m)        # self-serve owner (session is also meet-scoped)
+    if p.meet_scope:
         return False
     if p.is_super:
         return True
-    if getattr(p, "owns_meet", None) is not None or _meet_organizer(m) is not None:
+    if _meet_organizer(m) is not None:
         return can_setup_meet(m)
     if p.district_id != m["district_id"]:
         return False

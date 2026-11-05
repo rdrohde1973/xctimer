@@ -36,7 +36,9 @@ def _login_body(email="", nxt=""):
   <label>Password</label><input name="password" type="password" required>
   <button type="submit">Sign in</button>
 </form>
-<p class="center muted"><a href="/forgot">Forgot password?</a></p>"""
+<p class="center muted"><a href="/forgot">Forgot password?</a></p>
+<p class="center muted" style="margin-top:.6rem">Hosting a fun run? You sign in with your private link —
+<a href="/host">email me my link</a>.</p>"""
 
 bp = Blueprint("auth", __name__)
 
@@ -544,6 +546,16 @@ def login_submit():
         return auth_page("Sign in", "Cross-country & track timing", _login_body(email, nxt),
                          err="Invalid email or password."), 401
     _LOGIN_FAILS.pop(email, None)
+    # Self-serve fun-run hosts only ever get a session scoped to their one event — a full
+    # race-director session on the shared XCTimer Web org would expose everyone's events.
+    from .road import is_web_host, owner_session_response
+    if is_web_host(u):
+        resp = owner_session_response(u)
+        if resp is None:
+            return auth_page("Sign in", "Cross-country & track timing", _login_body(email, nxt),
+                             err="No event is attached to this login — start one at /host."), 403
+        _log.info(f"XCLOG LOGIN ok {u['email']} event_owner {ip}")
+        return resp
     # Second factor: if this user has MFA on and this device isn't remembered, email a code
     # instead of logging in straight away.
     if _mfa_required(u) and not _device_remembered(u["id"]):
@@ -668,6 +680,9 @@ def setup_form():
         return auth_page("Link expired", "That link is no longer valid.",
                          '<p class="center"><a href="/forgot">Request a new one</a></p>',
                          err="This setup link is invalid or has expired."), 400
+    from .road import is_web_host
+    if is_web_host(u):                 # that token IS their magic link; no password to set
+        return redirect(f"/host/go/{token}")
     body = f"""
 <form method="post" action="/setup">
   <input type="hidden" name="token" value="{escape(token)}">
@@ -691,6 +706,10 @@ def setup_submit():
         return auth_page("Link expired", "That link is no longer valid.",
                          '<p class="center"><a href="/forgot">Request a new one</a></p>',
                          err="This setup link is invalid or has expired."), 400
+    from .road import is_web_host
+    if is_web_host(u):
+        conn.close()
+        return redirect(f"/host/go/{token}")
     if len(pw) < 8 or pw != confirm:
         conn.close()
         body = f"""
@@ -728,8 +747,14 @@ def forgot_submit():
     email = (request.form.get("email") or "").strip().lower()
     u = find_user_by_email(email)
     if u:
-        token = issue_reset_token(u["id"])
-        send_setup_email(u["email"], token, reset=True)
+        from .road import is_web_host, _email_existing_host
+        if is_web_host(u):
+            # Hosts have no password: re-send their private link instead of a reset
+            # (a reset used to overwrite that link and then mint a full org session).
+            _email_existing_host(u["email"])
+        else:
+            token = issue_reset_token(u["id"])
+            send_setup_email(u["email"], token, reset=True)
     # Always report success (don't leak which emails exist).
     return auth_page("Check your email",
                      "If that address has an account, a reset link is on its way.",

@@ -292,6 +292,8 @@ def list_events():
     p = g.principal
     if getattr(p, "owns_meet", None) is not None:   # self-serve owner: only their one event
         return redirect(f"/meets/{p.owns_meet}")
+    if not p.is_super and is_web_host(p.user):      # web-org host without an owner session
+        return redirect("/host")
     oid = _resolve_org()
     conn = db.connect()
     # Super with no organizer chosen: show a picker.
@@ -341,6 +343,8 @@ def list_events():
 @role_required("super_admin", "race_director")
 def create_event():
     if getattr(g.principal, "owns_meet", None) is not None:   # owners get exactly one event
+        abort(403)
+    if not g.principal.is_super and is_web_host(g.principal.user):
         abort(403)
     oid = _resolve_org()
     if oid is None or not _organizer(oid):
@@ -718,7 +722,8 @@ def event_settings(mid):
     cwo.close()
     # Self-serve web events can't open registration until the $50 is paid (pay-to-go-live).
     unpaid_web = (m["organizer_id"] == web) and not s.get("host_paid")
-    s["reg_open"] = bool(request.form.get("reg_open")) and not unpaid_web
+    wanted_open = bool(request.form.get("reg_open"))
+    s["reg_open"] = wanted_open and not unpaid_web
     s["reg_text"] = (request.form.get("reg_text") or "").strip()
     fee = (request.form.get("fee") or "").strip()
     try:
@@ -727,6 +732,8 @@ def event_settings(mid):
         s["fee_cents"] = 0
     s["venmo"] = _venmo_user(request.form.get("venmo"))
     _save_settings(mid, s)
+    if wanted_open and unpaid_web:     # tell them why it stayed closed
+        return redirect(f"/meets/{mid}?regpay=1")
     return redirect(f"/meets/{mid}")
 
 
@@ -901,7 +908,13 @@ def _notify_registration(m, details):
     """Email the operator when a runner self-registers for a community event.
     Recipient defaults to rob@xctimer.com (override with XC_REG_NOTIFY)."""
     to = os.environ.get("XC_REG_NOTIFY", "rob@xctimer.com")
-    if not to or not details:
+    # Self-serve hosts get the notice too — it's their event, not XCTimer's.
+    try:
+        owner = (json.loads(m["settings_json"] or "{}").get("owner_email") or "").strip().lower()
+    except (ValueError, TypeError, KeyError, IndexError):
+        owner = ""
+    recipients = [a for a in dict.fromkeys([owner, to]) if a]
+    if not recipients or not details:
         return
     conn = db.connect()
     rname = {r["id"]: r["name"] for r in
@@ -926,7 +939,8 @@ def _notify_registration(m, details):
         f"View all participants →</a></p>")
     subj = f"New registration — {m['name']} ({n} runner{'s' if n != 1 else ''})"
     from .auth import send_email
-    send_email(to, subj, html)
+    for addr in recipients:
+        send_email(addr, subj, html)
 
 
 @bp.post("/register/<token>")
@@ -1199,7 +1213,7 @@ def host_resend():
 
 @bp.get("/host/go/<token>")
 def host_go(token):
-    from .auth import create_session, SESSION_COOKIE, _now, _parse, _iso
+    from .auth import _now, _parse
     conn = db.connect()
     web = _web_org_id(conn)
     u = conn.execute("SELECT * FROM users WHERE setup_token=? AND organizer_id=?", (token, web)).fetchone()
@@ -1214,11 +1228,43 @@ def host_go(token):
         return _host_page("Link expired",
                           '<div class="card"><h1>Link expired</h1>'
                           '<p><a href="/host">Email a fresh link</a>.</p></div>'), 410
+    conn.close()
+    resp = owner_session_response(u)
+    if resp is None:
+        return _host_page("No event", '<div class="card">No event found for this link.</div>'), 404
+    return resp
+
+
+def is_web_host(u):
+    """True if `u` (a users row) is a self-serve host under the shared XCTimer Web organizer.
+    Those accounts sign in ONLY by magic link — never by password — so the password
+    reset/setup/login paths must route them back to /host instead of minting a full
+    race-director session (which would expose every other host's event)."""
+    try:
+        oid = u["organizer_id"]
+    except (KeyError, IndexError, TypeError):
+        return False
+    if not oid:
+        return False
+    conn = db.connect()
+    try:
+        row = conn.execute("SELECT id FROM organizers WHERE slug='xctimer-web'").fetchone()
+    finally:
+        conn.close()
+    return bool(row) and row["id"] == oid
+
+
+def owner_session_response(u):
+    """Sign a self-serve host in: an event_owner session scoped to their ONE event,
+    redirecting to it. Returns None if they own no event."""
+    from .auth import create_session, SESSION_COOKIE, _now, _iso
+    conn = db.connect()
+    web = _web_org_id(conn)
     rows = conn.execute("SELECT id, settings_json FROM meets WHERE organizer_id=?", (web,)).fetchall()
     m = next((r for r in rows if _owner_uid(r) == u["id"]), None)
     if not m:
         conn.close()
-        return _host_page("No event", '<div class="card">No event found for this link.</div>'), 404
+        return None
     # The magic link IS how a self-serve host signs in (they never set a password), so
     # record the sign-in — otherwise they'd read as "invite pending" forever.
     conn.execute("UPDATE users SET last_login=? WHERE id=?", (_iso(_now()), u["id"]))
