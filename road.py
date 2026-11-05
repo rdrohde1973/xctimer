@@ -3,6 +3,7 @@ their race-director logins, and Events. An event is a `meets` row owned by an
 organizer (district_id NULL, sport='road') — so it reuses the whole timing/results
 engine, minus schools, rosters, and PII.
 """
+import base64
 import csv
 import io
 import json
@@ -78,6 +79,135 @@ def _resolve_org():
         raw = request.args.get("org") or request.form.get("org")
         return int(raw) if raw and raw.isdigit() else None
     return None
+
+
+# ------------------------------- Marketing attribution (WP-0009) -------------------------------
+# First-touch UTM capture in a short-lived cookie (no third-party scripts / Pixel; ADR-0007).
+ATTR_COOKIE = "xc_attr"
+ATTR_FIELDS = ("utm_source", "utm_medium", "utm_campaign", "utm_content")
+ATTR_MAX = 100
+ATTR_TTL = 7 * 24 * 3600
+
+
+def _attr_clean(v):
+    """Short plain string: control chars dropped, truncated. HTML-escaped at output time, never here."""
+    v = "".join(ch for ch in (v or "") if ch.isprintable()).strip()
+    return v[:ATTR_MAX]
+
+
+def _attr_from_request():
+    """Attribution fields visible on THIS request (query string + referrer), or {} if there are none."""
+    from urllib.parse import urlparse
+    out = {k: _attr_clean(request.args.get(k)) for k in ATTR_FIELDS}
+    out = {k: v for k, v in out.items() if v}
+    if request.args.get("fbclid"):
+        out["fbclid"] = 1
+    if out:       # referrer is only interesting alongside a campaign touch
+        try:
+            ref = (urlparse(request.referrer or "").hostname or "").lower()
+        except ValueError:
+            ref = ""
+        if ref and ref != (request.host or "").split(":")[0].lower():
+            out["referrer_host"] = _attr_clean(ref)
+    return out
+
+
+def _attr_from_cookie():
+    try:
+        d = json.loads(base64.urlsafe_b64decode(request.cookies.get(ATTR_COOKIE, "").encode()).decode())
+    except (ValueError, TypeError):
+        return {}
+    if not isinstance(d, dict):
+        return {}
+    clean = {k: _attr_clean(str(d.get(k) or "")) for k in ATTR_FIELDS + ("referrer_host",)}
+    clean = {k: v for k, v in clean.items() if v}
+    if d.get("fbclid"):
+        clean["fbclid"] = 1
+    return clean
+
+
+def capture_attribution(resp):
+    """Set the first-touch cookie on `resp` if this request carries UTMs and no cookie exists yet."""
+    if not request.cookies.get(ATTR_COOKIE):
+        a = _attr_from_request()
+        if a:
+            val = base64.urlsafe_b64encode(json.dumps(a, separators=(",", ":")).encode()).decode()
+            resp.set_cookie(ATTR_COOKIE, val, max_age=ATTR_TTL, httponly=True, samesite="Lax",
+                            secure=bool(os.environ.get("XC_SECURE_COOKIES")))
+    return resp
+
+
+def _record_attribution(conn, email, meet_token=None):
+    """Insert the first-touch row for this host from the cookie (first touch wins: one row per email).
+    Caller commits. No cookie => an all-blank row, so organic signups still count in the report."""
+    from .auth import _iso, _now
+    email = (email or "").strip().lower()
+    if not email or conn.execute("SELECT 1 FROM host_attribution WHERE email=?", (email,)).fetchone():
+        return
+    a = _attr_from_cookie()
+    conn.execute(
+        "INSERT INTO host_attribution (email, utm_source, utm_medium, utm_campaign, utm_content, fbclid, "
+        "referrer_host, signed_up_at, meet_token) VALUES (?,?,?,?,?,?,?,?,?)",
+        (email, a.get("utm_source"), a.get("utm_medium"), a.get("utm_campaign"), a.get("utm_content"),
+         1 if a.get("fbclid") else 0, a.get("referrer_host"), _iso(_now()), meet_token))
+
+
+def _attr_mark_published(mid):
+    from .auth import _iso, _now
+    conn = db.connect()
+    tok = _meet_token(conn, mid)
+    if tok:
+        conn.execute("UPDATE host_attribution SET published_at=COALESCE(published_at, ?) WHERE meet_token=?",
+                     (_iso(_now()), tok))
+        conn.commit()
+    conn.close()
+
+
+def _attribution_rows(days=90):
+    from .auth import _iso, _now
+    since = _iso(_now() - timedelta(days=days))
+    conn = db.connect()
+    rows = conn.execute(
+        "SELECT COALESCE(NULLIF(a.utm_source,''),'(none)') AS src, COALESCE(NULLIF(a.utm_campaign,''),'(none)') AS camp, "
+        "COUNT(*) AS signups, SUM(a.meet_token IS NOT NULL) AS created, SUM(a.published_at IS NOT NULL) AS published, "
+        "SUM(EXISTS(SELECT 1 FROM promo_redemptions p WHERE p.email=a.email AND UPPER(p.code)='FIRSTRACE')) AS promo "
+        "FROM host_attribution a WHERE a.signed_up_at >= ? GROUP BY src, camp ORDER BY signups DESC, src, camp",
+        (since,)).fetchall()
+    conn.close()
+    return [tuple(r) for r in rows]
+
+
+@bp.get("/organizers/attribution")
+@role_required("super_admin")
+def attribution_report():
+    rows = _attribution_rows()
+    tot = [sum(r[i] or 0 for r in rows) for i in range(2, 6)]
+    trs = "".join("<tr><td>%s</td><td>%s</td>%s</tr>" % (escape(r[0]), escape(r[1]),
+                  "".join("<td>%d</td>" % (v or 0) for v in r[2:])) for r in rows) \
+        or '<tr><td colspan=6 class="muted">No host signups in the last 90 days.</td></tr>'
+    body = ('<h1>Host signup funnel</h1><p class="muted">Last 90 days, first touch, grouped by utm_source / '
+            'utm_campaign. <a href="/organizers">← Organizers</a> · <a href="/organizers/attribution.csv">Download CSV</a></p>'
+            '<div class="card"><table><tr><th>Source</th><th>Campaign</th><th>Signups</th><th>Events created</th>'
+            '<th>Events published</th><th>FIRSTRACE used</th></tr>' + trs +
+            '<tr><th colspan=2>Total</th>' + "".join("<th>%d</th>" % t for t in tot) + '</tr></table></div>')
+    return shell(g.principal, body, active="organizers")
+
+
+def _csv_safe(v):
+    v = str(v)
+    return "'" + v if v[:1] in ("=", "+", "-", "@", "\t", "\r") else v
+
+
+@bp.get("/organizers/attribution.csv")
+@role_required("super_admin")
+def attribution_csv():
+    buf = io.StringIO()
+    w = csv.writer(buf)
+    w.writerow(["utm_source", "utm_campaign", "host_signups", "events_created", "events_published", "firstrace_redemptions"])
+    for r in _attribution_rows():
+        w.writerow([_csv_safe(r[0]), _csv_safe(r[1])] + [v or 0 for v in r[2:]])
+    return Response(buf.getvalue(), mimetype="text/csv",
+                    headers={"Content-Disposition": "attachment; filename=host-attribution-90d.csv"})
 
 
 # ------------------------------- Organizers (super admin) -------------------------------
@@ -166,6 +296,7 @@ def list_organizers():
           '</form></div>')
     body = (
         '<h1>Organizers</h1>'
+        '<p><a href="/organizers/attribution">Host signup funnel (UTM report) →</a></p>'
         '<p class="muted">Community race organizers. Each runs its own road events '
         '(5K, 10K, half) with participants who register directly — no schools or rosters.</p>'
         '<div class="card"><h2>New organizer</h2>'
@@ -1113,7 +1244,7 @@ open registration.</p>
 <form method="post" action="/host/resend" style="display:flex;gap:.5rem;margin-top:.4rem">
 <input name="email" type="email" placeholder="your email" required>
 <button class="btn" type="submit" style="white-space:nowrap;background:#3d6fa5">Email my link</button></form></div>""")
-    return _host_page("Run your own fun run", inner)
+    return capture_attribution(make_response(_host_page("Run your own fun run", inner)))
 
 
 def _send_host_link(email, token):
@@ -1184,6 +1315,7 @@ def host_create():
         (web, "road", name, date, secrets.token_urlsafe(8),
          json.dumps({"host_paid": False, "owner_user_id": uid, "owner_email": email}))).lastrowid
     conn.execute("INSERT INTO races (meet_id, name, capture_mode) VALUES (?,?,?)", (mid, "5K", "tapselect"))
+    _record_attribution(conn, email, _meet_token(conn, mid))
     conn.commit()
     conn.close()
     _send_host_link(email, token)
@@ -1226,6 +1358,7 @@ def host_go(token):
     # The magic link IS how a self-serve host signs in (they never set a password), so
     # record the sign-in — otherwise they'd read as "invite pending" forever.
     conn.execute("UPDATE users SET last_login=? WHERE id=?", (_iso(_now()), u["id"]))
+    _record_attribution(conn, u["email"], _meet_token(conn, m["id"]))   # no-op if the POST /host row exists
     conn.commit()
     conn.close()
     tok = create_session(u["id"], kind="event_owner", meet_id=m["id"], ttl_days=60)
@@ -1244,6 +1377,7 @@ def host_publish(mid):
     s = _load_settings(mid)
     s["host_paid"] = True     # honor-system Venmo confirmation
     _save_settings(mid, s)
+    _attr_mark_published(mid)
     return redirect(f"/meets/{mid}")
 
 
@@ -1393,6 +1527,7 @@ def host_redeem(mid):
         s["host_paid"] = True
         s["promo_code"] = code
         _save_settings(mid, s)
+        _attr_mark_published(mid)
         return jsonify(paid=True)
     # Partial discount -> pay the reduced amount through Square.
     from . import square
@@ -1420,6 +1555,7 @@ def _mark_host_paid(mid, order_id):
         s["host_paid"] = True
         s["square_order_id"] = order_id
         _save_settings(mid, s)
+        _attr_mark_published(mid)
 
 
 @bp.post("/square/webhook")
