@@ -1,15 +1,16 @@
-# Facebook / Instagram Playbook: Free-Tier SaaS Signup Funnel ({PRODUCT})
+# Facebook / Instagram Playbook: Free-Tier SaaS Signup Funnel (XCTimer)
 
-> Product-neutral on purpose. Q-0001 (which product) is open, so the product is written as `{PRODUCT}`. Do not insert product claims, prices or plan limits until Rob answers Q-0001 and Q-0003.
+> The product is XCTimer (ADR-0006). Do not insert prices or plan limits until Rob answers Q-0003.
 > Everything here is a plan for Rob to run. Nothing in this doc has been set up, spent or published. Steps tagged **[Rob-only]** need Rob's logins, payment or approval.
 
 ## Summary
 
-- **Goal:** get business owners to sign up for a free tier of `{PRODUCT}`, activate, and later convert to paid.
-- **Path:** organic-first at $0 PROVISIONAL(Q-0002), then a small paid test, then scale only what the data supports.
+- **Goal:** get business owners to sign up for a free tier of XCTimer, activate, and later convert to paid.
+- **Path:** Phase 1 = organic, $0 [src: ADR-0007], then a small paid test, then scale only what the data supports.
 - **Funnel events (Meta standard names):** `PageView` → `Lead` → `CompleteRegistration` (free signup) → `StartTrial` or a chosen activation event → `Subscribe` (paid). `CompleteRegistration`, `Lead`, `StartTrial` and `Subscribe` are listed standard events [src: https://developers.facebook.com/docs/meta-pixel/reference/]; `PageView` fires automatically from the Pixel base code and is not in that reference table, so confirm it in Test Events. [src: https://www.facebook.com/business/help/402791146561655]
 - **Tracking:** Meta Pixel in the browser plus Conversions API from the server, de-duplicated by a shared `event_id`. [src: https://developers.facebook.com/docs/marketing-api/conversions-api/deduplicate-pixel-and-server-events]
-- **Budget:** three rungs ($0, ~$10/day, ~$30/day), all PROVISIONAL(Q-0002).
+- **Budget:** Phase 1 = organic, $0 (ADR-0007). Paid rungs (~$10/day, ~$30/day) are PROVISIONAL(Q-0002) and only start if Rob chooses.
+- **Accounts:** Rob has a Business account and a Page, no ad account (ADR-0010). Setup is Phase A organic now, Phase B Pixel optional, Phase C ad account later.
 - **Decisions Rob must make first:**
 
 | Open question | Blocks |
@@ -17,20 +18,35 @@
 | Q-0001 Which product | All product-specific copy, audiences, landing page |
 | Q-0002 Budget / organic-only start | Paid phase, budget ladder |
 | Q-0003 Free tier contents, paid prices | Offer copy, CAC/payback targets |
-| Q-0004 Business account, Page, ad account access | Account setup, tracking |
+| Q-0004 (answered, ADR-0010) | Business account and Page exist; ad account deferred to Phase C |
 
 ## Account Setup Checklist
 
-All steps are **[Rob-only]**: they require Rob's identity, logins or payment details. PROVISIONAL(Q-0004) (who owns/has access to existing assets is not yet known; skip any step already done).
+All steps are **[Rob-only]**: they need Rob's identity, logins or payment details. Rob already has a Meta Business account and a Facebook Page, and has no ad account yet (Q-0004 answered; ADR-0010). Skip any step already done. No ad account is needed until Phase C.
 
-- [ ] **[Rob-only]** Create or locate the Meta Business portfolio (Business Manager) at business.facebook.com, using a business email. [src: https://www.facebook.com/business/help/1710077379203657] Also turn on two-factor authentication on Rob's personal Facebook login (house advice, not a cited Meta rule).
-- [ ] **[Rob-only]** Create the Facebook Page for `{PRODUCT}` (or claim the existing one) and add it to the business portfolio. Add a second admin for recovery.
-- [ ] **[Rob-only]** Link or create an Instagram professional account and connect it to the Page (optional for the organic phase, needed for Instagram placements).
-- [ ] **[Rob-only]** Create the ad account inside the business portfolio. Set currency and time zone correctly at creation; Meta restricts changing the time zone later. [src: https://www.facebook.com/business/help/754049591334898]
-- [ ] **[Rob-only]** Verify the website domain in Meta Brand Safety → Domains (DNS TXT record or meta-tag method). Needed for conversion event configuration and link ownership. [src: https://www.facebook.com/business/help/286768115176155]
-- [ ] **[Rob-only]** Create a Pixel (dataset) in Events Manager and connect it to the ad account. Keep the Pixel ID; it is not a secret, but the CAPI access token is (see Tracking Plan).
-- [ ] **[Rob-only]** Add a payment method to the ad account. Do this only when entering the paid phase. Set an account spending limit that matches the chosen budget rung PROVISIONAL(Q-0002). [src: https://www.facebook.com/business/help/764293677236889]
-- [ ] **[Rob-only]** Confirm the website has a published privacy policy and cookie/consent handling (see Compliance) before any ad runs.
+### Phase A: now, organic ($0 [src: ADR-0007])
+
+Verify and tune the existing Page. Nothing here costs money.
+
+- [ ] **[Rob-only]** Confirm the Page is attached to the Business account (business.facebook.com). Turn on two-factor authentication on Rob's personal Facebook login (house advice, not a cited Meta rule). [src: https://www.facebook.com/business/help/1710077379203657]
+- [ ] **[Rob-only]** Name the Page **XCTimer**.
+- [ ] **[Rob-only]** Set the Page category (pick the closest Meta offers for a software product), profile image, cover image and About text. About text may only say what XCTimer does today; check it against xctimer.com before saving.
+- [ ] **[Rob-only]** Set the Page call-to-action button to **Sign Up**, linking to the landing URL PROVISIONAL(WP-0005: landing page not built yet; use the xctimer.com signup URL until it exists, then switch).
+- [ ] **[Rob-only]** Verify the xctimer.com domain in the Business account (Brand Safety → Domains; DNS TXT record or meta-tag method). [src: https://www.facebook.com/business/help/286768115176155]
+- [ ] **[Rob-only]** Add any other admins (at least one second admin for recovery).
+- [ ] **[Rob-only]** Optional: link or create an Instagram professional account and connect it to the Page (needed later for Instagram placements).
+
+### Phase B: optional now (tracking)
+
+- [ ] **[Rob-only]** Create the Pixel (dataset) in Events Manager under the Business account. No ad account is required to create it. Keep the Pixel ID; it is not a secret, but the CAPI access token is (see Tracking Plan).
+- [ ] **[Rob-only]** Confirm the website has a published privacy policy and cookie/consent handling (see Compliance) before the Pixel is installed.
+
+### Phase C: later, paid (only when Rob chooses to start ads)
+
+- [ ] **[Rob-only]** Create the ad account inside the Business account. Set currency and time zone correctly at creation; Meta restricts changing the time zone later. [src: https://www.facebook.com/business/help/754049591334898]
+- [ ] **[Rob-only]** Add a payment method to the ad account.
+- [ ] **[Rob-only]** Set an account spending limit that matches the chosen budget rung PROVISIONAL(Q-0002). [src: https://www.facebook.com/business/help/764293677236889]
+- [ ] **[Rob-only]** Connect the Pixel (Phase B) to the ad account.
 - [ ] **[Rob-only]** Accept Meta terms prompts (e.g. custom audience terms) when they appear; these are legal acceptances only the account owner can make.
 
 ## Tracking Plan
@@ -39,12 +55,12 @@ Use the Pixel (browser) and Conversions API (server) together so events survive 
 
 ### Events
 
-| Event (Meta standard name) | Meaning for `{PRODUCT}` | Where it fires | Source |
+| Event (Meta standard name) | Meaning for XCTimer | Where it fires | Source |
 |---|---|---|---|
 | `PageView` | Any page load | Pixel base code on every page of the marketing site and app | Pixel |
 | `Lead` | Visitor shows intent without full signup (e.g. demo request, waitlist or newsletter form submit) | On form-submit success, not on button click | Pixel + CAPI |
 | `CompleteRegistration` | Free account created | Server-side after account row is created; Pixel on the post-signup confirmation page | Pixel + CAPI |
-| `StartTrial` **or** an activation event | User did the one action that predicts retention (Rob picks it once Q-0001 is answered; if the product has no trial, use `StartTrial` only if it is truthful, otherwise send a custom event, e.g. `ActivatedUser`) | Server-side when the activation action is first completed | CAPI (Pixel optional) |
+| `StartTrial` **or** an activation event | User did the one action that predicts retention (Rob picks it for XCTimer; if the product has no trial, use `StartTrial` only if it is truthful, otherwise send a custom event, e.g. `ActivatedUser`) | Server-side when the activation action is first completed | CAPI (Pixel optional) |
 | `Subscribe` | Moved from free to a paid plan | Server-side when billing confirms the subscription | CAPI |
 
 Notes:
@@ -114,7 +130,7 @@ No benchmark numbers are quoted here; do not copy industry averages in as target
 
 ## Campaign Structure
 
-### Phase 1: Organic-first ($0, PROVISIONAL(Q-0002))
+### Phase 1: Organic-first ($0 [src: ADR-0007])
 
 - Run the Organic Playbook below for the first weeks, with the Pixel and CAPI already live so every visitor and signup is measured.
 - Purpose: learn which problems and phrases resonate, collect first signups, and gather creative angles that can be reused in ads.
@@ -145,7 +161,7 @@ Recommendation: start with Leads/`Lead` only if `CompleteRegistration` volume is
 Keep the number of ad sets low so each gets enough events; splitting a small budget across many ad sets starves them. [src: https://www.facebook.com/business/help/112167992830700]
 
 **Audiences**
-- **Interests / job titles / behaviors:** pick from Meta's targeting options that match `{PRODUCT}`'s buyer once Q-0001 is answered. Keep to 1–2 themes per ad set. Detailed-targeting options change; check availability in Ads Manager **[Rob-only]**. [src: https://www.facebook.com/business/help/182371508761821]
+- **Interests / job titles / behaviors:** pick from Meta's targeting options that match XCTimer's buyer for XCTimer. Keep to 1–2 themes per ad set. Detailed-targeting options change; check availability in Ads Manager **[Rob-only]**. [src: https://www.facebook.com/business/help/182371508761821]
 - **Lookalikes:** only after there is a source audience of real signups or paying customers large enough for Meta to build one (Meta states a minimum source size in the audience tool). Prefer a `Subscribe` or activated-user source over all signups. [src: https://www.facebook.com/business/help/164749007013531]
 - **Retargeting:** site visitors (Pixel) and people who engaged with the Page. Exclude people who already signed up (`CompleteRegistration` custom audience). Use only visitors from sites that have the privacy notice in place.
 - **Exclusions:** existing customers, employees, anyone already signed up.
@@ -164,11 +180,11 @@ Keep the number of ad sets low so each gets enough events; splitting a small bud
 
 ## Budget Ladder
 
-Every amount below is PROVISIONAL(Q-0002). Rob chooses one rung; none is a recommendation to spend.
+Phase 1 = organic, $0 (ADR-0007). Paid amounts below are PROVISIONAL(Q-0002). Rob chooses one rung; none is a recommendation to spend, and no ad account exists until Phase C.
 
 | Rung | Daily spend | What it buys you | Move up when |
 |---|---|---|---|
-| 0: Organic only | $0 PROVISIONAL(Q-0002) | Learning, first signups, creative ideas | Tracking verified and first signups seen |
+| 0: Phase 1 = organic, $0 [src: ADR-0007] | $0 [src: ADR-0007] | Learning, first signups, creative ideas | Tracking verified and first signups seen |
 | 1: Small test | ~$10/day PROVISIONAL(Q-0002) | One ad set at a time; directional data only; likely too small to exit learning on `CompleteRegistration` | Cost per signup within target for a full test period PROVISIONAL(Q-0003) |
 | 2: Real test | ~$30/day PROVISIONAL(Q-0002) | 2–3 ad sets, real A/B tests, retargeting | Activation and paid conversion are healthy PROVISIONAL(Q-0003) |
 
@@ -183,15 +199,15 @@ Rules:
 **All posting is Rob's to do or approve [Rob-only]. Nothing here is auto-published.**
 
 ### Page setup
-- [ ] **[Rob-only]** Page name, profile image and cover image consistent with `{PRODUCT}` branding.
+- [ ] **[Rob-only]** Page name, profile image and cover image consistent with XCTimer branding.
 - [ ] **[Rob-only]** Fill in About, website URL (with UTMs), category and a clear call-to-action button (e.g. Sign Up / Learn More).
-- [ ] **[Rob-only]** Pin a post that explains in one sentence what `{PRODUCT}` does and links to signup.
+- [ ] **[Rob-only]** Pin a post that explains in one sentence what XCTimer does and links to signup.
 - [ ] **[Rob-only]** Turn on Messenger/auto-reply with an honest away message.
 
 ### Facebook Groups etiquette (no spam)
 - Join groups where the target buyers genuinely gather; read the rules first. Many groups ban promotion.
 - Spend time being useful first: answer questions, share how-tos, no links in the first interactions.
-- Disclose affiliation when mentioning `{PRODUCT}` ("I work on...").
+- Disclose affiliation when mentioning XCTimer ("I work on...").
 - Post a link only where rules allow it, or ask the admin for permission **[Rob-only]**.
 - Never post the same text in many groups, never tag people who did not ask, never use fake accounts or fake testimonials.
 - Reply to comments on your posts, including critical ones, politely and honestly.
@@ -215,10 +231,10 @@ Rules:
 
 Rob must read the current policy before launching; policies change. [src: https://transparency.meta.com/policies/ad-standards/]
 
-- [ ] **Honest claims.** Ads and landing page may only say what `{PRODUCT}` really does today. Every claim should be traceable to the live product or code before use. Meta prohibits deceptive commercial practices (e.g. deceptive pricing, unauthorized endorsements) [src: https://transparency.meta.com/policies/ad-standards/fraud-scams/unacceptable-business-practices/]. House rule on top of that: no fake urgency, no "guaranteed" results, no invented statistics, testimonials or customer logos.
+- [ ] **Honest claims.** Ads and landing page may only say what XCTimer really does today. Every claim should be traceable to the live product or code before use. Meta prohibits deceptive commercial practices (e.g. deceptive pricing, unauthorized endorsements) [src: https://transparency.meta.com/policies/ad-standards/fraud-scams/unacceptable-business-practices/]. House rule on top of that: no fake urgency, no "guaranteed" results, no invented statistics, testimonials or customer logos.
 - [ ] **Free means free.** If the ad says "free", the free tier must really be free without a card, and the landing page must say what is and isn't included PROVISIONAL(Q-0003).
 - [ ] **Personal attributes.** Do not imply you know the viewer's personal attributes (e.g. "Are you struggling with debt?"). Write about the business or the task instead. [src: https://transparency.meta.com/policies/ad-standards/objectionable-content/privacy-violations-personal-attributes/]
-- [ ] **Special Ad Categories.** B2B SaaS is normally not in credit, employment, housing, or social issues categories. If `{PRODUCT}` touches any of them, declare the category, which limits targeting. [src: https://www.facebook.com/business/help/298000447747885]
+- [ ] **Special Ad Categories.** B2B SaaS is normally not in credit, employment, housing, or social issues categories. If XCTimer touches any of them, declare the category, which limits targeting. [src: https://www.facebook.com/business/help/298000447747885]
 - [ ] **Landing page.** The products and services promoted in the ad must match those on the landing page. [src: https://transparency.meta.com/policies/ad-standards/] Meta's spam rules also bar misleading redirects and deceptive page behavior. [src: https://transparency.meta.com/policies/community-standards/spam/] House advice (not a cited Meta rule): load fast, work on mobile, show contact details.
 - [ ] **Privacy policy.** A public privacy policy link on the site and in any lead form, naming Meta Pixel/Conversions API use and what data is shared. House advice; Meta's exact privacy-policy requirements for lead forms were not verified here, so check them in the lead form setup screen **[Rob-only]**.
 - [ ] **Consent.** Follow applicable law (e.g. GDPR/ePrivacy, CCPA/CPRA) for cookies and data sharing; show a consent banner where required and do not fire Pixel/CAPI events about users who declined. Legal review is Rob's call **[Rob-only]**.
@@ -255,7 +271,7 @@ Thresholds are for Rob to set; ask "against the target Rob chose" rather than co
 
 - Never kill or scale on a single day's numbers.
 - Record every decision with the date and reason in the test log.
-- Revisit this doc after Q-0001 is answered and replace `{PRODUCT}` with product-specific copy in a separate, product-specific playbook.
+- Product-specific copy and audiences live in the XCTimer-specific docs (ADR-0006, ADR-0013).
 
 ## Source Check
 
