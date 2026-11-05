@@ -107,7 +107,7 @@ Four weeks, 3 posts per week, Page-first, reuse on Instagram where noted. Weeks 
 
 Convention from the playbook: lowercase, hyphenated [src: docs/marketing/fb-playbook.md]. Base link:
 
-`https://xctimer.com/host?utm_source=facebook&utm_medium=organic-social&utm_campaign=firstrace&utm_content={post-id}`
+`https://xctimer.com/host?code=FIRSTRACE&utm_source=facebook&utm_medium=organic-social&utm_campaign=firstrace&utm_content={post-id}`
 
 For group posts use `utm_source=fb-group` and `utm_medium=group-post`. Replace `{post-id}` with the id in the table (for example `w1-pin`).
 
@@ -116,17 +116,17 @@ Exact links, ready to paste (posts w1-tip, w4-ask and w4-S2 carry no link):
 
 | Post | Link |
 |---|---|
-| w1-pin | `https://xctimer.com/host?utm_source=facebook&utm_medium=organic-social&utm_campaign=firstrace&utm_content=w1-pin` |
-| w1-demo | `https://xctimer.com/host?utm_source=facebook&utm_medium=organic-social&utm_campaign=firstrace&utm_content=w1-demo` |
-| w2-how | `https://xctimer.com/host?utm_source=facebook&utm_medium=organic-social&utm_campaign=firstrace&utm_content=w2-how` |
-| w2-offer | `https://xctimer.com/host?utm_source=facebook&utm_medium=organic-social&utm_campaign=firstrace&utm_content=w2-offer` |
-| w2-S1 | `https://xctimer.com/host?utm_source=facebook&utm_medium=organic-social&utm_campaign=firstrace&utm_content=w2-s1` |
-| w3-bibs | `https://xctimer.com/host?utm_source=facebook&utm_medium=organic-social&utm_campaign=firstrace&utm_content=w3-bibs` |
-| w3-results | `https://xctimer.com/host?utm_source=facebook&utm_medium=organic-social&utm_campaign=firstrace&utm_content=w3-results` |
-| w3-map | `https://xctimer.com/host?utm_source=facebook&utm_medium=organic-social&utm_campaign=firstrace&utm_content=w3-map` |
-| w4-cta | `https://xctimer.com/host?utm_source=facebook&utm_medium=organic-social&utm_campaign=firstrace&utm_content=w4-cta` |
-| Page Sign Up button (not a post) | `https://xctimer.com/host?utm_source=facebook&utm_medium=social&utm_campaign=firstrace&utm_content=page_cta` |
-| group post (one per group) | `https://xctimer.com/host?utm_source=fb-group&utm_medium=group-post&utm_campaign=firstrace&utm_content=group-post` |
+| w1-pin | `https://xctimer.com/host?code=FIRSTRACE&utm_source=facebook&utm_medium=organic-social&utm_campaign=firstrace&utm_content=w1-pin` |
+| w1-demo | `https://xctimer.com/host?code=FIRSTRACE&utm_source=facebook&utm_medium=organic-social&utm_campaign=firstrace&utm_content=w1-demo` |
+| w2-how | `https://xctimer.com/host?code=FIRSTRACE&utm_source=facebook&utm_medium=organic-social&utm_campaign=firstrace&utm_content=w2-how` |
+| w2-offer | `https://xctimer.com/host?code=FIRSTRACE&utm_source=facebook&utm_medium=organic-social&utm_campaign=firstrace&utm_content=w2-offer` |
+| w2-S1 | `https://xctimer.com/host?code=FIRSTRACE&utm_source=facebook&utm_medium=organic-social&utm_campaign=firstrace&utm_content=w2-s1` |
+| w3-bibs | `https://xctimer.com/host?code=FIRSTRACE&utm_source=facebook&utm_medium=organic-social&utm_campaign=firstrace&utm_content=w3-bibs` |
+| w3-results | `https://xctimer.com/host?code=FIRSTRACE&utm_source=facebook&utm_medium=organic-social&utm_campaign=firstrace&utm_content=w3-results` |
+| w3-map | `https://xctimer.com/host?code=FIRSTRACE&utm_source=facebook&utm_medium=organic-social&utm_campaign=firstrace&utm_content=w3-map` |
+| w4-cta | `https://xctimer.com/host?code=FIRSTRACE&utm_source=facebook&utm_medium=organic-social&utm_campaign=firstrace&utm_content=w4-cta` |
+| Page Sign Up button (not a post) | `https://xctimer.com/host?code=FIRSTRACE&utm_source=facebook&utm_medium=social&utm_campaign=firstrace&utm_content=page_cta` |
+| group post (one per group) | `https://xctimer.com/host?code=FIRSTRACE&utm_source=fb-group&utm_medium=group-post&utm_campaign=firstrace&utm_content=group-post` |
 
 ### Weeks and posts
 
