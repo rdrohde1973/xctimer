@@ -1225,26 +1225,64 @@ h1{{color:#164271;margin-top:0}} a{{color:#164271}}</style></head><body><div cla
 <p><a href="/">← XCTimer</a></p>{inner}</div></body></html>""")
 
 
+PROMO_CODE_RE = re.compile(r"[A-Z0-9]{1,20}")
+
+
+def _clean_promo(v):
+    """Promo code from the query string / hidden field: uppercase alphanumeric, <=20 chars, else None."""
+    v = (v or "").strip()
+    return v if PROMO_CODE_RE.fullmatch(v) else None
+
+
+def _fee_whole(cents):
+    """'$50' for whole dollars, '$50.50' otherwise (landing copy)."""
+    return f"${cents // 100:,}" if cents % 100 == 0 else f"${cents / 100:,.2f}"
+
+
 @bp.get("/host")
 def host_start():
-    fee = _fee_str(HOST_FEE_CENTS)
-    inner = (f"""<h1>Run your own fun run</h1>
-<p>Set up a community 5K / 10K / fun run yourself — a public sign-up page, printed bibs, phone or
-camera timing, and live results the whole crowd can follow. <b>{fee} per event</b>, paid when you
-open registration.</p>
-<div class="card"><form method="post" action="/host">
+    fee = _fee_whole(HOST_FEE_CENTS)
+    code = _clean_promo(request.args.get("code"))
+    hidden = f'<input type="hidden" name="code" value="{code}">' if code else ""
+    cta = '<button class="btn" type="submit">Create my event →</button>'
+    inner = (f"""<h1>Time your own fun run.</h1>
+<p>A public sign-up page, printed bibs, phone or camera timing, and live results the whole crowd can follow.</p>
+<div class="card" id="create"><form method="post" action="/host">{hidden}
 <label>Event name</label><input name="name" required placeholder="e.g. Maple Grove Community 5K">
 <label>Event date</label><input name="date" type="date" required>
+<p style="font-size:.85rem;color:#6a7c8e;margin:.2rem 0 .6rem">Your event is removed 30 days after this date — download results first.</p>
 <label>Your name</label><input name="who" required>
 <label>Your email</label><input name="email" type="email" required>
 <p style="font-size:.85rem;color:#6a7c8e">We'll email you a private link to build and manage your event.</p>
-<button class="btn" type="submit">Create my event →</button>
+{cta}
+<p style="font-size:.9rem;color:#6a7c8e;margin:.6rem 0 0">Build it free. Your first race is free with code FIRSTRACE.</p>
 </form></div>
+<div class="card" style="display:flex;gap:.8rem;flex-wrap:wrap;justify-content:space-around;text-align:center;font-weight:600">
+<span>📝 Public sign-up page</span><span>🏷️ Printed bibs</span><span>📊 Live results</span></div>
+<div class="card"><h2 style="margin-top:0">How it works</h2><ol style="padding-left:1.2rem;margin:0">
+<li>Name your event and give us your email. We send you a private link.</li>
+<li>Build your races and age groups, and get a public sign-up page with a link and QR.</li>
+<li>Go live with FIRSTRACE and open registration.</li></ol></div>
+<div class="card"><h2 style="margin-top:0">What you get</h2><ul style="padding-left:1.2rem;margin:0">
+<li>Printed bib stickers with camera-readable tags and your event logo.</li>
+<li>Time it with a phone: one helper taps each finisher, then scans or types the bib.</li>
+<li>Live results by gender and age group, with a share link.</li>
+<li>A course map with water stations for road events.</li>
+<li>A built-in setup assistant walks first-timers through it.</li></ul></div>
+<div class="card" style="border:2px solid #ea6a2d;text-align:center"><h2 style="margin-top:0">Simple pricing</h2>
+<p style="margin:.2rem 0"><b>First event free with code FIRSTRACE, then {fee} per event</b></p>
+<a class="btn" href="#create">Create my event →</a></div>
+<div class="card"><h2 style="margin-top:0">FAQ</h2>
+<p><b>What happens to my event after?</b><br>Your event and its owner login are removed 30 days after the event date, so download your results first.</p>
+<p><b>Can runners pay online?</b><br>Entry fees, if you charge any, go through your Venmo or at packet pickup, not by card.</p>
+<p><b>Do I need an account?</b><br>No password. You sign in from the private link in your email. Runners need no account.</p>
+<p><b>How do I get my link again?</b><br>Use "Email my link" on the page.</p></div>
 <div class="card"><b>Already started one?</b>
 <form method="post" action="/host/resend" style="display:flex;gap:.5rem;margin-top:.4rem">
 <input name="email" type="email" placeholder="your email" required>
-<button class="btn" type="submit" style="white-space:nowrap;background:#3d6fa5">Email my link</button></form></div>""")
-    return capture_attribution(make_response(_host_page("Run your own fun run", inner)))
+<button class="btn" type="submit" style="white-space:nowrap;background:#3d6fa5">Email my link</button></form></div>
+<p style="font-size:.9rem;color:#6a7c8e">Running a school or team meet? <a href="/welcome">See XCTimer for schools</a>.</p>""")
+    return capture_attribution(make_response(_host_page("Time your own fun run", inner)))
 
 
 def _send_host_link(email, token):
@@ -1275,6 +1313,14 @@ def _email_existing_host(email):
     return True
 
 
+def _new_host_settings(uid, email):
+    st = {"host_paid": False, "owner_user_id": uid, "owner_email": email}
+    code = _clean_promo(request.form.get("code"))
+    if code:
+        st["promo_prefill"] = code
+    return st
+
+
 @bp.post("/host")
 def host_create():
     from .auth import _iso, _now
@@ -1303,7 +1349,9 @@ def host_create():
                           f'<div class="card"><h1>That email is already registered</h1>'
                           f'<p><b>{escape(email)}</b> already has an XCTimer login, so we can’t create a '
                           f'separate community-event sign-in for it. Please <a href="/host">go back</a> and use '
-                          f'a different email to host your event.</p></div>'), 400
+                          f'a different email to host your event, or '
+                          f'<a href="mailto:rob@xctimer.com?subject=XCTimer%20community%20event">get in touch</a> '
+                          f'and we’ll help.</p></div>'), 400
     token = secrets.token_urlsafe(32)
     uid = conn.execute(
         "INSERT INTO users (organizer_id, email, name, role, setup_token, token_expires) "
@@ -1313,7 +1361,7 @@ def host_create():
         "INSERT INTO meets (organizer_id, sport, name, date, public_token, team_scoring, settings_json) "
         "VALUES (?,?,?,?,?,0,?)",
         (web, "road", name, date, secrets.token_urlsafe(8),
-         json.dumps({"host_paid": False, "owner_user_id": uid, "owner_email": email}))).lastrowid
+         json.dumps(_new_host_settings(uid, email)))).lastrowid
     conn.execute("INSERT INTO races (meet_id, name, capture_mode) VALUES (?,?,?)", (mid, "5K", "tapselect"))
     _record_attribution(conn, email, _meet_token(conn, mid))
     conn.commit()
@@ -1321,7 +1369,12 @@ def host_create():
     _send_host_link(email, token)
     return _host_page("Check your email",
                       f'<div class="card"><h1>✅ Check your email</h1><p>We emailed <b>{escape(email)}</b> a '
-                      f'private link to build and manage <b>{escape(name)}</b>. Tap it to get started.</p></div>')
+                      f'private link to build and manage <b>{escape(name)}</b>. Tap it to get started.</p>'
+                      f'<p>It comes from <b>XCTimer</b>. Check your spam folder if it doesn’t arrive in a few '
+                      f'minutes. Wrong address? <a href="/host">Go back</a></p>'
+                      f'<form method="post" action="/host/resend">'
+                      f'<input type="hidden" name="email" value="{escape(email)}">'
+                      f'<button class="btn" type="submit">Email my link again</button></form></div>')
 
 
 @bp.post("/host/resend")
@@ -1594,8 +1647,15 @@ def host_banner(m):
     fee = _fee_str(HOST_FEE_CENTS)
     mid = m["id"]
     if host_paid(m):
+        try:
+            reg_open = bool(json.loads(m["settings_json"] or "{}").get("reg_open"))
+        except (ValueError, TypeError):
+            reg_open = False
         return ('<div class="card" style="border-color:#2e8b57"><b style="color:#2e8b57">✅ '
-                'Published.</b> <span class="muted">Registration can be opened in the settings below.</span></div>')
+                'Published.</b> <span class="muted">Registration can be opened in the settings below.</span>'
+                + ('' if reg_open else
+                   '<p style="margin:.5rem 0 0"><b>Next: open registration.</b> '
+                   '<a class="btn" href="#reg-settings">Open registration →</a></p>') + '</div>')
     from . import square
     msg = ""
     if request.args.get("payerr"):
@@ -1619,8 +1679,12 @@ def host_banner(m):
                  if not square.is_configured() else "")
     # Promo code: 100% off publishes free; a partial % routes to Square for the reduced amount.
     # Uses jpost + JS navigation (a form POST->square.link would be blocked by CSP form-action).
+    try:
+        pre = _clean_promo(json.loads(m["settings_json"] or "{}").get("promo_prefill")) or ""
+    except (ValueError, TypeError):
+        pre = ""
     promo = (f'<span style="display:inline-flex;gap:.35rem;align-items:center;margin-left:.3rem">'
-             f'<input id="promocode" placeholder="Promo code" autocomplete="off" '
+             f'<input id="promocode" placeholder="Promo code" autocomplete="off" value="{pre}" '
              f'style="max-width:130px;padding:.5rem" aria-label="Promo code" '
              f'onkeydown="if(event.key===\'Enter\'){{event.preventDefault();applyPromo();}}">'
              f'<button type="button" class="ghost" id="promobtn" onclick="applyPromo()">Apply</button></span>'
