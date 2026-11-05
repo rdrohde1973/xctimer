@@ -7,7 +7,7 @@
 
 - **Goal:** get business owners to sign up for a free tier of `{PRODUCT}`, activate, and later convert to paid.
 - **Path:** organic-first at $0 PROVISIONAL(Q-0002), then a small paid test, then scale only what the data supports.
-- **Funnel events (Meta standard names):** `PageView` → `Lead` → `CompleteRegistration` (free signup) → `StartTrial` or a chosen activation event → `Subscribe` (paid). [src: https://www.facebook.com/business/help/402791146561655]
+- **Funnel events (Meta standard names):** `PageView` → `Lead` → `CompleteRegistration` (free signup) → `StartTrial` or a chosen activation event → `Subscribe` (paid). `CompleteRegistration`, `Lead`, `StartTrial` and `Subscribe` are listed standard events [src: https://developers.facebook.com/docs/meta-pixel/reference/]; `PageView` fires automatically from the Pixel base code and is not in that reference table, so confirm it in Test Events. [src: https://www.facebook.com/business/help/402791146561655]
 - **Tracking:** Meta Pixel in the browser plus Conversions API from the server, de-duplicated by a shared `event_id`. [src: https://developers.facebook.com/docs/marketing-api/conversions-api/deduplicate-pixel-and-server-events]
 - **Budget:** three rungs ($0, ~$10/day, ~$30/day), all PROVISIONAL(Q-0002).
 - **Decisions Rob must make first:**
@@ -23,13 +23,13 @@
 
 All steps are **[Rob-only]**: they require Rob's identity, logins or payment details. PROVISIONAL(Q-0004) (who owns/has access to existing assets is not yet known; skip any step already done).
 
-- [ ] **[Rob-only]** Create or locate the Meta Business portfolio (Business Manager) at business.facebook.com, using a business email. Turn on two-factor authentication on Rob's personal Facebook login. [src: https://www.facebook.com/business/help/1710077379203657]
+- [ ] **[Rob-only]** Create or locate the Meta Business portfolio (Business Manager) at business.facebook.com, using a business email. [src: https://www.facebook.com/business/help/1710077379203657] Also turn on two-factor authentication on Rob's personal Facebook login (house advice, not a cited Meta rule).
 - [ ] **[Rob-only]** Create the Facebook Page for `{PRODUCT}` (or claim the existing one) and add it to the business portfolio. Add a second admin for recovery.
 - [ ] **[Rob-only]** Link or create an Instagram professional account and connect it to the Page (optional for the organic phase, needed for Instagram placements).
-- [ ] **[Rob-only]** Create the ad account inside the business portfolio. Set currency and time zone correctly; both are hard to change later. [src: https://www.facebook.com/business/help/910137316041095]
+- [ ] **[Rob-only]** Create the ad account inside the business portfolio. Set currency and time zone correctly at creation; Meta restricts changing the time zone later. [src: https://www.facebook.com/business/help/754049591334898]
 - [ ] **[Rob-only]** Verify the website domain in Meta Brand Safety → Domains (DNS TXT record or meta-tag method). Needed for conversion event configuration and link ownership. [src: https://www.facebook.com/business/help/286768115176155]
 - [ ] **[Rob-only]** Create a Pixel (dataset) in Events Manager and connect it to the ad account. Keep the Pixel ID; it is not a secret, but the CAPI access token is (see Tracking Plan).
-- [ ] **[Rob-only]** Add a payment method to the ad account. Do this only when entering the paid phase. Set an account spending limit that matches the chosen budget rung PROVISIONAL(Q-0002). [src: https://www.facebook.com/business/help/910137316041095]
+- [ ] **[Rob-only]** Add a payment method to the ad account. Do this only when entering the paid phase. Set an account spending limit that matches the chosen budget rung PROVISIONAL(Q-0002). [src: https://www.facebook.com/business/help/764293677236889]
 - [ ] **[Rob-only]** Confirm the website has a published privacy policy and cookie/consent handling (see Compliance) before any ad runs.
 - [ ] **[Rob-only]** Accept Meta terms prompts (e.g. custom audience terms) when they appear; these are legal acceptances only the account owner can make.
 
@@ -48,11 +48,11 @@ Use the Pixel (browser) and Conversions API (server) together so events survive 
 | `Subscribe` | Moved from free to a paid plan | Server-side when billing confirms the subscription | CAPI |
 
 Notes:
-- Standard event names are case-sensitive; do not rename them. Use custom events only where no standard event fits. [src: https://www.facebook.com/business/help/402791146561655]
+- Standard event names are case-sensitive; do not rename them. Use custom events only where no standard event fits. [src: https://www.facebook.com/business/help/2254103654917599]
 - Do not use `Purchase` for a subscription; use `Subscribe`. If a value is sent, include `value` and `currency`, and use actual billed amounts only (never guessed).
 - Send each event once per action. Generate `event_id` at the moment of the action and pass the same ID to the Pixel and CAPI.
 - Send only the customer information parameters Meta documents (hashed email, etc.) and only with a lawful basis and consent where required. [src: https://developers.facebook.com/docs/marketing-api/conversions-api/parameters/customer-information-parameters]
-- Never send sensitive data (passwords, financial account numbers, health data) in any event parameter. [src: https://transparency.meta.com/policies/ad-standards/]
+- Never send sensitive data (health information, financial information, credit card or social security numbers) in any event or parameter, and never use event names that imply sensitive categories. Passwords: house rule. [src: https://www.facebook.com/legal/technology_terms]
 
 ### Verification (Rob or the developer runs these)
 
@@ -122,7 +122,7 @@ No benchmark numbers are quoted here; do not copy industry averages in as target
 
 ### Phase 2: Paid test
 
-**Objective choice: Leads vs Sales** (Meta's current Outcome-Driven objectives: Awareness, Traffic, Engagement, Leads, App promotion, Sales). [src: https://www.facebook.com/business/help/517257253637283]
+**Objective choice: Leads vs Sales** (Meta's current Outcome-Driven objectives: Awareness, Traffic, Engagement, Leads, App promotion, Sales). [src: https://www.facebook.com/business/help/1438417719786914]
 
 | Option | Use when | Trade-off |
 |---|---|---|
@@ -130,7 +130,7 @@ No benchmark numbers are quoted here; do not copy industry averages in as target
 | **Leads** objective (website conversion location, optimize for `Lead`) | Early on, when signup volume is too low to exit learning, or the offer is demo/waitlist | More volume of a cheaper, shallower event; lower intent |
 | Traffic | Avoid for signup goals | Optimizes for clicks, not people who sign up |
 
-Recommendation: start with Leads/`Lead` only if `CompleteRegistration` volume is too thin; move to Sales/`CompleteRegistration` as soon as volume allows. Meta's delivery system needs roughly 50 optimization events per ad set per week to leave the learning phase, so a very small budget cannot optimize on a rare event. [src: https://www.facebook.com/business/help/112167992830700] Optimizing for `Subscribe` is not realistic until paid volume exists.
+Recommendation: start with Leads/`Lead` only if `CompleteRegistration` volume is too thin; move to Sales/`CompleteRegistration` as soon as volume allows. Meta's delivery system needs roughly 50 optimization events per ad set per week to leave the learning phase, so a very small budget cannot optimize on a rare event. [src: https://www.facebook.com/business/help/269269737396981] [src: https://www.facebook.com/business/help/112167992830700] Optimizing for `Subscribe` is not realistic until paid volume exists.
 
 **Structure (one campaign, kept simple):**
 
@@ -174,7 +174,7 @@ Every amount below is PROVISIONAL(Q-0002). Rob chooses one rung; none is a recom
 
 Rules:
 - **[Rob-only]** Set the ad account spending limit to match the rung before turning anything on.
-- Raise budgets in modest steps and not more than once every few days; large jumps can reset learning. [src: https://www.facebook.com/business/help/112167992830700]
+- Raise budgets in modest steps and not more than once every few days; large jumps can count as a significant edit and reset learning. [src: https://www.facebook.com/business/help/942374239243867]
 - Budget is per day per campaign or ad set; check the lifetime total against Rob's monthly ceiling PROVISIONAL(Q-0002).
 - Drop a rung if cost per signup or CAC breaks the target for two consecutive review weeks.
 
@@ -215,14 +215,14 @@ Rules:
 
 Rob must read the current policy before launching; policies change. [src: https://transparency.meta.com/policies/ad-standards/]
 
-- [ ] **Honest claims.** Ads and landing page may only say what `{PRODUCT}` really does today. Every claim should be traceable to the live product or code before use. No fake urgency, no "guaranteed" results, no invented statistics, testimonials or customer logos. [src: https://transparency.meta.com/policies/ad-standards/deceptive-practices/misleading-or-false-claims/]
+- [ ] **Honest claims.** Ads and landing page may only say what `{PRODUCT}` really does today. Every claim should be traceable to the live product or code before use. Meta prohibits deceptive commercial practices (e.g. deceptive pricing, unauthorized endorsements) [src: https://transparency.meta.com/policies/ad-standards/fraud-scams/unacceptable-business-practices/]. House rule on top of that: no fake urgency, no "guaranteed" results, no invented statistics, testimonials or customer logos.
 - [ ] **Free means free.** If the ad says "free", the free tier must really be free without a card, and the landing page must say what is and isn't included PROVISIONAL(Q-0003).
-- [ ] **Personal attributes.** Do not imply you know the viewer's personal attributes (e.g. "Are you struggling with debt?"). Write about the business or the task instead. [src: https://transparency.meta.com/policies/ad-standards/content-specific-restrictions/personal-attributes/]
+- [ ] **Personal attributes.** Do not imply you know the viewer's personal attributes (e.g. "Are you struggling with debt?"). Write about the business or the task instead. [src: https://transparency.meta.com/policies/ad-standards/objectionable-content/privacy-violations-personal-attributes/]
 - [ ] **Special Ad Categories.** B2B SaaS is normally not in credit, employment, housing, or social issues categories. If `{PRODUCT}` touches any of them, declare the category, which limits targeting. [src: https://www.facebook.com/business/help/298000447747885]
-- [ ] **Landing page.** Must match the ad, load properly, work on mobile, not be deceptive or non-functional, and show how to contact the business. [src: https://transparency.meta.com/policies/ad-standards/deceptive-practices/non-functional-landing-page/]
-- [ ] **Privacy policy.** A public privacy policy link on the site and in any lead form, naming Meta Pixel/Conversions API use and what data is shared. Required for lead ads and good practice for all. [src: https://www.facebook.com/business/help/1710077379203657]
+- [ ] **Landing page.** The products and services promoted in the ad must match those on the landing page. [src: https://transparency.meta.com/policies/ad-standards/] Meta's spam rules also bar misleading redirects and deceptive page behavior. [src: https://transparency.meta.com/policies/community-standards/spam/] House advice (not a cited Meta rule): load fast, work on mobile, show contact details.
+- [ ] **Privacy policy.** A public privacy policy link on the site and in any lead form, naming Meta Pixel/Conversions API use and what data is shared. House advice; Meta's exact privacy-policy requirements for lead forms were not verified here, so check them in the lead form setup screen **[Rob-only]**.
 - [ ] **Consent.** Follow applicable law (e.g. GDPR/ePrivacy, CCPA/CPRA) for cookies and data sharing; show a consent banner where required and do not fire Pixel/CAPI events about users who declined. Legal review is Rob's call **[Rob-only]**.
-- [ ] **Customer lists.** Upload only lists you have the right to use and accept Meta's custom audience terms **[Rob-only]**. [src: https://www.facebook.com/business/help/2469972959933236]
+- [ ] **Customer lists.** Upload only lists you have the right to use and accept Meta's custom audience terms **[Rob-only]**. [src: https://www.facebook.com/legal/terms/customaudience]
 - [ ] **Creative.** Use only images, music and logos you have rights to. No before/after claims, no third-party trademarks implying endorsement.
 - [ ] **Account integrity.** One real account per person; never buy likes, followers or engagement. [src: https://transparency.meta.com/policies/community-standards/inauthentic-behavior/]
 - [ ] **Ad approval.** Expect ads to be reviewed before they run; if rejected, fix and resubmit, do not circumvent. [src: https://www.facebook.com/business/help/204798856225114]
@@ -256,3 +256,45 @@ Thresholds are for Rob to set; ask "against the target Rob chose" rather than co
 - Never kill or scale on a single day's numbers.
 - Record every decision with the date and reason in the test log.
 - Revisit this doc after Q-0001 is answered and replace `{PRODUCT}` with product-specific copy in a separate, product-specific playbook.
+
+## Source Check
+
+Checked 2026-11-05. Fetched each URL; many Meta Help Center pages return only their title to a non-browser fetch, marked "title only" (QA/Rob should open these in a browser). "removed" rows are URLs no longer cited in this doc.
+
+| URL | Status | Date checked | Note |
+|---|---|---|---|
+| https://developers.facebook.com/docs/marketing-api/conversions-api/deduplicate-pixel-and-server-events | OK | 2026-11-05 | Dedup by event_id + event_name confirmed. |
+| https://developers.facebook.com/docs/marketing-api/conversions-api/get-started | OK | 2026-11-05 | Generate access token under Events Manager > Settings confirmed. |
+| https://developers.facebook.com/docs/marketing-api/conversions-api/parameters/customer-information-parameters | OK | 2026-11-05 | Hashed email (em) confirmed. |
+| https://developers.facebook.com/docs/marketing-api/conversions-api/using-the-api | OK | 2026-11-05 | Test Events tool / test_event_code confirmed. |
+| https://developers.facebook.com/docs/meta-pixel/reference/ | OK (added) | 2026-11-05 | Lists CompleteRegistration, Lead, StartTrial, Subscribe. PageView is NOT in its table, so claim reworded. |
+| https://transparency.meta.com/policies/ad-standards/ | fixed | 2026-11-05 | Intro page: confirms landing page must match ad. Did NOT support the sensitive-data claim, so that claim moved to Business Tools Terms. |
+| https://transparency.meta.com/policies/ad-standards/content-specific-restrictions/personal-attributes/ | removed | 2026-11-05 | HTTP 404. |
+| https://transparency.meta.com/policies/ad-standards/deceptive-practices/misleading-or-false-claims/ | removed | 2026-11-05 | HTTP 404. |
+| https://transparency.meta.com/policies/ad-standards/deceptive-practices/non-functional-landing-page/ | removed | 2026-11-05 | HTTP 404; no Meta page found for a standalone non-functional-landing-page rule. Claim cut to the cited match rule; rest labelled house advice. |
+| https://transparency.meta.com/policies/ad-standards/fraud-scams/unacceptable-business-practices/ | OK (added) | 2026-11-05 | Page titled "Prohibited Commercial Practices": deceptive pricing, unauthorized endorsements. Does not name fake urgency/testimonials, so those are marked house rules. |
+| https://transparency.meta.com/policies/ad-standards/objectionable-content/privacy-violations-personal-attributes/ | OK (added) | 2026-11-05 | "Ads must not contain content that asserts or implies personal attributes"; "Are you 18 years old?" example. |
+| https://transparency.meta.com/policies/community-standards/inauthentic-behavior/ | OK | 2026-11-05 | Covers fake accounts and artificially inflated popularity. |
+| https://transparency.meta.com/policies/community-standards/spam/ | OK | 2026-11-05 | Spam standard; covers misleading redirects, deceptive links, buying engagement. |
+| https://www.facebook.com/business/help/1016122818401732 | OK (title only) | 2026-11-05 | "Add URL Parameters to Your Meta Ads"; dynamic-parameter detail not retrievable. |
+| https://www.facebook.com/business/help/112167992830700 | OK (title only) | 2026-11-05 | "About the Learning Phase"; body not retrievable. |
+| https://www.facebook.com/business/help/1438417719786914 | OK (added, title only) | 2026-11-05 | "How to choose the right ad objective"; six objectives per search summary, body not retrievable. |
+| https://www.facebook.com/business/help/164749007013531 | OK (title only) | 2026-11-05 | "About Lookalike Audiences"; minimum source size not confirmed (playbook defers to the audience tool). |
+| https://www.facebook.com/business/help/1710077379203657 | fixed | 2026-11-05 | Page is business portfolio creation. 2FA claim detached (marked house advice); privacy-policy claim no longer cited to it. |
+| https://www.facebook.com/business/help/1738164643098669 | OK (title only) | 2026-11-05 | "About A/B Testing". |
+| https://www.facebook.com/business/help/182371508761821 | OK (title only) | 2026-11-05 | "About Detailed Targeting". |
+| https://www.facebook.com/business/help/204798856225114 | OK (title only) | 2026-11-05 | "About Ads In Review". |
+| https://www.facebook.com/business/help/2254103654917599 | OK (added, search summary) | 2026-11-05 | Best practices for standard event setup; case-sensitivity per search summary, body not retrievable. |
+| https://www.facebook.com/business/help/2469972959933236 | removed | 2026-11-05 | HTTP 404; replaced by legal/terms/customaudience. |
+| https://www.facebook.com/business/help/269269737396981 | OK (added, search summary) | 2026-11-05 | "About learning limited": ~50 optimization events in the week after last significant edit, per search summary. |
+| https://www.facebook.com/business/help/286768115176155 | OK (title only) | 2026-11-05 | "About Domain Verification"; DNS TXT / meta-tag detail not retrievable, confirm in UI. |
+| https://www.facebook.com/business/help/298000447747885 | OK (title only) | 2026-11-05 | "How to Choose a Special Ad Category". |
+| https://www.facebook.com/business/help/402791146561655 | OK (title only) | 2026-11-05 | Page title "Specifications for Meta Pixel Standard Events"; body not retrievable. Used only for PageView note. |
+| https://www.facebook.com/business/help/517257253637283 | removed | 2026-11-05 | HTTP 404; replaced by 1438417719786914. |
+| https://www.facebook.com/business/help/754049591334898 | OK (added, title only) | 2026-11-05 | Time zone change page; replaces 910137316041095 on ad account setup. |
+| https://www.facebook.com/business/help/764293677236889 | OK (added, title only) | 2026-11-05 | "Change your Ad Account Spending Limit"; replaces 910137316041095 on spending limit. |
+| https://www.facebook.com/business/help/910137316041095 | removed | 2026-11-05 | "Add an ad account to a portfolio": did not support currency/time zone/spending-limit claims; replaced. |
+| https://www.facebook.com/business/help/942374239243867 | OK (added, search summary) | 2026-11-05 | "Last Significant Edit": audience/creative/optimization changes count; budget/bid depends on magnitude. |
+| https://www.facebook.com/business/help/965529646866485 | OK (title only) | 2026-11-05 | Advantage+ placements delivery page. |
+| https://www.facebook.com/legal/technology_terms | OK (added) | 2026-11-05 | Business Tools Terms 1.h: no health/financial/sensitive data, no SSN/credit card numbers, no event names implying sensitive categories. |
+| https://www.facebook.com/legal/terms/customaudience | OK (added) | 2026-11-05 | Customer List Custom Audiences Terms: rights/lawful basis and opt-out removal confirmed. |
