@@ -15,7 +15,7 @@ from email.mime.text import MIMEText
 
 import requests
 from markupsafe import escape
-from flask import (Blueprint, request, redirect, make_response, g, abort, url_for)
+from flask import (Blueprint, request, redirect, make_response, g, abort, url_for, jsonify)
 from werkzeug.security import generate_password_hash, check_password_hash
 
 from . import db
@@ -283,7 +283,7 @@ def load_principal():
 
 # Demo accounts are read-only. These POSTs stay allowed (sign out + the
 # read-only insights query the demo is meant to showcase).
-_DEMO_POST_ALLOW = {"/logout", "/api/insights/ask"}
+_DEMO_POST_ALLOW = {"/logout", "/api/logout", "/api/insights/ask"}
 
 
 def demo_readonly_guard():
@@ -776,3 +776,61 @@ def meet_timer_link(token):
     token = create_session(None, kind="meet_timer", meet_id=meet["id"], ttl_days=1)
     # Lands on the phone timing app, scoped to this one meet.
     return _set_session_cookie(make_response(redirect("/phone")), token)
+
+
+# ============================ native app (iOS) JSON ============================
+@bp.post("/api/login")
+def api_login():
+    """Password sign-in for the native XCTimer app. Sets the same session cookie the web
+    app uses, so every /races/<rid>/* route works unchanged afterwards. Self-serve fun-run
+    hosts and MFA-enabled accounts are told to use the QR timer link instead (the app
+    opens /t/<token> links directly)."""
+    body = request.get_json(silent=True) or {}
+    email = (body.get("email") or "").strip().lower()
+    pw = body.get("password") or ""
+    if _login_throttled(email):
+        return jsonify(error="Too many attempts. Please wait a few minutes and try again."), 429
+    import logging
+    _log = logging.getLogger("xctimer.access")
+    ip = (request.headers.get("CF-Connecting-IP")
+          or request.headers.get("X-Forwarded-For", "").split(",")[0].strip()
+          or request.remote_addr or "-")
+    u = find_user_by_email(email)
+    if not u or not verify_password(pw, u["password_hash"]):
+        _record_login_fail(email)
+        _log.info(f"XCLOG LOGIN fail {email or '-'} app {ip}")
+        return jsonify(error="Invalid email or password."), 401
+    _LOGIN_FAILS.pop(email, None)
+    from .road import is_web_host
+    if is_web_host(u):
+        return jsonify(error="Event hosts time with the QR timer link from the host page."), 403
+    if _mfa_required(u) and not _device_remembered(u["id"]):
+        return jsonify(error="This account uses email codes. Sign in on the web once, "
+                             "or use a meet's QR timer link."), 403
+    conn = db.connect()
+    conn.execute("UPDATE users SET last_login=? WHERE id=?", (_iso(_now()), u["id"]))
+    conn.commit()
+    conn.close()
+    _log.info(f"XCLOG LOGIN ok {u['email']} {u['role']} app {ip}")
+    destroy_session(request.cookies.get(SESSION_COOKIE))
+    token = create_session(u["id"])
+    resp = make_response(jsonify(ok=True, name=u["name"], email=u["email"], role=u["role"]))
+    return _set_session_cookie(resp, token)
+
+
+@bp.get("/api/me")
+def api_me():
+    """Who the current session is (native app bootstrap). 401 when not signed in."""
+    p = getattr(g, "principal", None)
+    if not p:
+        return jsonify(ok=False, error="Not signed in"), 401
+    return jsonify(ok=True, name=p.name, email=p.email, role=p.role,
+                   meet_scope=getattr(p, "meet_scope", None))
+
+
+@bp.post("/api/logout")
+def api_logout():
+    destroy_session(request.cookies.get(SESSION_COOKIE))
+    resp = make_response(jsonify(ok=True))
+    resp.delete_cookie(SESSION_COOKIE)
+    return resp

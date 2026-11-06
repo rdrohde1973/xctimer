@@ -12,7 +12,7 @@ import json
 import os
 
 from markupsafe import escape
-from flask import Blueprint, g, redirect, request, Response, abort
+from flask import Blueprint, g, jsonify, redirect, request, Response, abort
 
 from . import db
 from .meets import load_meet, can_record_meet
@@ -741,3 +741,33 @@ def phone_qr():
     buf = io.BytesIO()
     img.save(buf, format="PNG")
     return Response(buf.getvalue(), mimetype="image/png")
+
+
+# ------------------------------ native app (iOS) JSON ------------------------------
+@bp.get("/phone/api/heats")
+def phone_api_heats():
+    """The 'Pick a heat' list as JSON for the native XCTimer app: every meet the caller can
+    record with its heats/events and a ready/running/ended status. Same visibility rules as
+    phone_home (a no-login QR session is scoped to its one meet)."""
+    p = getattr(g, "principal", None)
+    if not p:
+        return jsonify(error="Not signed in"), 401
+    conn = db.connect()
+    if getattr(p, "meet_scope", None):
+        rows = conn.execute("SELECT * FROM meets WHERE id=?", (p.meet_scope,)).fetchall()
+    else:
+        rows = conn.execute("SELECT * FROM meets ORDER BY date DESC, id DESC").fetchall()
+    meets = []
+    for m in rows:
+        if not can_record_meet(m):
+            continue
+        races = []
+        if m["sport"] in ("xc", "road"):
+            for r in conn.execute("SELECT * FROM races WHERE meet_id=? ORDER BY id", (m["id"],)).fetchall():
+                status = "ended" if r["stop_time"] else ("running" if r["start_time"] else "ready")
+                races.append({"id": r["id"], "name": r["name"], "capture_mode": r["capture_mode"],
+                              "status": status, "locked": bool(r["locked_at"])})
+        meets.append({"id": m["id"], "name": m["name"], "date": m["date"] or "",
+                      "sport": m["sport"], "races": races})
+    conn.close()
+    return jsonify(who=p.name or p.email or "", role=getattr(p, "role", "") or "", meets=meets)
