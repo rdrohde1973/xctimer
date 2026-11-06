@@ -767,8 +767,10 @@ def phone_api_heats():
                 status = "ended" if r["stop_time"] else ("running" if r["start_time"] else "ready")
                 races.append({"id": r["id"], "name": r["name"], "capture_mode": r["capture_mode"],
                               "status": status, "locked": bool(r["locked_at"])})
+        # Community events (organizer-hosted; participants carry their race) get the
+        # one-camera-for-every-race scanner; school meets time each heat with its own camera.
         meets.append({"id": m["id"], "name": m["name"], "date": m["date"] or "",
-                      "sport": m["sport"], "races": races})
+                      "sport": m["sport"], "community": bool(m["organizer_id"]), "races": races})
     conn.close()
     return jsonify(who=p.name or p.email or "", role=getattr(p, "role", "") or "", meets=meets)
 
