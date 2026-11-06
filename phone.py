@@ -771,3 +771,28 @@ def phone_api_heats():
                       "sport": m["sport"], "races": races})
     conn.close()
     return jsonify(who=p.name or p.email or "", role=getattr(p, "role", "") or "", meets=meets)
+
+
+@bp.get("/phone/api/meets/<int:mid>/track")
+def phone_api_track(mid):
+    """Track Timer pickers as JSON for the native app: tap-timed distance events, laned
+    sprints/relays (each with its drawn heats) and open-pit field events. Same data the
+    web _track_timer page embeds."""
+    p = getattr(g, "principal", None)
+    if not p:
+        return jsonify(error="Not signed in"), 401
+    m = load_meet(mid)
+    if not can_record_meet(m) or m["sport"] != "track":
+        abort(403)
+    conn = db.connect()
+    tap_events = [{"meid": e["meid"], "label": e["label"], "heats": e["heats"]}
+                  for e in _picker_events(conn, mid, TAP_EVENTS)]
+    lane_events = [{"meid": e["meid"], "label": e["label"], "heats": e["heats"]}
+                   for e in _picker_events(conn, mid, LANE_EVENTS)]
+    field_events = [{"id": e["id"], "name": e["name"], "hj": e["name"] == "High Jump"}
+                    for e in conn.execute(
+                        "SELECT DISTINCT e.id, e.name FROM events e JOIN meet_events me ON me.event_id=e.id "
+                        "WHERE me.meet_id=? AND e.kind='field' ORDER BY e.sort", (mid,)).fetchall()]
+    conn.close()
+    return jsonify(meet={"id": m["id"], "name": m["name"], "date": m["date"] or ""},
+                   tap_events=tap_events, lane_events=lane_events, field_events=field_events)
