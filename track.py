@@ -869,7 +869,8 @@ def _track_tabs(mid, active):
             'padding-bottom:.5rem;flex-wrap:wrap">'
             + tab(f"/meets/{mid}", "⚙️ Setup", "setup")
             + tab(f"/meets/{mid}/assign", "👤 Assign athletes", "assign")
-            + tab(f"/meets/{mid}/meet-day", "🏁 Race day", "meetday")
+            + ("" if getattr(getattr(g, "principal", None), "guest", False)   # visiting coach
+               else tab(f"/meets/{mid}/meet-day", "🏁 Race day", "meetday"))
             + tab(f"/meets/{mid}/track-results", "📊 Results", "results")
             + '</div>')
 

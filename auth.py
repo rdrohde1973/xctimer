@@ -89,6 +89,9 @@ class Principal:
         self.session_token = session_token
         self.meet_scope = meet_scope        # meet_id for QR sessions, else None
         self.owns_meet = None               # meet_id for self-serve event owners (setup rights)
+        self.guest = False                  # visiting coach (guest.py): one guest school, no timing
+        self.guest_id = None
+        self._guest_school = None
         if user is not None:
             self.id = user["id"]
             self.email = user["email"]
@@ -120,6 +123,8 @@ class Principal:
 
     def school_ids(self):
         """Schools this principal is scoped to (coach/timer)."""
+        if self.guest:
+            return {self._guest_school}
         if self.id is None:
             return set()
         conn = db.connect()
@@ -203,14 +208,14 @@ def issue_reset_token(user_id):
 
 
 # --- sessions ---
-def create_session(user_id, *, kind="user", meet_id=None, ttl_days=SESSION_TTL_DAYS):
+def create_session(user_id, *, kind="user", meet_id=None, ttl_days=SESSION_TTL_DAYS, guest_id=None):
     token = secrets.token_urlsafe(32)
     conn = db.connect()
     now = _iso(_now())
     conn.execute(
-        "INSERT INTO sessions (token, user_id, expires, created_at, last_seen, kind, meet_id) "
-        "VALUES (?,?,?,?,?,?,?)",
-        (token, user_id, _iso(_now() + timedelta(days=ttl_days)), now, now, kind, meet_id),
+        "INSERT INTO sessions (token, user_id, expires, created_at, last_seen, kind, meet_id, guest_id) "
+        "VALUES (?,?,?,?,?,?,?,?)",
+        (token, user_id, _iso(_now() + timedelta(days=ttl_days)), now, now, kind, meet_id, guest_id),
     )
     conn.commit()
     conn.close()
@@ -250,6 +255,20 @@ def load_principal():
         # Meet-scoped, no-login session — valid anytime, only for this one meet.
         g.principal = Principal(session_token=tok, meet_scope=s["meet_id"],
                                 role="timer", district_id=meet["district_id"])
+        return
+    if s["kind"] == "guest_coach":
+        # Visiting coach (guest.py): no users row. Scoped to ONE guest school inside the host's
+        # district; what they may open is the allowlist in guest.guest_path_ok. No idle timeout.
+        gc = conn.execute(
+            "SELECT gc.*, s.district_id AS did, s.guest AS sguest FROM guest_coaches gc "
+            "JOIN schools s ON s.id=gc.school_id WHERE gc.id=?", (s["guest_id"],)).fetchone()
+        conn.close()
+        if not gc or not gc["sguest"]:
+            return
+        p = Principal(session_token=tok, role="coach", district_id=gc["did"])
+        p.guest, p.guest_id, p._guest_school = True, gc["id"], gc["school_id"]
+        p.email, p.name = gc["email"], gc["name"] or gc["email"]
+        g.principal = p
         return
     if s["kind"] == "event_owner":
         # Self-serve fun-run creator: a real user, but locked to their ONE event
@@ -434,8 +453,17 @@ def login_required(f):
     def wrapper(*a, **kw):
         if not getattr(g, "principal", None):
             return redirect("/login")
+        _guest_gate(g.principal)
         return f(*a, **kw)
     return wrapper
+
+
+def _guest_gate(p):
+    """Visiting coaches are default-deny: only the pages listed in guest.guest_path_ok."""
+    if getattr(p, "guest", False):
+        from .guest import guest_path_ok
+        if not guest_path_ok(p, request.method, request.path):
+            abort(403)
 
 
 def role_required(*roles):
@@ -447,6 +475,7 @@ def role_required(*roles):
                 return redirect("/login")
             if p.role not in roles:
                 abort(403)
+            _guest_gate(p)
             return f(*a, **kw)
         return wrapper
     return deco

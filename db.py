@@ -425,6 +425,22 @@ def migrate(conn):
         conn.execute("ALTER TABLE sessions ADD COLUMN kind TEXT DEFAULT 'user'")
     if "meet_id" not in scols:
         conn.execute("ALTER TABLE sessions ADD COLUMN meet_id INTEGER")
+    if "guest_id" not in scols:       # visiting-coach sessions (guest.py); no users row
+        conn.execute("ALTER TABLE sessions ADD COLUMN guest_id INTEGER")
+    # Visiting teams: an out-of-district school at a host's meet is a schools row with guest=1;
+    # its coaches sign in by emailed link (guest_coaches), never a users row. No FK on purpose:
+    # school/district deletes clean these up explicitly.
+    if "guest" not in _column_names(conn, "schools"):
+        conn.execute("ALTER TABLE schools ADD COLUMN guest INTEGER DEFAULT 0")
+    if "guest_token" not in _column_names(conn, "meets"):
+        conn.execute("ALTER TABLE meets ADD COLUMN guest_token TEXT")
+    conn.execute(
+        "CREATE TABLE IF NOT EXISTS guest_coaches ("
+        "id INTEGER PRIMARY KEY, school_id INTEGER NOT NULL, email TEXT NOT NULL, name TEXT, "
+        "token TEXT, token_expires TEXT, created_at TEXT, last_login TEXT, "
+        "UNIQUE (school_id, email))")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_guest_coaches_token ON guest_coaches(token)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_meets_guest_token ON meets(guest_token)")
     if "last_seen" not in scols:      # idle-timeout tracking (compliance Phase 2)
         conn.execute("ALTER TABLE sessions ADD COLUMN last_seen TEXT")
         # grandfather existing sessions: give them a fresh idle window, not an instant logout

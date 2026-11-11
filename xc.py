@@ -708,6 +708,7 @@ def _xc_tabs(mid, active, road=False, organizer=False):
         on = "background:var(--panel2);color:var(--fg)" if active == key else "color:var(--mut)"
         return (f'<a href="{href}" style="padding:.4rem .9rem;border-radius:8px;'
                 f'text-decoration:none;{on}">{label}</a>')
+    _guest = getattr(getattr(g, "principal", None), "guest", False)   # visiting coach: view only
     if organizer:
         mid_tab = tab(f"/meets/{mid}/participants", "👥 Participants", "participants")
     elif road:
@@ -718,9 +719,9 @@ def _xc_tabs(mid, active, road=False, organizer=False):
             'padding-bottom:.5rem;flex-wrap:wrap">'
             + tab(f"/meets/{mid}", "⚙️ Setup", "setup")
             + mid_tab
-            + tab(f"/meets/{mid}/xc-day", "🏁 Race day", "meetday")
+            + ("" if _guest else tab(f"/meets/{mid}/xc-day", "🏁 Race day", "meetday"))
             + tab(f"/meets/{mid}/results", "📊 Results", "results")
-            + tab(f"/meets/{mid}/course", "🗺 Course", "course")
+            + ("" if _guest else tab(f"/meets/{mid}/course", "🗺 Course", "course"))
             + '</div>')
 
 

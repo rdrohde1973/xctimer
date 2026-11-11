@@ -196,7 +196,8 @@ def _athlete_focus(conn, did, school_ids, question, mode):
     elif did is not None:
         rows = conn.execute(
             "SELECT a.id, a.name, a.bib, s.name AS sname, s.district_id "
-            "FROM athletes a JOIN schools s ON s.id=a.school_id WHERE s.district_id=?", (did,)).fetchall()
+            "FROM athletes a JOIN schools s ON s.id=a.school_id WHERE s.district_id=? "
+            "AND COALESCE(s.guest,0)=0", (did,)).fetchall()   # visiting teams stay out of district stats
     else:
         return ""
     matched = [a for a in rows if a["name"] and a["name"].lower() in q]
@@ -331,9 +332,10 @@ def _digest(principal, question=""):
     if principal.is_super and did is None:
         lines.append("SCOPE: all districts (platform overview)")
         for d in conn.execute("SELECT * FROM districts ORDER BY name").fetchall():
-            sc = conn.execute("SELECT COUNT(*) FROM schools WHERE district_id=?", (d["id"],)).fetchone()[0]
+            sc = conn.execute("SELECT COUNT(*) FROM schools WHERE district_id=? AND COALESCE(guest,0)=0",
+                              (d["id"],)).fetchone()[0]
             at = conn.execute("SELECT COUNT(*) FROM athletes a JOIN schools s ON s.id=a.school_id "
-                              "WHERE s.district_id=?", (d["id"],)).fetchone()[0]
+                              "WHERE s.district_id=? AND COALESCE(s.guest,0)=0", (d["id"],)).fetchone()[0]
             lines.append(f"- District {d['name']}: {sc} schools, {at} athletes")
         conn.close()
         return "\n".join(lines)
@@ -371,7 +373,8 @@ def _digest(principal, question=""):
             tuple(school_ids)).fetchall() if school_ids else []
         lines.append("SCOPE: coach — schools: " + ", ".join(s["name"] for s in schools))
     else:
-        schools = conn.execute("SELECT * FROM schools WHERE district_id=? ORDER BY name", (did,)).fetchall()
+        schools = conn.execute("SELECT * FROM schools WHERE district_id=? AND COALESCE(guest,0)=0 "
+                               "ORDER BY name", (did,)).fetchall()
 
     for s in schools:
         ath = conn.execute("SELECT name, grade, gender FROM athletes WHERE school_id=? ORDER BY name",
@@ -433,6 +436,13 @@ school card and on printed bib stickers). Each athlete gets a bib for the season
 CREATE A MEET: pick sport (Track or Cross Country), a date, and which schools attend. Track meet
 setup also sets the scoring/points table, the per-athlete event limit, whether events are laned,
 and the High Jump bar schedule (plus a Pole Vault schedule in high-school districts).
+
+VISITING TEAMS: For schools from outside the district, open the meet's Setup tab and use the
+Visiting teams card. Create one invite link (or QR) and send it to every visiting coach. Each coach
+enters their school and email and is emailed a private link, with no password, to upload a roster
+and enter athletes. Visiting teams are free, keep their roster for the host's next meet, and cannot
+time or change the meet. The host can also add a team or a second coach, resend a link, or remove a
+coach from that card. Do not use the Users page for outside coaches.
 
 TRACK — SETUP: Batch-add events (sprints, distance, relays, and field: Long Jump / Shot Put /
 High Jump) for Boys+Girls and each grade at once. Districts whose grades reach 10th also get the

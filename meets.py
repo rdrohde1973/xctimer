@@ -92,8 +92,8 @@ def can_setup_meet(m):
         return False
     if getattr(p, "owns_meet", None) is not None:
         return p.owns_meet == m["id"]      # self-serve event owner: only their own event
-    if p.meet_scope:
-        return False                        # QR kiosk timer: record only, never setup
+    if p.meet_scope or getattr(p, "guest", False):
+        return False                        # QR kiosk timer / visiting coach: never setup
     if p.is_super:
         return True
     org = _meet_organizer_id(m)
@@ -110,7 +110,7 @@ def can_setup_meet(m):
 
 def can_record_meet(m):
     p = g.principal
-    if not p:
+    if not p or getattr(p, "guest", False):   # a visiting coach never times the host's meet
         return False
     if p.meet_scope:
         return p.meet_scope == m["id"]
@@ -278,7 +278,8 @@ def list_meets():
     if can_create and not (p.is_super and did is None):
         schools = _district_schools(did)
         host_opts = '<option value="">— none —</option>' + "".join(
-            f'<option value="{s["id"]}">{escape(s["name"])}</option>' for s in schools)
+            f'<option value="{s["id"]}">{escape(s["name"])}</option>' for s in schools
+            if not s["guest"])                # a visiting team never hosts
         att = "".join(
             f'<label style="display:flex;gap:.5rem;align-items:center;font-size:.95rem">'
             f'<input type="checkbox" name="school_ids" value="{s["id"]}" style="width:auto">'
@@ -307,6 +308,8 @@ def list_meets():
 </form></div>"""
     elif p.is_super and did is None:
         form = '<p class="muted">Pick a district in the header to create a meet.</p>'
+    elif getattr(p, "guest", False):
+        form = ""                            # visiting coach: no meets of their own
     elif p.role == "coach" and did is not None and p.school_ids():
         form = f"""
 <div class="card"><h2>🕐 Set up a time trial</h2>
@@ -357,7 +360,9 @@ def create_meet():
     valid = {r[0] for r in conn.execute(
         "SELECT id FROM schools WHERE district_id=?", (did,)).fetchall()}
     school_ids = [s for s in school_ids if s in valid]
-    if host is not None and host not in valid:
+    guests = {r[0] for r in conn.execute(
+        "SELECT id FROM schools WHERE district_id=? AND guest=1", (did,)).fetchall()}
+    if host is not None and (host not in valid or host in guests):
         host = None
     if not p.is_admin:                 # coach time trial: force own team, ignore submitted schools
         coach_schools = sorted(p.school_ids())
@@ -869,10 +874,11 @@ def meet_detail(mid):
         boxes = "".join(
             f'<label style="display:flex;gap:.5rem;align-items:center;font-size:.95rem">'
             f'<input type="checkbox" name="school_ids" value="{s["id"]}" style="width:auto" '
-            f'{"checked" if s["id"] in att_ids else ""}>{escape(s["name"])}</label>' for s in all_sch)
+            f'{"checked" if s["id"] in att_ids else ""}>{escape(s["name"])}'
+            f'{" <span class=pill>visiting</span>" if s["guest"] else ""}</label>' for s in all_sch)
         hopts = '<option value="">— none —</option>' + "".join(
             f'<option value="{s["id"]}" {"selected" if s["id"]==m["host_school_id"] else ""}>'
-            f'{escape(s["name"])}</option>' for s in all_sch)
+            f'{escape(s["name"])}</option>' for s in all_sch if not s["guest"])   # a visiting team never hosts
         if is_xc:
             setup_card = (
                 '<div class="card"><h2>Schools at this meet</h2>'
@@ -948,7 +954,10 @@ def meet_detail(mid):
         mid_block = section
     else:
         # XC: heats above the schools card; track keeps its meet-setup form first.
-        mid_block = f"{section}\n{setup_card}" if is_xc else f"{setup_card}\n{section}"
+        from . import guest as _guest
+        guest_card = _guest.host_card(m) if setup else ""
+        mid_block = (f"{section}\n{setup_card}\n{guest_card}" if is_xc
+                     else f"{setup_card}\n{guest_card}\n{section}")
         mid_block = f"{mid_block}\n{roster_card}"
 
     edit_card = ""
@@ -992,6 +1001,7 @@ def meet_detail(mid):
 {mid_block}
 """
     return shell(g.principal, body, active=("events" if is_org else "meets"),
+                 msg=request.args.get("msg"), err=request.args.get("err"),
                  active_district=active_district_id(), districts=_districts_for_switcher())
 
 
@@ -1082,7 +1092,7 @@ def set_host(mid):
     host = int(h) if h.isdigit() else None
     if host is not None:
         conn = db.connect()
-        ok = conn.execute("SELECT 1 FROM schools WHERE id=? AND district_id=?",
+        ok = conn.execute("SELECT 1 FROM schools WHERE id=? AND district_id=? AND COALESCE(guest,0)=0",
                           (host, m["district_id"])).fetchone()
         conn.close()
         if not ok:

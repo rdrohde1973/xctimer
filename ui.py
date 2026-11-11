@@ -202,6 +202,8 @@ def home_url(principal):
     if getattr(principal, "meet_scope", None):
         return "/phone"
     role = getattr(principal, "role", None)
+    if getattr(principal, "guest", False):
+        return "/guest"                 # visiting coach: their team page
     if role == "race_director":
         return "/events"
     if role == "coach":
@@ -270,6 +272,11 @@ def shell(principal, body, *, active="", active_district=None, districts=None,
 
     if getattr(principal, "meet_scope", None):
         nav = []  # meet-day QR principal: minimal chrome, no navigation
+    elif getattr(principal, "guest", False):
+        # Visiting coach: their team, their roster, the meets they are entered in. Nothing else.
+        nav.append(link("/guest", "My team", "guest"))
+        nav.append(link("/schools", "Roster", "schools"))
+        nav.append(link("/meets", "Meets", "meets"))
     elif role == "race_director":
         # Community race directors live entirely in the Events world — no schools/districts.
         nav.append(link("/events", "Events", "events"))
@@ -310,7 +317,7 @@ def shell(principal, body, *, active="", active_district=None, districts=None,
 
     who = (
         f'<div class="who"><b>{escape(principal.name or principal.email or "")}</b>'
-        f'<br><span class="pill">{escape(role.replace("_"," "))}</span></div>'
+        f'<br><span class="pill">{"visiting coach" if getattr(principal, "guest", False) else escape(role.replace("_"," "))}</span></div>'
     )
     logout = ('<form class="inline" method="post" action="/logout">'
               '<button class="ghost" type="submit">Sign out</button></form>')

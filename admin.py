@@ -10,6 +10,7 @@ import shutil
 import subprocess
 import time
 import urllib.request
+from urllib.parse import quote
 from datetime import datetime, timezone
 from zoneinfo import ZoneInfo
 
@@ -77,7 +78,7 @@ def dashboard():
     else:
         stats = {
             "Schools": conn.execute(
-                "SELECT COUNT(*) FROM schools WHERE district_id=?", (did,)).fetchone()[0],
+                "SELECT COUNT(*) FROM schools WHERE district_id=? AND COALESCE(guest,0)=0", (did,)).fetchone()[0],
             "Users": conn.execute(
                 "SELECT COUNT(*) FROM users WHERE district_id=?", (did,)).fetchone()[0],
             "Meets": conn.execute(
@@ -125,7 +126,7 @@ def list_districts():
     conn = db.connect()
     counts = {r[0]: (r[1], r[2]) for r in conn.execute(
         "SELECT d.id, "
-        "(SELECT COUNT(*) FROM schools s WHERE s.district_id=d.id), "
+        "(SELECT COUNT(*) FROM schools s WHERE s.district_id=d.id AND COALESCE(s.guest,0)=0), "
         "(SELECT COUNT(*) FROM users u WHERE u.district_id=d.id) "
         "FROM districts d").fetchall()}
     conn.close()
@@ -334,6 +335,9 @@ def delete_district(did):
         conn.execute(f"DELETE FROM sessions WHERE user_id IN {in_users}", (did,))
         conn.execute(f"DELETE FROM mfa_challenges WHERE user_id IN {in_users}", (did,))
         conn.execute(f"DELETE FROM mfa_devices WHERE user_id IN {in_users}", (did,))
+        conn.execute(f"DELETE FROM sessions WHERE guest_id IN "
+                     f"(SELECT id FROM guest_coaches WHERE school_id IN {in_schools})", (did,))
+        conn.execute(f"DELETE FROM guest_coaches WHERE school_id IN {in_schools}", (did,))
         conn.execute(f"DELETE FROM user_schools WHERE school_id IN {in_schools}", (did,))
         conn.execute(f"DELETE FROM user_schools WHERE user_id IN {in_users}", (did,))
         conn.execute("DELETE FROM users WHERE district_id=?", (did,))
@@ -693,7 +697,11 @@ def create_user_route():
         _uid, token = create_user(email, role, district_id=did, name=name,
                                   school_ids=school_ids, is_demo=is_demo)
     except Exception:  # duplicate email, etc.
-        return redirect("/users")
+        # Used to fail silently, so an invite to a coach who already had an XCTimer login
+        # anywhere just vanished. users.email is unique across every district.
+        return redirect("/users?err=" + quote(
+            f"{email} already has an XCTimer account, and an email can belong to only one district. "
+            "For a coach from outside your district, open the meet and use Visiting teams instead."))
     send_setup_email(email, token)
     return redirect("/users")
 

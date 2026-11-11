@@ -189,6 +189,9 @@ def list_schools():
         logo = (f'<img src="{escape(s["logo_path"])}" alt="" '
                 f'style="height:28px;width:28px;object-fit:contain;vertical-align:middle;margin-right:.5rem">'
                 if s["logo_path"] else "")
+        if s["guest"]:
+            logo += '<span class="pill" title="Out-of-district team added through a meet invite. Free, and '\
+                    'not counted as one of your schools.">visiting</span> '
         trs.append(f'<tr><td>{logo}<b>{escape(s["name"])}</b></td>{dcol}<td>{n}</td>'
                    f'<td style="text-align:right">{actions}</td></tr>')
     conn.close()
@@ -268,6 +271,9 @@ def delete_school(sid):
         conn.execute("DELETE FROM meet_schools WHERE school_id=?", (sid,))
         conn.execute("DELETE FROM athletes WHERE school_id=?", (sid,))
         conn.execute("DELETE FROM user_schools WHERE school_id=?", (sid,))
+        conn.execute("DELETE FROM sessions WHERE guest_id IN "
+                     "(SELECT id FROM guest_coaches WHERE school_id=?)", (sid,))
+        conn.execute("DELETE FROM guest_coaches WHERE school_id=?", (sid,))
         conn.execute("DELETE FROM schools WHERE id=?", (sid,))
         conn.commit()
     finally:
@@ -427,7 +433,7 @@ def roster(sid):
     champ_chip = (_f("🏆 Champ", "champ") +
                   (f'<a class="btn ghost" href="/schools/{sid}/champ" '
                    f'onclick="xcThinking(event)">✨ Suggest champ picks</a>{_THINKING_UI}'
-                   if not grad_view else ""))
+                   if not grad_view and not getattr(g.principal, "guest", False) else ""))
     filt = (f'<div class="row" style="margin:.2rem 0 1rem;gap:.4rem">'
             f'{_f("All", "all")}{_f("🏃 XC", "xc")}{champ_chip}{_f("🎽 Track", "track")}{road_chip}'
             f'<span style="flex:1"></span>{grad_link}</div>')

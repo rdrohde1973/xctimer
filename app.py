@@ -25,8 +25,9 @@ from .phone import bp as phone_bp
 from .waivers import bp as waivers_bp
 from .road import bp as road_bp
 from .coursemap import bp as coursemap_bp
+from .guest import bp as guest_bp
 
-APP_VERSION = "1.110.6-high-school-events"
+APP_VERSION = "1.111.0-visiting-teams"
 
 LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width, initial-scale=1">
@@ -876,8 +877,16 @@ def create_app():
     app.before_request(auth.demo_readonly_guard)
 
     for bp in (auth_bp, tenancy_bp, schools_bp, meets_bp, xc_bp, track_bp,
-               admin_bp, insights_bp, phone_bp, waivers_bp, road_bp, coursemap_bp):
+               admin_bp, insights_bp, phone_bp, waivers_bp, road_bp, coursemap_bp, guest_bp):
         app.register_blueprint(bp)
+
+    @app.before_request
+    def _guest_no_timer():
+        # The phone timer routes do their own sign-in checks (no login_required), so the
+        # visiting-coach allowlist cannot see them. Guests never time a host's meet.
+        p = getattr(g, "principal", None)
+        if p is not None and getattr(p, "guest", False) and request.path.startswith("/phone"):
+            return redirect("/guest")
 
     # --- CSRF protection (double-submit cookie), compliance Phase 2 ---
     # The token cookie is issued in the existing _security_headers after_request below;
