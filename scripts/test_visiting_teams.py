@@ -141,6 +141,10 @@ r = lee.post(f"/meets/{trk}/assign?school={clar}", data={"school_id": str(clar),
 assert r.status_code in (200, 302), r.status_code
 assert q("SELECT 1 FROM entries WHERE meet_event_id=? AND runner_id=?", me100, aid["Vis Sprinter"]), "entry not saved"
 assert lee.get(f"/meets/{trk}").status_code == 200 and lee.get(f"/meets/{trk}/track-results").status_code == 200
+# the host sees the phone-timer QR at the top of Setup; a visiting coach never gets the timing link
+assert "timer-qr.png" in host.get(f"/meets/{trk}").get_data(as_text=True)
+gpage = lee.get(f"/meets/{trk}").get_data(as_text=True)
+assert "timer-qr.png" not in gpage and "/t/" not in gpage and lee.get(f"/meets/{trk}/timer-qr.png").status_code in (302, 403, 404)
 assert lee.get(f"/meets/{trk}/school/{clar}/biblist.pdf").data[:4] == b"%PDF"
 assert lee.get("/roster-template.xlsx").status_code == 200
 r = lee.post(f"/schools/{clar}/import/commit", json={"athletes": [{"name": "Imported Kid", "grade": 9, "gender": "F"}]}, headers=H)

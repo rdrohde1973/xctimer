@@ -86,3 +86,10 @@ page = helper.get("/phone").get_data(as_text=True)
 assert "Dual" in page and "Boys" in page                      # no login, scoped to this meet
 assert w.get("/phone").status_code == 200                      # a signed-in coach/admin can still open it
 print("PASS 4: one phone app -- no sign-in card on Meets, the per-meet link still opens the timer")
+
+# --- the meet-day QR also sits at the top of the Setup page, for people who may time the meet
+setup = w.get(f"/meets/{mid}").get_data(as_text=True)
+assert f"/meets/{mid}/timer-qr.png" in setup and f"/t/{tok}" in setup
+assert setup.index("<h1>Dual</h1>") < setup.index("timer-qr.png") < setup.index("Rename meet")   # by the name, above the tabs
+assert w.get(f"/meets/{mid}/timer-qr.png").status_code == 200
+print("PASS 5: the Phone Timer App QR is at the top of the Setup page")

@@ -754,6 +754,29 @@ def timer_qr_card(m):
             f'style="background:#fff;padding:8px;border-radius:8px">{rotate}</div>')
 
 
+def timer_qr_chip(m):
+    """The same meet-day QR, small, for the top of the Setup page beside the meet name --
+    so the one phone link is in reach from the first page of a meet, not only Race day.
+    Shown to whoever may time this meet (never a visiting coach). The QR is not a link:
+    opening it on this computer would swap the signed-in session for the timer's."""
+    if not can_record_meet(m):
+        return ""
+    mid = m["id"]
+    tok = ensure_timer_token(mid)
+    base = os.environ.get("XC_PUBLIC_URL", request.host_url.rstrip("/"))
+    url = f"{base}/t/{tok}"
+    return (f'<div style="display:flex;gap:.7rem;align-items:center;background:var(--panel);'
+            f'border:1px solid var(--line);border-radius:12px;padding:.55rem .7rem">'
+            f'<img src="/meets/{mid}/timer-qr.png" width="92" height="92" alt="Phone Timer App QR code" '
+            f'style="background:#fff;padding:5px;border-radius:8px;display:block">'
+            f'<div style="max-width:11.5rem;line-height:1.35"><b>📱 Phone Timer App</b>'
+            f'<div class="muted" style="font-size:.82rem;margin:.15rem 0 .4rem">Scan to time this meet '
+            f'from a phone. No login.</div>'
+            f'<button type="button" class="ghost" style="padding:.25rem .6rem;font-size:.82rem" '
+            f'onclick="navigator.clipboard.writeText(\'{escape(url)}\');this.textContent=\'Copied ✓\'">'
+            f'Copy link</button></div></div>')
+
+
 # ------------------------------- detail (setup shell) -------------------------------
 @bp.get("/meets/<int:mid>")
 @login_required
@@ -994,8 +1017,11 @@ def meet_detail(mid):
         sub += f' · host: {escape(host["name"]) if host else "—"}'
     body = f"""
 <p class="muted"><a href="{back_link}">{back_label}</a></p>
-<h1>{escape(m['name'])}</h1>
-<p class="sub">{sub}</p>
+<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:1rem;flex-wrap:wrap">
+<div style="flex:1;min-width:15rem"><h1>{escape(m['name'])}</h1>
+<p class="sub">{sub}</p></div>
+{timer_qr_chip(m)}
+</div>
 {edit_card}
 {tabs}
 {print_bar}
