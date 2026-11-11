@@ -7,12 +7,10 @@ full-screen tap console (START -> FINISHER / UNDO / STOP). Track meets open the
 two-tab Track Timer. All screens drive the same /races/<rid>/* JSON API, so a
 phone tapping and a desktop scanning bibs share one race.
 """
-import io
 import json
-import os
 
 from markupsafe import escape
-from flask import Blueprint, g, jsonify, redirect, request, Response, abort
+from flask import Blueprint, g, jsonify, redirect, request, abort
 
 from . import db
 from .meets import load_meet, can_record_meet
@@ -72,11 +70,6 @@ def _picker_events(conn, mid, names):
             label = f'{ename} · combined 🔗'
         out.append({"meid": mem[0]["id"], "label": label, "heats": heats})
     return out
-
-
-def _phone_url():
-    base = os.environ.get("XC_PUBLIC_URL") or request.host_url.rstrip("/")
-    return f"{base}/phone"
 
 
 # ------------------------------ full-screen doc ------------------------------
@@ -714,36 +707,6 @@ async function postScan(n){{
 }}
 pitMode();
 </script>"""
-
-
-def _install_card():
-    url = _phone_url()
-    return f"""
-<div class="card"><h2>📱 The app on your phone</h2>
-<p class="muted">Coaches scan this (or open the link) on their phone, sign in with their
-coach email, and add it to their home screen. Same link for everyone, every meet.</p>
-<div style="display:flex;gap:1.2rem;flex-wrap:wrap;align-items:flex-start">
-  <img src="/phone/qr.png" width="150" height="150"
-       style="background:#fff;padding:8px;border-radius:8px">
-  <div style="flex:1;min-width:250px">
-    <p style="margin:0 0 .3rem">Or open <code style="background:var(--panel2);padding:.25rem .5rem;border-radius:8px">{escape(url)}</code></p>
-    <ol class="muted" style="margin-top:.7rem;line-height:1.9">
-      <li>Open the link on your phone (or scan the QR).</li>
-      <li>Sign in with your coach email.</li>
-      <li><b>iPhone:</b> Share → <b>Add to Home Screen</b>. &nbsp;<b>Android:</b> ⋮ menu → <b>Install app</b>.</li>
-      <li>Open it on meet day to enter your athletes and results.</li>
-    </ol>
-  </div>
-</div></div>"""
-
-
-@bp.get("/phone/qr.png")
-def phone_qr():
-    import qrcode
-    img = qrcode.make(_phone_url())
-    buf = io.BytesIO()
-    img.save(buf, format="PNG")
-    return Response(buf.getvalue(), mimetype="image/png")
 
 
 # ------------------------------ native app (iOS) JSON ------------------------------

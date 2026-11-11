@@ -455,8 +455,9 @@ on the Setup tab: a General event-type order (drag the event types, e.g. 1600, 1
 events get center-out lane assignments. Print a heat-sheet PDF and a full meet packet (the High
 Jump page prints landscape with the bar ladder/grid).
 
-TRACK — RACE DAY (phones): Open the Phone Timer app (coaches log in, or share the app QR/link for a
-no-login timer). Pick the event — combined divisions (same event across grades) show as ONE pick.
+TRACK — RACE DAY (phones): Open the Phone Timer App from the meet's Race day page — scan its QR or
+open its link on a phone (one link per meet, no login; share the same one with helpers). There is no
+separate coach sign-in app link. Pick the event — combined divisions (same event across grades) show as ONE pick.
 Gun start: arm "listen for the gun" on the starter's phone; the clap/gun starts a shared clock on
 every phone at once (a second Start tap won't reset it). Lane timing: each helper picks a lane and
 taps as their runner crosses; when every lane is tapped the race auto-stops. Distance races use a

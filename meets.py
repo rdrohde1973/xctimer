@@ -327,9 +327,10 @@ no team scoring, kept off official results.</p>
   <button type="submit" style="margin-top:1rem">Create time trial</button>
 </form></div>"""
 
-    from .phone import _install_card
+    # No sign-in "app on your phone" card here any more (1.111.2): there is one phone app,
+    # and it is opened per meet from the Phone Timer App card on that meet's Race day page.
     body = (f"<h1>Meets</h1><p class='sub'>Cross-country &amp; track meets.</p>"
-            f"{_install_card()}{table}{form}")
+            f"{table}{form}")
     return shell(p, body, active="meets", active_district=did, districts=_districts_for_switcher())
 
 

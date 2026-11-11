@@ -66,3 +66,23 @@ assert 'href="/users"' in w.get("/schools").get_data(as_text=True)
 assert "Zelda Quartermaine" in w.get(f"/schools/{ids['real'][1]}").get_data(as_text=True)
 assert demo.mode_for(None) is None
 print("PASS 3: ordinary district admins still see Users and real names")
+
+# --- one phone app (1.111.2): no sign-in app card on Meets; the per-meet link is the way in
+html = w.get("/meets").get_data(as_text=True)
+assert "The app on your phone" not in html and "/phone/qr.png" not in html
+assert w.get("/phone/qr.png").status_code == 404
+c = db.connect()
+mid = c.execute("INSERT INTO meets (district_id, sport, name, date, public_token) VALUES (?,?,?,?,?)",
+                (ids["real"][0], "xc", "Dual", "2026-09-01", "pubtok")).lastrowid
+c.execute("INSERT INTO races (meet_id, name, capture_mode) VALUES (?,?,?)", (mid, "Boys", "tapselect"))
+c.commit(); c.close()
+day = w.get(f"/meets/{mid}/xc-day").get_data(as_text=True)
+assert "Phone Timer App" in day and "/t/" in day
+c = db.connect(); tok = c.execute("SELECT timer_token FROM meets WHERE id=?", (mid,)).fetchone()[0]; c.close()
+helper = application.test_client()
+r = helper.get(f"/t/{tok}")
+assert r.status_code == 302 and r.headers["Location"].endswith("/phone")
+page = helper.get("/phone").get_data(as_text=True)
+assert "Dual" in page and "Boys" in page                      # no login, scoped to this meet
+assert w.get("/phone").status_code == 200                      # a signed-in coach/admin can still open it
+print("PASS 4: one phone app -- no sign-in card on Meets, the per-meet link still opens the timer")
