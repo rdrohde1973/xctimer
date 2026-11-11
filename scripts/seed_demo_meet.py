@@ -4,7 +4,7 @@
     python scripts/seed_demo_meet.py /path/to/xctimer.db [--date YYYY-MM-DD] [--reset]
 
 "Cedar Ridge Invitational": the three demo high schools, Boys and Girls, 18 event types.
-Entries are in, bibs are assigned and every running event has seeded heats and lanes. The
+Entries are in, bibs are assigned and locked for printing, and every running event has seeded heats and lanes. The
 first half of the meet is already scored (so Results and team scores have something to
 show); the second half is drawn and waiting, so you can time a heat or enter a field mark
 live. What is left open:
@@ -164,6 +164,7 @@ def build(args, did, sid, q, run, post, track):
         "hj_low": "4-00", "hj_high": "6-04", "hj_inc": "2",
         "pv_low": "6-00", "pv_high": "13-00", "pv_inc": "6"})
     post(f"/meets/{mid}/events/type-order", ok=(200,), json={"order": ORDER})
+    post(f"/meets/{mid}/lock-bibs", data={"lock": "1"})        # frozen numbers -> printing is on
     me = {(r["ename"], r["gender"]): r for r in q(
         "SELECT me.*, e.name AS ename, e.kind, e.unit FROM meet_events me JOIN events e ON e.id=me.event_id "
         "WHERE me.meet_id=?", mid)}
