@@ -110,6 +110,17 @@ def main():
 def build(args, sid, q, run, post):
     rng = random.Random(2026)
 
+    # 0. XC teams score by grade and gender and need five finishers, so make sure every
+    #    school has five cross country runners in each (the roster seed leaves 7th girls at four).
+    for school in SCHOOLS:
+        for grade, gender in q("SELECT DISTINCT grade, gender FROM athletes WHERE school_id=? AND active=1",
+                               sid[school]):
+            have = q("SELECT COUNT(*) FROM athletes WHERE school_id=? AND grade=? AND gender=? AND active=1 "
+                     "AND does_xc=1", sid[school], grade, gender)[0][0]
+            for a in q("SELECT id FROM athletes WHERE school_id=? AND grade=? AND gender=? AND active=1 "
+                       "AND does_xc=0 ORDER BY id LIMIT ?", sid[school], grade, gender, max(0, 5 - have)):
+                run("UPDATE athletes SET does_xc=1 WHERE id=?", a["id"])
+
     # 1. the meet: the app adds the Boys and Girls races and numbers every XC athlete
     r = post("/meets", data={"name": NAME, "sport": "xc", "date": args.date,
                              "host_school_id": str(sid[HOST]), "school_ids": [str(sid[s]) for s in SCHOOLS]})
