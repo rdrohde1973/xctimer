@@ -287,7 +287,8 @@ def shell(principal, body, *, active="", active_district=None, districts=None,
             nav.append(link("/districts", "Districts", "districts"))
         if role in ("super_admin", "district_admin"):
             nav.append(link("/schools", "Schools", "schools"))
-            nav.append(link("/users", "Users", "users"))
+            if not getattr(principal, "is_demo", False):    # shared demo logins never see accounts
+                nav.append(link("/users", "Users", "users"))
         if role == "coach":
             nav.append(link("/schools", "Roster", "schools"))
         nav.append(link("/meets", "Meets", "meets"))

@@ -8,6 +8,8 @@
 """
 import hashlib
 
+from . import db
+
 _FIRST = ["Alex", "Sam", "Jordan", "Casey", "Riley", "Taylor", "Morgan", "Jamie",
           "Avery", "Quinn", "Reese", "Rowan", "Skyler", "Dakota", "Emerson", "Finley",
           "Harper", "Kendall", "Logan", "Parker", "Sage", "Blake", "Devon", "Hayden"]
@@ -47,6 +49,27 @@ def public_ident(name, bib, mode):
     return display(name, mode)
 
 
+FICTIONAL_SLUG = "demo"     # the Demo District: every athlete in it is made up (scripts/seed_demo_*)
+
+
+def fictional_district(district_id):
+    """True for the Demo District, whose rosters are invented. Looked up per call rather than
+    cached: SQLite can hand a deleted district's id to the next one created."""
+    if district_id is None:
+        return False
+    conn = db.connect()
+    try:
+        row = conn.execute("SELECT slug FROM districts WHERE id=?", (district_id,)).fetchone()
+    finally:
+        conn.close()
+    return bool(row and row["slug"] == FICTIONAL_SLUG)
+
+
 def mode_for(principal):
-    """The name transform for an authenticated view."""
-    return "anon" if principal and getattr(principal, "is_demo", False) else None
+    """The name transform for an authenticated view: demo accounts see generated names --
+    except inside the Demo District, where the stored names are already fictional. Swapping
+    them there only made one athlete appear under two names (generated on Results and the
+    roster, stored on heat sheets and event pages)."""
+    if not (principal and getattr(principal, "is_demo", False)):
+        return None
+    return None if fictional_district(getattr(principal, "district_id", None)) else "anon"

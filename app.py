@@ -27,7 +27,7 @@ from .road import bp as road_bp
 from .coursemap import bp as coursemap_bp
 from .guest import bp as guest_bp
 
-APP_VERSION = "1.111.0-visiting-teams"
+APP_VERSION = "1.111.1-demo-accounts"
 
 LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width, initial-scale=1">

@@ -368,6 +368,9 @@ def _creatable_roles(principal):
 @role_required("super_admin", "district_admin")
 def list_users():
     p = g.principal
+    if p.is_demo:
+        # A demo login is shared around; the Users page lists real people's email addresses.
+        abort(403)
     did = active_district_id()
     conn = db.connect()
     if p.is_super and did is None:
