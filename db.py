@@ -333,6 +333,30 @@ SEED_EVENTS = [
     ("Shot Put",      "field", "metric", 110, 0, "desc"),
 ]
 
+# High-school additions (1.110.6). Offered only to districts whose grade list reaches 10th grade
+# (events.hs=1), so a junior-high district's "Add events" form is unchanged. Each one behaves
+# like an event the engine already runs: hurdles = laned sprints, medleys/4x800 = tap-timed
+# relays, Triple Jump/Discus = three attempts like Long Jump/Shot Put, Pole Vault = the High
+# Jump bar grid. sort slots them beside their siblings.
+SEED_HS_EVENTS = [
+    ("1500m",                 "track", "seconds",  45, 0, "asc"),
+    ("3000m",                 "track", "seconds",  55, 0, "asc"),
+    ("100m Hurdles",          "track", "seconds",  62, 1, "asc"),
+    ("110m Hurdles",          "track", "seconds",  64, 1, "asc"),
+    ("300m Hurdles",          "track", "seconds",  66, 1, "asc"),
+    ("400m Hurdles",          "track", "seconds",  68, 1, "asc"),
+    ("4x200m Relay",          "relay", "seconds",  72, 1, "asc"),
+    ("4x800m Relay",          "relay", "seconds",  82, 0, "asc"),
+    ("Sprint Medley Relay",   "relay", "seconds",  84, 0, "asc"),
+    ("Distance Medley Relay", "relay", "seconds",  86, 0, "asc"),
+    ("Shuttle Hurdle Relay",  "relay", "seconds",  88, 1, "asc"),
+    ("Triple Jump",           "field", "metric",   95, 0, "desc"),
+    ("Pole Vault",            "field", "metric",  105, 0, "desc"),
+    ("Discus",                "field", "metric",  115, 0, "desc"),
+]
+# Bar-grid events: best height cleared on a make/miss ladder (everything High Jump does).
+VERTICAL_JUMPS = ("High Jump", "Pole Vault")
+
 # Points tables (from the Track reference app). Relays score the same table
 # times relay_multiplier (default 1.0). Meets pick one via meets.points_table_id.
 SEED_POINTS_TABLES = [
@@ -526,6 +550,8 @@ def migrate(conn):
     mecols = _column_names(conn, "meet_events")
     if "combine_id" not in mecols:
         conn.execute("ALTER TABLE meet_events ADD COLUMN combine_id INTEGER")
+    if "hs" not in _column_names(conn, "events"):   # 1 = offered only to high-school districts
+        conn.execute("ALTER TABLE events ADD COLUMN hs INTEGER DEFAULT 0")
     if "bar_heights" not in mecols:      # High Jump: JSON list of bar heights (ft-in)
         conn.execute("ALTER TABLE meet_events ADD COLUMN bar_heights TEXT")
     if "run_order" not in mecols:        # track: manual running order (NULL => fall back to e.sort)
@@ -651,6 +677,12 @@ def init_db():
                 "VALUES (?, ?, ?, ?, ?, ?)",
                 SEED_EVENTS,
             )
+        # High-school events: add any that are missing by name (safe on an existing catalog).
+        have = {r[0] for r in conn.execute("SELECT name FROM events").fetchall()}
+        for ev in SEED_HS_EVENTS:
+            if ev[0] not in have:
+                conn.execute("INSERT INTO events (name, kind, unit, sort, laned, scoring_order, hs) "
+                             "VALUES (?, ?, ?, ?, ?, ?, 1)", ev)
         if conn.execute("SELECT COUNT(*) FROM points_tables").fetchone()[0] == 0:
             conn.executemany(
                 "INSERT INTO points_tables (name, point_values_json) VALUES (?, ?)",

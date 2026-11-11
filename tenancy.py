@@ -67,6 +67,12 @@ def district_grades(district_id):
     return custom_grades(district_id) or list(DEFAULT_GRADES)
 
 
+def is_hs_district(district_id):
+    """True when the district's grade list reaches high school (10th or above). Turns on the
+    high-school event catalog and high-school bar heights."""
+    return max(district_grades(district_id)) >= 10
+
+
 def grades_span(grades):
     """[7, 8, 9, 10, 11, 12] -> '7-12'; a list with gaps is spelled out ('6, 8, 9')."""
     grades = list(grades)

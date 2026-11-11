@@ -432,10 +432,13 @@ school card and on printed bib stickers). Each athlete gets a bib for the season
 
 CREATE A MEET: pick sport (Track or Cross Country), a date, and which schools attend. Track meet
 setup also sets the scoring/points table, the per-athlete event limit, whether events are laned,
-and the High Jump bar schedule.
+and the High Jump bar schedule (plus a Pole Vault schedule in high-school districts).
 
 TRACK — SETUP: Batch-add events (sprints, distance, relays, and field: Long Jump / Shot Put /
-High Jump) for Boys+Girls and each grade at once. Enter athletes into events with a checklist (and
+High Jump) for Boys+Girls and each grade at once. Districts whose grades reach 10th also get the
+high-school events: hurdles, 1500/3000, 4x200, 4x800, sprint/distance medley and shuttle hurdle
+relays, Triple Jump and Discus (three attempts, like Long Jump and Shot Put) and Pole Vault (a bar
+grid, like High Jump). For Varsity/JV, add events with no grade ticked. Enter athletes into events with a checklist (and
 a relay picker for relays); the event-limit cap warns if an athlete is over. Set the running order
 on the Setup tab: a General event-type order (drag the event types, e.g. 1600, 100, 400, 4x100,
 200, 4x400, 3200) plus a fine-tune table you can drag division-by-division. Draw heats — laned

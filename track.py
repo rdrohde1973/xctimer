@@ -20,7 +20,8 @@ from flask import Blueprint, request, redirect, g, abort, jsonify, Response
 
 from . import db, ai, pdfs, demo
 from .auth import login_required
-from .tenancy import active_district_id, all_districts, district_grades, custom_grades, grades_span
+from .tenancy import (active_district_id, all_districts, district_grades, custom_grades,
+                      grades_span, is_hs_district)
 from .ui import shell, GUN_CONTROLS_HTML, GUN_JS, STICKER_TIP
 from .meets import load_meet, can_view_meet, can_setup_meet, can_record_meet
 
@@ -171,7 +172,30 @@ def _event_kind(ev):
 
 
 def _is_hj(ev):
-    return ev["ename"] == "High Jump"
+    """Bar-grid event (High Jump or Pole Vault): one best height on a make/miss ladder."""
+    return ev["ename"] in db.VERTICAL_JUMPS
+
+
+# Bar schedule defaults (low, high, increment in inches). settings_json keys: hj_* / pv_*.
+_BAR_KEYS = {"High Jump": "hj", "Pole Vault": "pv"}
+_BAR_DEFAULTS = {("hj", False): ("3-06", "5-06", 2), ("hj", True): ("4-00", "6-04", 2),
+                 ("pv", False): ("6-00", "13-00", 6), ("pv", True): ("6-00", "13-00", 6)}
+
+
+def _bar_schedule(m, ename):
+    """(low, high, inc) for a bar-grid event at this meet: the meet's saved schedule, else the
+    default for the district's level (high-school bars start and finish higher)."""
+    key = _BAR_KEYS.get(ename, "hj")
+    low, high, inc = _BAR_DEFAULTS[(key, is_hs_district(m["district_id"]))]
+    try:
+        s = json.loads(m["settings_json"] or "{}")
+    except (ValueError, TypeError):
+        s = {}
+    try:
+        inc = int(s.get(f"{key}_inc") or inc)
+    except (TypeError, ValueError):
+        pass
+    return s.get(f"{key}_low") or low, s.get(f"{key}_high") or high, inc
 
 
 # High Jump make/miss grid: bar heights are added one at a time as the bar is raised.
@@ -247,8 +271,10 @@ def _points_tables():
 
 # Default running order by event TYPE (Rob's standard): distance/sprint interleave, then the rest.
 # Divisions fall Girls 7-9 then Boys 7-9 under each type. Types not listed here are appended by e.sort.
-CANON_TRACK_ORDER = ["1600m", "100m", "400m", "4x100m Relay", "200m", "4x400m Relay", "3200m",
-                     "800m", "4x800m Relay", "100m Hurdles", "110m Hurdles", "300m Hurdles"]
+CANON_TRACK_ORDER = ["1600m", "1500m", "100m", "400m", "4x100m Relay", "200m", "4x400m Relay", "3200m",
+                     "3000m", "800m", "4x800m Relay", "4x200m Relay", "Sprint Medley Relay",
+                     "Distance Medley Relay", "100m Hurdles", "110m Hurdles", "300m Hurdles",
+                     "400m Hurdles", "Shuttle Hurdle Relay"]
 
 
 def _stored_type_order(m):
@@ -290,7 +316,10 @@ def _apply_run_order(conn, mid, type_order):
 def setup_section(m, setup):
     """Track setup (scoring / event limit / lanes) + events list + batch add-events."""
     conn = db.connect()
+    # High-school events (events.hs=1) only for a district whose grades reach 10th.
     catalog = conn.execute("SELECT * FROM events ORDER BY sort").fetchall()
+    if not is_hs_district(m["district_id"]):
+        catalog = [e for e in catalog if not e["hs"]]
     # Seed the default running order (general event-type order) the first time, so events default
     # to Rob's sequence rather than raw e.sort. Idempotent: only when NO event has a run_order yet.
     cnt = conn.execute("SELECT COUNT(*) c, COUNT(run_order) ro FROM meet_events WHERE meet_id=?",
@@ -427,25 +456,17 @@ def _hj_bars_for(me, m):
                 return bars
         except (ValueError, TypeError):
             pass
-    try:
-        s = json.loads(m["settings_json"] or "{}")
-    except (ValueError, TypeError):
-        s = {}
-    try:
-        inc = int(s.get("hj_inc") or 2)
-    except (TypeError, ValueError):
-        inc = 2
-    bars = _hj_ladder(s.get("hj_low") or "3-06", s.get("hj_high") or "5-06", inc)
+    bars = _hj_ladder(*_bar_schedule(m, me["ename"] if "ename" in me.keys() else "High Jump"))
     if len(bars) > 10:
         g = me["gender"] if "gender" in me.keys() else None
         bars = bars[:10] if g == "F" else (bars[-10:] if g == "M" else bars)
     return bars
 
 
-def _apply_hj_schedule(conn, mid, low_s, high_s, inc):
-    """Build the bar ladder low→high by `inc` and assign it to the meet's High Jump
-    events: girls get the lowest 10 bars, boys the top 10 (both get all when the
-    ladder is 10 bars or fewer)."""
+def _apply_hj_schedule(conn, mid, low_s, high_s, inc, ename="High Jump"):
+    """Build the bar ladder low→high by `inc` and assign it to the meet's High Jump (or
+    Pole Vault) events: girls get the lowest 10 bars, boys the top 10 (both get all when
+    the ladder is 10 bars or fewer)."""
     bars = _hj_ladder(low_s, high_s, inc)
     if not bars:
         return
@@ -453,9 +474,25 @@ def _apply_hj_schedule(conn, mid, low_s, high_s, inc):
     boys = bars[-10:] if len(bars) > 10 else bars
     for me in conn.execute(
             "SELECT id, gender FROM meet_events WHERE meet_id=? AND "
-            "event_id IN (SELECT id FROM events WHERE name='High Jump')", (mid,)).fetchall():
+            "event_id IN (SELECT id FROM events WHERE name=?)", (mid, ename)).fetchall():
         chosen = girls if me["gender"] == "F" else (boys if me["gender"] == "M" else bars)
         conn.execute("UPDATE meet_events SET bar_heights=? WHERE id=?", (json.dumps(chosen), me["id"]))
+
+
+def _save_bar_schedules(conn, mid):
+    """Store + apply the bar schedule(s) posted with meet setup: hj_* always, pv_* when the
+    form carries it (high-school districts)."""
+    for ename, key in _BAR_KEYS.items():
+        low = (request.form.get(f"{key}_low") or "").strip()
+        high = (request.form.get(f"{key}_high") or "").strip()
+        inc_s = (request.form.get(f"{key}_inc") or "").strip()
+        if low and high and inc_s.isdigit() \
+                and _parse_ht(low) is not None and _parse_ht(high) is not None:
+            row = conn.execute("SELECT settings_json FROM meets WHERE id=?", (mid,)).fetchone()
+            settings = json.loads(row["settings_json"] or "{}")
+            settings.update({f"{key}_low": low, f"{key}_high": high, f"{key}_inc": int(inc_s)})
+            conn.execute("UPDATE meets SET settings_json=? WHERE id=?", (json.dumps(settings), mid))
+            _apply_hj_schedule(conn, mid, low, high, int(inc_s), ename)
 
 
 def settings_fields(m, setup):
@@ -465,9 +502,19 @@ def settings_fields(m, setup):
     default_id = next((t["id"] for t in tables if t["name"] == DEFAULT_PT), None)
     sel = m["points_table_id"] or default_id  # default: Invitational 10-8-6-4-2-1
     st = json.loads(m["settings_json"] or "{}")
-    hj_low = escape(str(st.get("hj_low", "3-06")))
-    hj_high = escape(str(st.get("hj_high", "5-06")))
-    hj_inc = escape(str(st.get("hj_inc", 2)))
+    hj_low, hj_high, hj_inc = (escape(str(v)) for v in _bar_schedule(m, "High Jump"))
+    pv_low, pv_high, pv_inc = (escape(str(v)) for v in _bar_schedule(m, "Pole Vault"))
+    pv_fields = "" if not is_hs_district(m["district_id"]) else f"""
+<label style="margin-top:.8rem">Pole Vault bar schedule
+  <span class="muted">— girls get the lowest 10 bars, boys the top 10</span></label>
+<div class="row">
+  <div style="max-width:150px"><label>Low bar (ft-in)</label>
+    <input name="pv_low" value="{pv_low}" placeholder="6-00"></div>
+  <div style="max-width:150px"><label>High bar (ft-in)</label>
+    <input name="pv_high" value="{pv_high}" placeholder="13-00"></div>
+  <div style="max-width:150px"><label>Increment (in)</label>
+    <input name="pv_inc" type="number" value="{pv_inc}" placeholder="6"></div>
+</div>"""
     if not setup:
         tname = next((t["name"] for t in tables if t["id"] == sel), "—")
         return (f'<p class="muted">Scoring: {escape(tname)} · event limit {event_limit(m)} '
@@ -496,7 +543,7 @@ def settings_fields(m, setup):
     <input name="hj_high" value="{hj_high}" placeholder="5-06"></div>
   <div style="max-width:150px"><label>Increment (in)</label>
     <input name="hj_inc" type="number" value="{hj_inc}" placeholder="2"></div>
-</div>"""
+</div>{pv_fields}"""
 
 
 @bp.post("/meets/<int:mid>/track-setup")
@@ -532,16 +579,7 @@ def track_setup(mid):
     if ln and ln.isdigit():
         conn.execute("UPDATE meets SET lanes=? WHERE id=?", (max(2, min(12, int(ln))), mid))
     # High Jump bar schedule (low/high/increment) -> stored + applied to HJ events
-    hj_low = (request.form.get("hj_low") or "").strip()
-    hj_high = (request.form.get("hj_high") or "").strip()
-    hj_inc_s = (request.form.get("hj_inc") or "").strip()
-    if hj_low and hj_high and hj_inc_s.isdigit() \
-            and _parse_ht(hj_low) is not None and _parse_ht(hj_high) is not None:
-        row = conn.execute("SELECT settings_json FROM meets WHERE id=?", (mid,)).fetchone()
-        settings = json.loads(row["settings_json"] or "{}")
-        settings.update(hj_low=hj_low, hj_high=hj_high, hj_inc=int(hj_inc_s))
-        conn.execute("UPDATE meets SET settings_json=? WHERE id=?", (json.dumps(settings), mid))
-        _apply_hj_schedule(conn, mid, hj_low, hj_high, int(hj_inc_s))
+    _save_bar_schedules(conn, mid)
     from .meets import assign_meet_bibs
     assign_meet_bibs(conn, mid)     # per-meet bibs for the attending athletes
     conn.commit()
@@ -647,16 +685,7 @@ def track_settings(mid):
     ln = request.form.get("lanes")
     if ln and ln.isdigit():
         conn.execute("UPDATE meets SET lanes=? WHERE id=?", (max(2, min(12, int(ln))), mid))
-    hj_low = (request.form.get("hj_low") or "").strip()
-    hj_high = (request.form.get("hj_high") or "").strip()
-    hj_inc_s = (request.form.get("hj_inc") or "").strip()
-    if hj_low and hj_high and hj_inc_s.isdigit() \
-            and _parse_ht(hj_low) is not None and _parse_ht(hj_high) is not None:
-        row = conn.execute("SELECT settings_json FROM meets WHERE id=?", (mid,)).fetchone()
-        settings = json.loads(row["settings_json"] or "{}")
-        settings.update(hj_low=hj_low, hj_high=hj_high, hj_inc=int(hj_inc_s))
-        conn.execute("UPDATE meets SET settings_json=? WHERE id=?", (json.dumps(settings), mid))
-        _apply_hj_schedule(conn, mid, hj_low, hj_high, int(hj_inc_s))
+    _save_bar_schedules(conn, mid)
     conn.commit()
     conn.close()
     return redirect(f"/meets/{mid}")
@@ -1226,7 +1255,7 @@ def pit_console(mid):
         (mid,)).fetchall()
     conn.close()
     opts = "".join(
-        f'<option value="{e["id"]}" data-hj="{1 if e["name"] == "High Jump" else 0}">'
+        f'<option value="{e["id"]}" data-hj="{1 if e["name"] in db.VERTICAL_JUMPS else 0}">'
         f'{escape(e["name"])}</option>' for e in evs)
     if not opts:
         opts = '<option value="">— no field events at this meet —</option>'
@@ -1250,7 +1279,7 @@ apostrophe works too); <b>F</b> = foul.
       onkeydown="if(event.key==='Enter')pitPost()"></div>
     <div style="display:flex;align-items:flex-end"><button onclick="pitPost()">✔ Record</button></div>
   </div>
-  <p id="hjnote" class="muted" style="margin:.4rem 0 0;display:none">High Jump records the
+  <p id="hjnote" class="muted" style="margin:.4rem 0 0;display:none">High Jump and Pole Vault record the
   <b>best height cleared</b> only — keep the bar-by-bar make/miss on your paper heat sheet.</p>
   <div id="pmsg" style="margin-top:.5rem"></div>
 </div>
@@ -1287,6 +1316,23 @@ pitMode();
     return shell(g.principal, body, active="meets")
 
 
+
+def _athlete_division(conn, mid, event_id, a):
+    """The meet_event an athlete competes in for this event (id, gender, grade): their own
+    grade x gender division; else an ungraded event for their gender -- how a high-school meet
+    runs Varsity -- or a fully open one. None when the meet has neither."""
+    g = a["gender"] or ""
+    row = conn.execute(
+        "SELECT id, gender, grade FROM meet_events WHERE meet_id=? AND event_id=? AND gender=? AND grade=?",
+        (mid, event_id, g, a["grade"])).fetchone()
+    if row:
+        return row
+    return conn.execute(
+        "SELECT id, gender, grade FROM meet_events WHERE meet_id=? AND event_id=? "
+        "AND COALESCE(gender,'') IN (?, '') AND COALESCE(grade,'')='' "
+        "ORDER BY (COALESCE(gender,'')='') LIMIT 1", (mid, event_id, g)).fetchone()
+
+
 @bp.get("/meets/<int:mid>/pit/lookup")
 @login_required
 def pit_lookup(mid):
@@ -1312,10 +1358,10 @@ def pit_lookup(mid):
     attempts, best = None, None
     ev = request.args.get("event")
     if ev and str(ev).isdigit():
-        me = conn.execute(
-            "SELECT id FROM meet_events WHERE meet_id=? AND event_id=? AND gender=? AND grade=?",
-            (mid, int(ev), a["gender"] or "", a["grade"])).fetchone()
+        me = _athlete_division(conn, mid, int(ev), a)
         if me:
+            if not me["grade"]:                 # ungraded event (Varsity style): no grade in the label
+                division = {"M": "Boys", "F": "Girls"}.get(me["gender"], "Open")
             r = conn.execute(
                 "SELECT r.mark_metric, r.mark_seconds, r.attempts_json FROM results r "
                 "JOIN entries en ON en.id=r.entry_id WHERE en.meet_event_id=? AND en.runner_id=?",
@@ -1360,9 +1406,8 @@ def pit_post(mid):
         conn.close()
         return jsonify(error=f"No athlete with bib {bib} at this meet"), 400
     # The athlete's own division event — created on the fly if it wasn't set up.
-    me = conn.execute(
-        "SELECT me.id FROM meet_events me WHERE me.meet_id=? AND me.event_id=? "
-        "AND me.gender=? AND me.grade=?", (mid, event_id, a["gender"] or "", a["grade"])).fetchone()
+    me = _athlete_division(conn, mid, event_id, a)
+    ungraded = bool(me) and not me["grade"]
     if me:
         meid = me["id"]
     else:
@@ -1387,7 +1432,7 @@ def pit_post(mid):
     conn.commit()
     conn.close()
     gword = {"M": "Boys", "F": "Girls"}.get(a["gender"], "Open")
-    division = f"{gword}" + (f" {a['grade']}th" if a["grade"] else "")
+    division = f"{gword}" + (f" {a['grade']}th" if a["grade"] and not ungraded else "")
     evname = ""
     try:
         c2 = db.connect()
@@ -2948,7 +2993,7 @@ def meet_heatsheets(mid):
                          "name": name, "school": school})
         div = {"M": "Boys", "F": "Girls"}.get(me["gender"], "Open")
         title = f'{me["ename"]} — {div}' + (f' {me["grade"]}' if me["grade"] else "")
-        kind = ("hj" if me["ename"] == "High Jump" else "field") if me["kind"] == "field" else "track"
+        kind = ("hj" if _is_hj(me) else "field") if me["kind"] == "field" else "track"
         bars = _hj_bars_for(me, m) if kind == "hj" else None
         sections.append((title, rows, bool(me["laned"]), f"XCTSHEET E{me['id']}", kind, bars))
     conn.close()
@@ -2995,7 +3040,7 @@ def build_results(mid):
                 mark = fmt_time(r["mark_seconds"])
             else:
                 mark = _fmt_ht(r["mark_metric"])
-                if me["ename"] != "High Jump" and r["attempts_json"]:
+                if not _is_hj(me) and r["attempts_json"]:
                     try:
                         arr = json.loads(r["attempts_json"])
                         atts = ", ".join((_fmt_ht(x) if isinstance(x, (int, float)) else str(x))

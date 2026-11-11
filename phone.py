@@ -22,8 +22,11 @@ bp = Blueprint("phone", __name__)
 
 # Events timed by tapping finishers at the line (distance + 4x400). Sprints and
 # field events are recorded from sheets/lane entry, not the phone tap timer.
-TAP_EVENTS = ("800m", "1600m", "3200m", "4x400m Relay")
-LANE_EVENTS = ("100m", "200m", "400m", "4x100m Relay")   # laned -> one volunteer per lane
+TAP_EVENTS = ("800m", "1500m", "1600m", "3000m", "3200m", "4x400m Relay", "4x800m Relay",
+              "Sprint Medley Relay", "Distance Medley Relay")
+LANE_EVENTS = ("100m", "200m", "400m", "4x100m Relay",   # laned -> one volunteer per lane
+               "100m Hurdles", "110m Hurdles", "300m Hurdles", "400m Hurdles",
+               "4x200m Relay", "Shuttle Hurdle Relay")
 
 
 def _picker_events(conn, mid, names):
@@ -480,7 +483,7 @@ def _track_timer(conn, m):
         "WHERE me.meet_id=? AND e.kind='field' ORDER BY e.sort",
         (m["id"],)).fetchall()
     field_opts = ("".join(
-        f'<option value="{e["id"]}" data-hj="{1 if e["name"] == "High Jump" else 0}">'
+        f'<option value="{e["id"]}" data-hj="{1 if e["name"] in db.VERTICAL_JUMPS else 0}">'
         f'{escape(e["name"])}</option>' for e in field_evs)
         or '<option value="">— no field events at this meet —</option>')
 
@@ -546,7 +549,7 @@ def _track_timer(conn, m):
     <label>Best height cleared</label>
     <input id="pahj" inputmode="text" placeholder="e.g. 4 10 for 4&#39;10&quot;"
       onkeydown="if(event.key==='Enter')pitPost()" style="font-size:1.3rem;padding:.7rem">
-    <p class="muted" style="margin:.4rem 0 0">High Jump records the <b>best height cleared</b> only.
+    <p class="muted" style="margin:.4rem 0 0">High Jump and Pole Vault record the <b>best height cleared</b> only.
     Keep the bar-by-bar make/miss on your paper heat sheet.</p>
   </div>
   <button onclick="pitPost()" style="width:100%;margin-top:1rem;padding:1rem;font-size:1.15rem">✔ Record mark</button>
@@ -791,7 +794,7 @@ def phone_api_track(mid):
                   for e in _picker_events(conn, mid, TAP_EVENTS)]
     lane_events = [{"meid": e["meid"], "label": e["label"], "heats": e["heats"]}
                    for e in _picker_events(conn, mid, LANE_EVENTS)]
-    field_events = [{"id": e["id"], "name": e["name"], "hj": e["name"] == "High Jump"}
+    field_events = [{"id": e["id"], "name": e["name"], "hj": e["name"] in db.VERTICAL_JUMPS}
                     for e in conn.execute(
                         "SELECT DISTINCT e.id, e.name FROM events e JOIN meet_events me ON me.event_id=e.id "
                         "WHERE me.meet_id=? AND e.kind='field' ORDER BY e.sort", (mid,)).fetchall()]

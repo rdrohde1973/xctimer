@@ -177,8 +177,9 @@ def vision_read_field(image_bytes, media_type="image/jpeg"):
 
 
 _HJ_SYS = (
-    "You read a photographed HIGH JUMP results sheet (usually landscape). The HEADER row prints "
-    "a series of bar HEIGHTS in feet-inches (e.g. 4-02, 4-04, 4-06 ... up to ~6-02), then a "
+    "You read a photographed HIGH JUMP or POLE VAULT results sheet (usually landscape). The HEADER "
+    "row prints a series of bar HEIGHTS in feet-inches (high jump e.g. 4-02, 4-04, 4-06 ... up to "
+    "~6-06; pole vault e.g. 7-00, 7-06, 8-00 ... up to ~15-00), then a "
     "final 'BEST' column on the far right. Each athlete row has a PRINTED bib and name, then a "
     "handwritten mark in each height column:\n"
     "  O = cleared that height. XO or XXO = missed then cleared (still CLEARED).\n"
@@ -198,7 +199,7 @@ _HJ_SYS = (
 
 def vision_read_hj(image_bytes, media_type="image/jpeg"):
     """Read a High Jump sheet's code + each athlete's best cleared height (+ misses)."""
-    out = claude_vision(_HJ_SYS, "Read this high jump sheet's code, bibs, and best heights.",
+    out = claude_vision(_HJ_SYS, "Read this bar-height sheet's code, bibs, and best heights.",
                         image_bytes, media_type=media_type, max_tokens=4000)
     obj = _find_json_object(out)
     rows = []
