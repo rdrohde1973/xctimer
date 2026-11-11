@@ -325,7 +325,8 @@ _ROSTER_SYS = (
     "says, even if it seems unusual for the name. When an athlete's gender is NOT given, "
     "infer it from their first name. Never read another column as gender -- an S/M/L "
     "shirt size is a size, not a sex. Skip header rows, coaches, blanks, "
-    "and totals. If a grade is given as 9th/Fr/Freshman etc., map to the integer. "
+    "and totals. If a grade is given as 9th/Fr/Freshman, 10th/So/Sophomore, 11th/Jr/Junior, "
+    "12th/Sr/Senior etc., map to the integer. "
     "Keep the output compact: OMIT every key whose value would be null. An athlete "
     'with only a name, grade and gender is {"name": "Ann Lee", "grade": 8, "gender": "F"}.'
 )

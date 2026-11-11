@@ -21,6 +21,7 @@ from flask import (Blueprint, request, redirect, g, abort, jsonify, Response)
 from . import db, ai, pdfs, demo
 from .auth import login_required, role_required
 from .tenancy import (active_district_id, require_district, scoped_district_or_403,
+                      district_grades,
                       all_districts)
 from .ui import shell
 
@@ -582,7 +583,7 @@ normalizes names, then you confirm before anything is saved.</p>
       <li>Add one question per column (the question title becomes the column header):
         <ul style="margin:.3rem 0;padding-left:1.1rem">
           <li><b>Name</b> — Short answer</li>
-          <li><b>Grade</b> — Multiple choice: 6, 7, 8, 9</li>
+          <li><b>Grade</b> — Multiple choice: {', '.join(str(x) for x in district_grades(s['district_id']))}</li>
           <li><b>Gender</b> — Multiple choice: M, F</li>
           <li><b>Cross Country</b> — Multiple choice: Yes, No</li>
           <li><b>Track</b> — Multiple choice: Yes, No</li>
@@ -735,7 +736,7 @@ _TEMPLATE_SAMPLES = [
 ]
 
 
-def _roster_template_xlsx():
+def _roster_template_xlsx(grades=None):
     """A fill-in Excel roster template: header row, two example rows, and an
     Instructions sheet. Columns match what the importer reads back in."""
     import openpyxl
@@ -759,7 +760,7 @@ def _roster_template_xlsx():
             "",
             "1. Replace the two example rows on the 'Roster' tab with your athletes.",
             "2. Keep the header row exactly as-is.",
-            "3. Name = First Last.  Grade = a number (6, 7, 8, 9).  Gender = M or F.",
+            f"3. Name = First Last.  Grade = a number ({', '.join(str(x) for x in (grades or (6, 7, 8, 9)))}).  Gender = M or F.",
             "4. Cross Country / Track = Yes or No (which sports the athlete is doing).",
             "5. Date of Birth = MM/DD/YYYY (or YYYY-MM-DD).",
             "6. Contact / parent / emergency columns are optional — fill what you have.",
@@ -780,7 +781,7 @@ def _roster_template_xlsx():
 @bp.get("/roster-template.xlsx")
 @login_required
 def roster_template():
-    return Response(_roster_template_xlsx(),
+    return Response(_roster_template_xlsx(district_grades(active_district_id())),
                     mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
                     headers={"Content-Disposition": 'attachment; filename="xctimer-roster-template.xlsx"'})
 

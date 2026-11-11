@@ -20,7 +20,7 @@ from flask import Blueprint, request, redirect, g, abort, jsonify, Response
 
 from . import db, ai, pdfs, demo
 from .auth import login_required
-from .tenancy import active_district_id, all_districts
+from .tenancy import active_district_id, all_districts, district_grades, custom_grades, grades_span
 from .ui import shell, GUN_CONTROLS_HTML, GUN_JS, STICKER_TIP
 from .meets import load_meet, can_view_meet, can_setup_meet, can_record_meet
 
@@ -330,11 +330,13 @@ def setup_section(m, setup):
             f'style="list-style:none;padding:.45rem .7rem;margin:.3rem 0;border:1px solid #33475b;'
             f'border-radius:8px;background:#182633;color:#fff;cursor:grab;display:flex;align-items:center;gap:.5rem">'
             f'<span style="color:#8a97a5">&#9776;</span><b>{escape(n)}</b></li>' for n in typeord)
+        _cg = custom_grades(m["district_id"])
+        _span = grades_span(_cg) if _cg else "7-9"     # junior-high default wording unchanged
         typeorder_html = (
             '<h3 style="margin:.2rem 0 .1rem">Event order</h3>'
             '<p class="muted" style="margin:.1rem 0 .5rem;font-size:.9rem">'
             '<b>General order</b> — drag event types into the sequence they&#39;ll run. Under each type, '
-            'divisions fall Girls&nbsp;7-9 then Boys&nbsp;7-9. To fine-tune one division, drag its row in '
+            f'divisions fall Girls&nbsp;{_span} then Boys&nbsp;{_span}. To fine-tune one division, drag its row in '
             'the list below (that wins).</p>'
             f'<ul id="typeorder" style="padding:0;margin:0 0 1.1rem;max-width:340px">{type_items}</ul>')
         typeorder_js = ('<script>(function(){var ul=document.getElementById("typeorder");if(!ul)return;'
@@ -379,7 +381,7 @@ def setup_section(m, setup):
         grades = "".join(
             f'<label style="display:inline-flex;gap:.3rem;align-items:center;margin-right:.8rem">'
             f'<input type="checkbox" name="grades" value="{g}" style="width:auto">{g}th</label>'
-            for g in (6, 7, 8, 9))
+            for g in district_grades(m["district_id"]))
         add = f"""
 <h3>Add events</h3>
 <p class="muted">Pick events, genders, and grades — every combination is created.</p>

@@ -21,7 +21,8 @@ from flask import Blueprint, request, redirect, g, abort, jsonify, Response
 from . import db, audit
 from .auth import (login_required, role_required, create_user, issue_reset_token,
                    send_setup_email, hash_password, ROLES)
-from .tenancy import active_district_id, require_district, all_districts
+from .tenancy import (active_district_id, require_district, all_districts, parse_grades,
+                      district_grades, custom_grades, grades_span)
 from .ui import shell
 
 bp = Blueprint("admin", __name__)
@@ -146,6 +147,10 @@ def list_districts():
         road_btn = (f'<form class="inline" method="post" action="/districts/{d["id"]}/road">'
                     f'<button class="{"btn" if road_on else "ghost"}" type="submit">'
                     f'{"🛣 On" if road_on else "Off"}</button></form>')
+        gspan = grades_span(district_grades(d["id"]))
+        grades_cell = (f'<form class="inline" method="post" action="/districts/{d["id"]}/grades">'
+                       f'<input name="grades" value="{gspan}" title="e.g. 7-12 or 9,10,11,12. Blank = default 6-9" '
+                       f'style="width:64px;font-size:.8rem"> <button class="ghost" type="submit">Set</button></form>')
         thumb = (f'<img src="{escape(d["logo_path"])}" style="height:26px;background:#fff;'
                  f'border-radius:5px;padding:2px;vertical-align:middle;margin-right:.4rem"> '
                  if d["logo_path"] else '')
@@ -159,13 +164,14 @@ def list_districts():
             f'<td>{sc} schools</td><td>{us} users</td>'
             f'<td>{mask_btn}</td>'
             f'<td>{road_btn}</td>'
+            f'<td>{grades_cell}</td>'
             f'<td style="text-align:right">'
             f'<form class="inline" method="post" action="/districts/{d["id"]}/delete" '
             f'onsubmit="return confirm(\'Delete {escape(d["name"])} and ALL its data?\')">'
             f'<button class="danger" type="submit">Delete</button></form></td></tr>'
         )
     table = (f'<div class="card"><table><tr><th>District</th><th>Logo</th><th>Schools</th>'
-             f'<th>Users</th><th>Public results</th><th>Road races</th><th></th></tr>'
+             f'<th>Users</th><th>Public results</th><th>Road races</th><th>Grades</th><th></th></tr>'
              f'{"".join(body_rows)}</table></div>'
              if rows else '<div class="card muted">No districts yet.</div>')
 
@@ -238,6 +244,33 @@ def toggle_road(did):
         abort(404)
     settings = json.loads(d["settings_json"] or "{}")
     settings["road_enabled"] = not settings.get("road_enabled")
+    conn.execute("UPDATE districts SET settings_json=? WHERE id=?", (json.dumps(settings), did))
+    conn.commit()
+    conn.close()
+    return redirect("/districts")
+
+
+@bp.post("/districts/<int:did>/grades")
+@role_required("super_admin")
+def set_district_grades(did):
+    """Which grades this district runs (super admin only). Drives the grade boxes when a meet
+    adds track events. Blank or the default range clears the setting."""
+    conn = db.connect()
+    d = conn.execute("SELECT settings_json FROM districts WHERE id=?", (did,)).fetchone()
+    if not d:
+        conn.close()
+        abort(404)
+    raw = (request.form.get("grades") or "").strip()
+    grades = parse_grades(raw)
+    if raw and grades is None:
+        conn.close()
+        abort(400, "Grades must look like 7-12 or 9,10,11,12 (grades 1 to 12).")
+    settings = json.loads(d["settings_json"] or "{}")
+    from .tenancy import DEFAULT_GRADES
+    if not grades or grades == list(DEFAULT_GRADES):
+        settings.pop("grades", None)
+    else:
+        settings["grades"] = grades
     conn.execute("UPDATE districts SET settings_json=? WHERE id=?", (json.dumps(settings), did))
     conn.commit()
     conn.close()
