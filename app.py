@@ -809,6 +809,7 @@ PRICING = (LANDING.split("</style></head><body>", 1)[0]
       <ul>
         <li>Unlimited meets all season</li>
         <li>AI Insights: ask questions about your rosters, results and records</li>
+        <li>Priority support, including on meet day</li>
         <li>Cross country is one season. Track, indoor included, is one.</li>
         <li>Every team and level at the school</li>
         <li>$500 district minimum per school year</li>

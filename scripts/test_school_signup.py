@@ -45,7 +45,7 @@ page = w.get("/start")
 assert page.status_code == 200 and b"Set up your school on XCTimer" in page.data and b"$100" in page.data
 assert 'href="/start"' in w.get("/welcome").get_data(as_text=True)
 pricing = w.get("/pricing").get_data(as_text=True)
-assert 'href="/start">Set up your school' in pricing and "AI Insights" in pricing
+assert 'href="/start">Set up your school' in pricing and "AI Insights" in pricing and "Priority support" in pricing
 print("PASS 1: /start is public and linked from the marketing and pricing pages")
 
 # 2. a sign-up creates a pay-per-meet district, the school, and an admin login for the coach

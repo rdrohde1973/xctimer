@@ -125,7 +125,7 @@ See <a href="/security">Security &amp; data privacy</a>.</p>
 <li>Invite visiting teams with a link. They enter their own athletes, free.</li>
 <li>Pay {fee} by card when you are ready to time it, or enter a promo code.</li></ol></div>
 <div class="card"><b>Several schools in one district?</b> A district subscription is {fee} per school per
-season with unlimited meets, shared rosters and AI Insights.
+season with unlimited meets, shared rosters, AI Insights and priority support.
 <a href="mailto:rob@xctimer.com?subject=XCTimer%20for%20our%20district">Get in touch</a> or
 <a href="/pricing">see pricing</a>.</div>
 <p class="fine">Hosting a fun run or community 5K instead? <a href="/host">Set that up here</a>.
