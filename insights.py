@@ -479,11 +479,32 @@ type) their bib to attach names — works even after you stop the clock; a bib t
 records silently as "Bib N". Insert a missed runner mid-list and everyone shifts down. Share the
 no-login phone timer QR with helpers.
 
+PHONE SCANNER (cross country): In the Phone Timer App open the race, then tap the 📷 at the top of
+the timer to open the camera. It works best with two helpers. One stands at the finish line and
+taps FINISHER for each runner as they cross: that records the time and the place. The other stands
+in the chute just past the line and points the phone camera at each runner's bib sticker, in the
+order they finished. Each bib the camera reads fills the next open place, top to bottom. Handheld is
+fine; hold the phone a few feet from the bib so the square tag is clear and not folded. It keeps
+working after Stop, so the scanner can finish the chute after the last runner is in. If a bib will
+not read (folded, sweaty, covered by a hand), type the bib number instead. Keep runners in finish
+order in the chute until they are scanned: scan out of order and names land on the wrong times. If
+a runner was missed, insert them at their place on the race console and everyone below shifts down.
+
+BIB BOARD (strongly recommended at every cross country meet): after each runner is scanned, have a
+helper peel the bib sticker off and stick it on a poster board in the exact order the runners
+finished, top to bottom, one board per race. That board is the paper record of the finish order.
+If there is any timing question afterwards (a missed scan, two runners swapped, a coach's protest),
+compare the board to the results list and it is fixed in a minute. It also makes it easy to check
+that everyone was scanned in properly: the board and the results should show the same bibs in the
+same order. Bring a poster board, a marker and one helper for it to every meet.
+
 RESULTS & INSIGHTS: The public results page (share its link/QR) shows a live board, a meet-progress
 timeline, team scores, and an xlsx export. Each athlete has a Progress card with per-event PRs and
 season points. This Insights assistant answers roster/results/record questions from your own data.
 District records live in a records table (district admins manage them) and this assistant can quote
 them."""
+
+_BOARD_RULE = ("Whenever a question touches cross country race day, the finish line, the phone scanner, missed or wrong scans, or checking results, STRONGLY recommend the bib board described under BIB BOARD, even if they did not ask about it.\n")
 
 _SYS = ("You are XCTimer's assistant for a school running program (Cross Country + Track). "
         "You do TWO jobs:\n"
@@ -500,7 +521,8 @@ _SYS = ("You are XCTimer's assistant for a school running program (Cross Country
         "it's not covered, say you're not sure and suggest emailing admin@xctimer.com.\n"
         "Tailor how-to answers to the user's role (given below): a coach acts on their own "
         "school(s); a district admin on the whole district; a super admin on the platform. Be "
-        "concise, friendly, and plain-text (no markdown tables).\n\n"
+        "concise, friendly, and plain-text (no markdown tables).\n"
+        + _BOARD_RULE + "\n"
         + _PLATFORM_HELP)
 
 
@@ -521,7 +543,8 @@ _SYS_HELP = ("You are XCTimer's help assistant for a school running program (Cro
              "page has a 'Pay with Square (card)' button and a promo code box. One payment covers "
              "every team in the meet; visiting teams and practice time trials are free.\n"
              "Tailor answers to the user's role (given below). Be concise, friendly, and plain-text "
-             "(no markdown tables).\n\n"
+             "(no markdown tables).\n"
+             + _BOARD_RULE + "\n"
              + _PLATFORM_HELP)
 
 
@@ -553,8 +576,8 @@ def insights_page():
         placeholder = "e.g. How do I import my roster?"
         suggest = ["How do I import my roster?", "How do I set up a meet?",
                    "How do I invite visiting teams?", "How do I draw heats for a track meet?",
-                   "How do I time a race with phones?", "How do I print bibs?",
-                   "How do I take a meet live?"]
+                   "How do I time a race with phones?", "How do I use the phone scanner?",
+                   "How do I print bibs?", "How do I take a meet live?"]
         upsell = f'''
 <div class="card" style="border:2px solid #ea6a2d">
   <h2 style="margin-top:0">✨ Ask about your own data with the district subscription</h2>
@@ -574,8 +597,8 @@ def insights_page():
         placeholder = "e.g. Who are my fastest boys this season?"
         suggest = ["Who is my fastest 200m runner?", "Top 5 girls in the 1600m",
                    "What's the district record for the 100m?", "How do I draw heats for a track meet?",
-                   "How do I time a race with phones?", "How do I mark a runner DQ?",
-                   "How do I import my roster?"]
+                   "How do I time a race with phones?", "How do I use the phone scanner?",
+                   "How do I mark a runner DQ?", "How do I import my roster?"]
         upsell = ""
     body = f"""
 <h1>AI Insights &amp; Help</h1>

@@ -159,4 +159,13 @@ assert codes == [200] * 5 + [429] * 2, codes
 assert len(q("SELECT 1 FROM districts")) == n + 5
 assert application.test_client().post("/start", data=FORM).status_code == 403        # no CSRF token
 print("PASS 7: bad input, the bot trap, floods and missing security tokens are all refused")
+
+# 8. both assistants know the phone scanner and push the finish-order bib board
+from xctimerpkg import insights, road                                              # noqa: E402
+for prompt in (insights._SYS, insights._SYS_HELP, road._HOST_HELP_SYS):
+    assert "BIB BOARD" in prompt and "poster board" in prompt and "STRONGLY recommend" in prompt
+    assert "📷" in prompt and "in the order they finished" in prompt
+assert "How do I use the phone scanner?" in c.get("/insights").get_data(as_text=True)      # pay per meet
+assert "How do I use the phone scanner?" in root.get("/insights").get_data(as_text=True)   # full Insights
+print("PASS 8: the assistants explain the phone scanner and strongly recommend the bib board")
 print("ALL PASS")
