@@ -58,23 +58,27 @@ assert s["self_serve"]["by"] == "pat@maplegrove.example" and s["self_serve"]["st
 sch = q("SELECT * FROM schools")[0]
 u = q("SELECT * FROM users")[0]
 assert sch["district_id"] == d["id"] and sch["name"] == "Maple Grove Middle School"
-assert u["role"] == "district_admin" and u["district_id"] == d["id"] and not u["password_hash"] and not u["is_demo"]
+assert u["role"] == "coach" and u["district_id"] == d["id"] and not u["password_hash"] and not u["is_demo"]
+assert not q("SELECT 1 FROM users WHERE role='district_admin'")           # admins come with the subscription
 assert q("SELECT school_id FROM user_schools WHERE user_id=?", u["id"])[0][0] == sch["id"]
 (to1, subj1, html1), (to2, subj2, html2) = MAIL
 assert to1 == "pat@maplegrove.example" and "Maple Grove Middle School" in subj1 and u["setup_token"] in html1
 assert to2 == "rob@xctimer.com" and "New school sign-up" in subj2 and "Pat Coach" in html2 and "Utah" in html2
-print("PASS 2: sign-up creates the district (Pay per meet), school and admin login, and emails both sides")
+print("PASS 2: sign-up creates the district (Pay per meet), school and a coach login, and emails both sides")
 
 # 3. the emailed link sets a password and lands on a dashboard that says what to do next
 c = anon()
 assert c.get(f"/setup?token={u['setup_token']}").status_code == 200
 r = c.post("/setup", data={"token": u["setup_token"], "password": "correct horse", "confirm": "correct horse"}, headers=H)
-assert r.status_code == 302 and r.headers["Location"].endswith("/dashboard")
-dash = c.get("/dashboard").get_data(as_text=True)
-assert "Getting started" in dash and f'/schools/{sch["id"]}' in dash and "Go live for $100" in dash
-assert c.get(f"/schools/{sch['id']}").status_code == 200
-r = c.post("/meets", data=dict(name="Maple Invite", sport="xc", date="2027-09-01", host_school_id=sch["id"],
-                               school_ids=[sch["id"]]), headers=H)
+assert r.status_code == 302 and r.headers["Location"].endswith("/schools")
+r = c.get("/schools")
+assert r.status_code == 302 and r.headers["Location"].endswith(f"/schools/{sch['id']}")   # straight to the roster
+home = c.get(f"/schools/{sch['id']}").get_data(as_text=True)
+assert "Getting started" in home and "Add your roster</b> on this page" in home and "Go live for $100" in home
+assert c.get("/users").status_code == 403 and 'href="/users"' not in home               # a coach, not an admin
+assert c.post("/schools", data={"name": "Another School"}, headers=H).status_code == 403
+assert "Create a meet" in c.get("/meets").get_data(as_text=True)
+r = c.post("/meets", data=dict(name="Maple Invite", sport="xc", date="2027-09-01", school_ids=[sch["id"]]), headers=H)
 mid = int(r.headers["Location"].rsplit("/", 1)[1])
 setup = c.get(f"/meets/{mid}").get_data(as_text=True)
 assert "Go live: $100 for this meet" in setup
@@ -82,7 +86,8 @@ rid = q("SELECT id FROM races WHERE meet_id=?", mid)[0][0]
 assert c.post(f"/races/{rid}/start", json={}, headers=H).status_code == 403          # locked until paid
 c.post(f"/schools/{sch['id']}/athletes", data={"name": "Ada Runner", "grade": "8", "gender": "F"}, headers=H)
 assert q("SELECT COUNT(*) FROM athletes")[0][0] == 1
-assert "Getting started" not in c.get("/dashboard").get_data(as_text=True)           # roster + meet: card retires
+assert "Getting started" not in c.get(f"/schools/{sch['id']}").get_data(as_text=True)   # roster + meet: card retires
+assert f"/meets/{mid}/guest-invite" in setup or "Visiting teams" in setup            # the coach can invite visitors
 assert anon().get("/start").status_code == 200 and c.get("/start").status_code == 302  # signed in: go home
 print("PASS 3: the setup link signs them in; they can build a roster and a meet, which stays locked until paid")
 
@@ -166,6 +171,7 @@ for prompt in (insights._SYS, insights._SYS_HELP, road._HOST_HELP_SYS):
     prompt = " ".join(prompt.split())                    # the guides are hard-wrapped
     assert "BIB BOARD" in prompt and "poster board" in prompt and "STRONGLY recommend" in prompt
     assert "📷" in prompt and "in the order they finished" in prompt
+    assert "only once per race" in prompt and "no duplicate scans" in prompt
 assert "How do I use the phone scanner?" in c.get("/insights").get_data(as_text=True)      # pay per meet
 assert "How do I use the phone scanner?" in root.get("/insights").get_data(as_text=True)   # full Insights
 print("PASS 8: the assistants explain the phone scanner and strongly recommend the bib board")
@@ -189,7 +195,7 @@ assert "BIB BOARD" in guide and "xctimer.com/login" in guide and "Events page" i
 assert "$100" not in guide and "xctimer.com/host" not in guide and "auto-deletes" not in guide
 own = " ".join(road._HOST_HELP_SYS.split())                                           # self-serve guide unchanged
 assert "$100 per event" in own and "xctimer.com/host" in own and "auto-deletes 30 days" in own
-assert "Ask the Ref" not in c.get("/dashboard").get_data(as_text=True)                 # a school admin: no Ref
+assert "Ask the Ref" not in c.get("/meets").get_data(as_text=True)                     # a school coach: no Ref
 assert c.post("/host/chat", json={"message": "hi"}, headers=H).status_code == 403
 print("PASS 9: race directors get the Ref on their event pages, with a guide that fits their account")
 print("ALL PASS")

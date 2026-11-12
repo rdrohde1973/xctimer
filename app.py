@@ -30,7 +30,7 @@ from .guest import bp as guest_bp
 from .billing import bp as billing_bp
 from .signup import bp as signup_bp
 
-APP_VERSION = "1.113.1-ref-for-directors"
+APP_VERSION = "1.113.2-signup-as-coach"
 
 LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width, initial-scale=1">

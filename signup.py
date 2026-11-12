@@ -4,8 +4,13 @@ A coach fills in one short form and gets, with nobody at XCTimer involved:
 
   * a district of their own, tagged Pay per meet (billing.py), holding
   * their school, and
-  * a district-admin login for themselves, linked to that school, set up from an emailed link
-    (which is also what proves the address is theirs).
+  * a COACH login for themselves, linked to that school, set up from an emailed link (which is
+    also what proves the address is theirs).
+
+District admins exist only in districts on the paid subscription (Rob, 2026-11-12), so a
+self-serve school gets a coach and nothing more. A coach can keep the roster, create and pay
+for meets hosted at the school, and invite visiting teams; adding schools or users is done by
+XCTimer, or by a district admin once the district subscribes.
 
 Nothing here costs XCTimer anything: the meet they build cannot be timed until the $100
 meet fee is paid or a promo code is entered. Every sign-up emails the operator, so each one
@@ -184,7 +189,7 @@ def create():
     sid = conn.execute("INSERT INTO schools (district_id, name) VALUES (?,?)", (did, f["school"])).lastrowid
     conn.commit()
     conn.close()
-    _uid, token = create_user(f["email"], "district_admin", district_id=did, name=f["who"], school_ids=[sid])
+    _uid, token = create_user(f["email"], "coach", district_id=did, name=f["who"], school_ids=[sid])
     log.info("self-serve school sign-up: district %s school %s", did, sid)
     _send_welcome(f["email"], f["who"], f["school"], token)
     try:
@@ -232,15 +237,17 @@ def _notify_operator(f, did, similar, attr):
         rows.append(("Heads up", "a district with this name already exists: " + ", ".join(similar)))
     trs = "".join(f"<tr><td><b>{escape(k)}</b></td><td>{escape(str(v))}</td></tr>" for k, v in rows)
     send_email(to, f"New school sign-up: {f['school']}",
-               f"<p>A school just signed itself up (district id {did}, tagged Pay per meet).</p>"
+               f"<p>A school just signed itself up (district id {did}, tagged Pay per meet; "
+               f"the contact has a coach login, no district admin).</p>"
                f"<table cellpadding=4>{trs}</table>"
                f'<p><a href="{_public_url()}/districts">Open Districts</a></p>')
 
 
 # ------------------------------- first-run help -------------------------------
 def getting_started(p, did):
-    """Dashboard card for a self-serve district until it has a roster and a meet."""
-    if p.is_super or not did:
+    """First-run card for a self-serve district until it has a roster and a meet. Shown on the
+    coach's roster page (where a new sign-up lands) and on the admin dashboard."""
+    if p.is_super or not did or getattr(p, "guest", False) or getattr(p, "meet_scope", None):
         return ""
     conn = db.connect()
     d = conn.execute("SELECT settings_json FROM districts WHERE id=?", (did,)).fetchone()
@@ -260,9 +267,13 @@ def getting_started(p, did):
         mark = "✅" if done else "⬜"
         return f'<li style="margin:.35rem 0;list-style:none">{mark} {text}</li>'
     roster = f'/schools/{sid["id"]}' if sid else "/schools"
+    if request.path.startswith("/schools/"):              # already on the roster page
+        add = "<b>Add your roster</b> on this page"
+    else:
+        add = f'<a href="{roster}"><b>Add your roster</b></a>'
     return (f'<div class="card" style="border:2px solid #ea6a2d"><h2 style="margin-top:0">👋 Getting started</h2>'
             f'<ul style="padding:0;margin:0">'
-            + step(bool(n_ath), f'<a href="{roster}"><b>Add your roster</b></a>: import a spreadsheet, a photo of a list, or type names in.')
+            + step(bool(n_ath), f'{add}: import a spreadsheet, a photo of a list, or type names in.')
             + step(bool(n_meet), '<a href="/meets"><b>Create a meet</b></a>: pick the date, then add events, entries and heats.')
             + step(False, 'Invite visiting teams from the meet page. They enter their own athletes, free.')
             + step(False, f'Go live for {billing.fee_str()} (or a promo code) when you are ready to time it.')

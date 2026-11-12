@@ -1818,7 +1818,9 @@ How XCTimer self-serve works (rely on these facts):
 - Phone scanner: one helper taps each finisher at the line (time + place). To attach the names, open
   the race in the Phone Timer App and tap the 📷 at the top to open the camera, then point it at the
   bibs on the bib board, top to bottom, in the order they finished. Each bib read fills the next open
-  place, and it keeps working after you stop the clock. Handheld is fine. If a bib will not read, type
+  place, and it keeps working after you stop the clock. The camera records each bib only once per
+  race: a bib it has already scanned is ignored, so there can be no duplicate scans and you can sweep
+  back over the board without worrying. Handheld is fine. If a bib will not read, type
   the number. Order matters: scan out of order and names land on the wrong times.
 - Results: live, by gender x age group; share the public results link/QR with the crowd.
 - Your event auto-deletes 30 days after the event date.

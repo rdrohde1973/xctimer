@@ -494,8 +494,10 @@ PHONE SCANNER (cross country): One helper stands at the finish line and taps FIN
 runner as they cross: that records the time and the place. To attach the names, open the race in the
 Phone Timer App and tap the 📷 at the top of the timer to open the camera. Point it at the bibs on
 the bib board, top to bottom, in the order they finished. Each bib the camera reads fills the next
-open place. Handheld is fine; hold the phone close enough that the square tag is clear. It keeps
-working after Stop, so you can scan the board after the last runner is in. If a bib will not read
+open place. The camera records each bib only once per race: if it sees a bib it has already
+scanned, it ignores it, so there can be no duplicate scans and you can sweep back over the board
+without worrying. Handheld is fine; hold the phone close enough that the square tag is clear. It
+keeps working after Stop, so you can scan the board after the last runner is in. If a bib will not read
 (folded or torn), type the bib number instead. Order matters: scan out of order and names land on
 the wrong times. If a runner was missed, insert them at their place on the race console and everyone
 below shifts down. You can scan bibs on the runners in the chute instead, but the board is easier.

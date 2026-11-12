@@ -454,8 +454,10 @@ def roster(sid):
     logo_img = (f'<img src="{escape(s["logo_path"])}" alt="" style="height:42px;width:42px;'
                 f'object-fit:contain;vertical-align:middle;margin-right:.6rem;background:#fff;'
                 f'border-radius:8px;padding:3px"> ' if s["logo_path"] else "")
+    from . import signup                          # self-serve first-run steps (empty otherwise)
     body = f"""
 <p class="muted"><a href="/schools">← Schools</a></p>
+{signup.getting_started(g.principal, s["district_id"])}
 <h1>{logo_img}{escape(s['name'])}</h1>"""
     body += f"""
 <p class="sub">{len(ath)} athletes · bibs are assigned per meet (print them from the meet page)</p>
