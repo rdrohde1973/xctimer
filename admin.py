@@ -19,7 +19,7 @@ _MT = ZoneInfo("America/Denver")   # Mountain Time (handles MST/MDT)
 from markupsafe import escape
 from flask import Blueprint, request, redirect, g, abort, jsonify, Response
 
-from . import db, audit
+from . import db, audit, billing
 from .auth import (login_required, role_required, create_user, issue_reset_token,
                    send_setup_email, hash_password, ROLES)
 from .tenancy import (active_district_id, require_district, all_districts, parse_grades,
@@ -163,6 +163,7 @@ def list_districts():
             f'<span class="muted">{escape(d["slug"])}</span></td>'
             f'<td>{logo_cell}</td>'
             f'<td>{sc} schools</td><td>{us} users</td>'
+            f'<td>{billing.plan_cell(d)}</td>'
             f'<td>{mask_btn}</td>'
             f'<td>{road_btn}</td>'
             f'<td>{grades_cell}</td>'
@@ -172,7 +173,7 @@ def list_districts():
             f'<button class="danger" type="submit">Delete</button></form></td></tr>'
         )
     table = (f'<div class="card"><table><tr><th>District</th><th>Logo</th><th>Schools</th>'
-             f'<th>Users</th><th>Public results</th><th>Road races</th><th>Grades</th><th></th></tr>'
+             f'<th>Users</th><th>Plan</th><th>Public results</th><th>Road races</th><th>Grades</th><th></th></tr>'
              f'{"".join(body_rows)}</table></div>'
              if rows else '<div class="card muted">No districts yet.</div>')
 
@@ -180,6 +181,9 @@ def list_districts():
 <div class="card"><h2>Add a district</h2>
 <form method="post" action="/districts">
   <label>Name</label><input name="name" placeholder="Alpine School District" required>
+  <label>Plan</label><select name="plan" style="display:block;max-width:330px">
+    <option value="per_meet">Pay per meet ($100 to take each meet live)</option>
+    <option value="subscription">Paid subscription (every meet is live)</option></select>
   <button type="submit" style="margin-top:1rem">Create district</button>
 </form></div>
 <div class="card"><h2>Demo data</h2>
@@ -205,7 +209,10 @@ def create_district():
     while conn.execute("SELECT 1 FROM districts WHERE slug=?", (slug,)).fetchone():
         slug = f"{base}-{n}"
         n += 1
-    conn.execute("INSERT INTO districts (name, slug) VALUES (?,?)", (name, slug))
+    plan = request.form.get("plan")
+    plan = plan if plan in billing.PLAN_LABEL else billing.PLAN_SUB
+    conn.execute("INSERT INTO districts (name, slug, settings_json) VALUES (?,?,?)",
+                 (name, slug, json.dumps({"plan": plan})))
     conn.commit()
     conn.close()
     return redirect("/districts")

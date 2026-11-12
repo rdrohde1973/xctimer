@@ -865,7 +865,9 @@ def _track_tabs(mid, active):
         on = "background:var(--panel2);color:var(--fg)" if active == key else "color:var(--mut)"
         return (f'<a href="{href}" style="padding:.4rem .9rem;border-radius:8px;'
                 f'text-decoration:none;{on}">{label}</a>')
-    return ('<div style="display:flex;gap:.3rem;margin:.4rem 0 1rem;border-bottom:1px solid var(--line);'
+    from . import billing                    # pay-per-meet "go live" banner rides on every tab
+    return (billing.banner(mid) +
+            '<div style="display:flex;gap:.3rem;margin:.4rem 0 1rem;border-bottom:1px solid var(--line);'
             'padding-bottom:.5rem;flex-wrap:wrap">'
             + tab(f"/meets/{mid}", "⚙️ Setup", "setup")
             + tab(f"/meets/{mid}/assign", "👤 Assign athletes", "assign")

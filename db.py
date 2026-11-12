@@ -576,7 +576,7 @@ def migrate(conn):
     if "status" not in _column_names(conn, "results"):   # 'dq' | 'dnf' | NULL (dq=1 excludes from placing)
         conn.execute("ALTER TABLE results ADD COLUMN status TEXT")
 
-    # Promo codes for the self-serve $50 event fee (percent_off 1-100; 100 => free; super-admin managed).
+    # Promo codes for the go-live fee (fun runs and pay-per-meet school meets) (percent_off 1-100; 100 => free; super-admin managed).
     conn.execute(
         "CREATE TABLE IF NOT EXISTS promo_codes ("
         "id INTEGER PRIMARY KEY, code TEXT UNIQUE NOT NULL, label TEXT, active INTEGER DEFAULT 1, "

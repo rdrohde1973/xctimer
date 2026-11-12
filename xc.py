@@ -715,7 +715,8 @@ def _xc_tabs(mid, active, road=False, organizer=False):
         mid_tab = tab(f"/meets/{mid}/road-assign", "🧭 Assign", "assign")
     else:
         mid_tab = ""
-    return ('<div style="display:flex;gap:.3rem;margin:.4rem 0 1rem;border-bottom:1px solid var(--line);'
+    from . import billing                    # pay-per-meet "go live" banner rides on every tab
+    return (("" if organizer else billing.banner(mid)) + '<div style="display:flex;gap:.3rem;margin:.4rem 0 1rem;border-bottom:1px solid var(--line);'
             'padding-bottom:.5rem;flex-wrap:wrap">'
             + tab(f"/meets/{mid}", "⚙️ Setup", "setup")
             + mid_tab

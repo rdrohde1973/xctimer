@@ -43,13 +43,13 @@ def banner_page(c, email, qs, name):
 
 # (a) copy + fee from HOST_FEE_CENTS
 r = client().get("/host"); h = r.get_data(as_text=True)
-assert "FIRSTRACE" in h and "$50" in h
+assert "FIRSTRACE" in h and "$100" in h and "$50" not in h
 for q in FAQ:
     assert q in h, q
 road.HOST_FEE_CENTS = 7500
 h = client().get("/host").get_data(as_text=True)
-assert "$75" in h and "$50 per" not in h
-road.HOST_FEE_CENTS = 5000
+assert "$75" in h and "$100 per" not in h
+road.HOST_FEE_CENTS = 10000
 
 # (b) code + utm carried through signup to the banner; attribution intact
 page = banner_page(client(), "a@example.com", "?code=FIRSTRACE&utm_source=facebook", "Run A")

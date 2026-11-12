@@ -16,7 +16,7 @@ from flask import Blueprint, request, redirect, g, abort, Response
 
 import os
 
-from . import db, pdfs
+from . import db, pdfs, billing
 from .auth import login_required
 from .tenancy import active_district_id, all_districts
 from .ui import shell, STICKER_TIP
@@ -109,6 +109,19 @@ def can_setup_meet(m):
 
 
 def can_record_meet(m):
+    """May this principal time / record results for the meet RIGHT NOW? False as well for a
+    pay-per-meet meet that has not gone live (billing.py); g.meet_locked then tells the 403
+    handler to explain that instead of a bare "Not allowed"."""
+    if not _may_record_meet(m):
+        return False
+    from . import billing
+    if not billing.meet_live(m):
+        g.meet_locked = m["id"]
+        return False
+    return True
+
+
+def _may_record_meet(m):
     p = g.principal
     if not p or getattr(p, "guest", False):   # a visiting coach never times the host's meet
         return False
@@ -265,7 +278,8 @@ def list_meets():
                      f'<button class="danger" style="padding:.2rem .5rem;line-height:1" '
                      f'title="Delete meet">✕</button></form>')
             xcol = f'<td style="text-align:right">{x}</td>'
-        trs.append(f'<tr><td><b><a href="/meets/{m["id"]}">{escape(m["name"])}</a></b></td>'
+        trs.append(f'<tr><td><b><a href="/meets/{m["id"]}">{escape(m["name"])}</a></b>'
+                   f'{billing.list_badge(m)}</td>'
                    f'<td>{sport}</td><td>{escape(m["date"] or "")}</td>{dcol}{xcol}</tr>')
     hdr = (f'<tr><th>Meet</th><th>Sport</th><th>Date</th>'
            f'{"<th>District</th>" if show_d else ""}{"<th></th>" if show_x else ""}</tr>')
@@ -273,7 +287,8 @@ def list_meets():
              if rows else '<div class="card muted">No meets yet.</div>')
 
     form = ""
-    can_create = p.is_admin   # only super / district admins create meets
+    can_create = p.is_admin   # coaches get their own (host = their school) form further down
+    fee_note = billing.create_note(did)
     road_opt = ('<option value="road">Road race</option>' if _road_enabled(did) else '')
     if can_create and not (p.is_super and did is None):
         schools = _district_schools(did)
@@ -305,26 +320,48 @@ def list_meets():
     🏆 Championship — only runners marked <b>Champ</b> on their roster, raced as six
     grade × gender heats (7th/8th/9th Girls and Boys)</label>
   <button type="submit" style="margin-top:1rem">Create meet</button>
+  {fee_note}
 </form></div>"""
     elif p.is_super and did is None:
         form = '<p class="muted">Pick a district in the header to create a meet.</p>'
     elif getattr(p, "guest", False):
         form = ""                            # visiting coach: no meets of their own
     elif p.role == "coach" and did is not None and p.school_ids():
+        # A coach hosts meets at their own school (1.112.0): same form as an admin, minus the
+        # district-run options (championship, road). The host is always one of their schools.
+        mine = p.school_ids()
+        schools = _district_schools(did)
+        own = [s for s in schools if s["id"] in mine and not s["guest"]]
+        if len(own) > 1:
+            host_field = ('<label>Host school</label><select name="host_school_id">' + "".join(
+                f'<option value="{s["id"]}">{escape(s["name"])}</option>' for s in own) + '</select>')
+        else:
+            host_field = (f'<p class="muted" style="margin:.7rem 0 0">Host school: '
+                          f'<b>{escape(own[0]["name"]) if own else "your school"}</b></p>')
+        att = "".join(
+            f'<label style="display:flex;gap:.5rem;align-items:center;font-size:.95rem">'
+            f'<input type="checkbox" name="school_ids" value="{s["id"]}" style="width:auto"'
+            f'{" checked" if s["id"] in mine else ""}>{escape(s["name"])}</label>' for s in schools)
         form = f"""
-<div class="card"><h2>🕐 Set up a time trial</h2>
-<p class="muted" style="margin-top:0">A practice time trial for your own team — no other schools,
-no team scoring, kept off official results.</p>
+<div class="card"><h2>Create a meet</h2>
+<p class="muted" style="margin-top:0">Host a meet at your school. You can invite visiting teams
+from outside the district on the meet page afterwards.</p>
 <form method="post" action="/meets">
-  <input type="hidden" name="time_trial" value="1">
   <div class="row">
-    <div><label>Name</label><input name="name" placeholder="e.g. Tuesday Mile TT" required></div>
+    <div><label>Name</label><input name="name" required></div>
     <div style="max-width:150px"><label>Sport</label>
       <select name="sport"><option value="xc">Cross-country</option>
       <option value="track">Track &amp; Field</option></select></div>
     <div style="max-width:170px"><label>Date</label><input name="date" type="date" required></div>
   </div>
-  <button type="submit" style="margin-top:1rem">Create time trial</button>
+  {host_field}
+  <label>Attending schools</label>
+  <div class="card" style="background:var(--panel2);max-height:180px;overflow:auto">{att}</div>
+  <label style="display:flex;align-items:center;gap:.5rem;margin-top:.9rem;font-weight:400">
+    <input type="checkbox" name="time_trial" value="1" style="width:auto">
+    🕐 Time trial — practice only (your team, no team scoring, kept off official results)</label>
+  <button type="submit" style="margin-top:1rem">Create meet</button>
+  {fee_note}
 </form></div>"""
 
     # No sign-in "app on your phone" card here any more (1.111.2): there is one phone app,
@@ -343,11 +380,12 @@ def create_meet():
         abort(400)
     is_tt = bool(request.form.get("time_trial"))
     if not p.is_admin:
-        # Coaches may create TIME TRIALS ONLY, for their own team.
-        if not (p.role == "coach" and is_tt):
+        # A coach may create a meet hosted at their own school, or a practice time trial
+        # for their own team. Nobody else (timer, visiting coach, QR session) creates meets.
+        if p.role != "coach" or getattr(p, "guest", False) or p.meet_scope or not p.school_ids():
             abort(403)
     name = (request.form.get("name") or "").strip()
-    allowed_sports = ("xc", "track") + (("road",) if _road_enabled(did) else ())
+    allowed_sports = ("xc", "track") + (("road",) if p.is_admin and _road_enabled(did) else ())
     sport = request.form.get("sport") if request.form.get("sport") in allowed_sports else "xc"
     date = (request.form.get("date") or "").strip()
     if not name or not date:
@@ -365,19 +403,24 @@ def create_meet():
         "SELECT id FROM schools WHERE district_id=? AND guest=1", (did,)).fetchall()}
     if host is not None and (host not in valid or host in guests):
         host = None
-    if not p.is_admin:                 # coach time trial: force own team, ignore submitted schools
-        coach_schools = sorted(p.school_ids())
+    if not p.is_admin:
+        coach_schools = sorted((p.school_ids() & valid) - guests)
         if not coach_schools:
             conn.close(); abort(403)
-        school_ids, host = coach_schools, coach_schools[0]
+        if is_tt:                      # time trial: own team only, ignore submitted schools
+            school_ids, host = coach_schools, coach_schools[0]
+        else:                          # hosted meet: the host is always one of the coach's schools
+            if host not in coach_schools:
+                host = coach_schools[0]
     cur = conn.execute(
-        "INSERT INTO meets (district_id, sport, name, date, host_school_id, public_token) "
-        "VALUES (?,?,?,?,?,?)",
-        (did, sport, name, date, host, secrets.token_urlsafe(8)))
+        "INSERT INTO meets (district_id, sport, name, date, host_school_id, public_token, settings_json) "
+        "VALUES (?,?,?,?,?,?,?)",
+        (did, sport, name, date, host, secrets.token_urlsafe(8),
+         json.dumps({"created_by": p.id})))
     mid = cur.lastrowid
     if request.form.get("time_trial"):
         conn.execute("UPDATE meets SET time_trial=1, team_scoring=0 WHERE id=?", (mid,))
-    is_champ = sport == "xc" and bool(request.form.get("championship")) and not is_tt
+    is_champ = sport == "xc" and bool(request.form.get("championship")) and not is_tt and p.is_admin
     if is_champ:
         # Set BEFORE assign_meet_bibs below: it reads this to enter only Champ picks.
         conn.execute("UPDATE meets SET championship=1 WHERE id=?", (mid,))
@@ -426,8 +469,15 @@ def can_delete_meet(m):
     org = _meet_organizer_id(m)
     if org is not None:
         return p.is_super or getattr(p, "organizer_id", None) == org
-    if p.role == "coach" and ("time_trial" in m.keys() and m["time_trial"]):
-        return m["host_school_id"] in p.school_ids()
+    if p.role == "coach":
+        if getattr(p, "guest", False) or m["host_school_id"] not in p.school_ids():
+            return False
+        if "time_trial" in m.keys() and m["time_trial"]:
+            return True
+        try:                               # a meet the coach created themselves (1.112.0)
+            return json.loads(m["settings_json"] or "{}").get("created_by") == p.id
+        except (ValueError, TypeError):
+            return False
     return p.is_admin and (p.is_super or p.district_id == m["district_id"])
 
 

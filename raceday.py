@@ -55,9 +55,11 @@ def course_start(m):
 
 
 def todays_meets(conn, day):
-    return conn.execute(
+    from xctimer import billing        # skip a pay-per-meet meet that has not gone live
+    rows = conn.execute(
         "SELECT * FROM meets WHERE date=? AND sport='xc' AND COALESCE(time_trial,0)=0 "
         "AND public_token IS NOT NULL AND district_id IS NOT NULL ORDER BY id", (day,)).fetchall()
+    return [m for m in rows if billing.meet_live(m, conn)]
 
 
 def recipients(conn, mid):

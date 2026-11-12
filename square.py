@@ -1,4 +1,4 @@
-"""Square one-time hosted checkout for the self-serve event fee ($50).
+"""Square one-time hosted checkout for the go-live fee ($100 per event or school meet).
 
 Mirrors 321draw's Square boundary (app/square_billing.py) but: (a) stdlib urllib —
 no httpx dependency; (b) a ONE-TIME quick_pay payment link, not a subscription. After
@@ -82,12 +82,30 @@ def order_ok(order_id, expect_note_substr=None):
         o = _request("GET", f"/v2/orders/{order_id}").get("order", {})
         if o.get("state") != "COMPLETED":
             return False
-        if expect_note_substr and expect_note_substr not in (o.get("note") or ""):
+        # Exact id match: "xctimer_meet=2" must not accept an order made for meet 26.
+        if expect_note_substr and not re.search(
+                re.escape(expect_note_substr) + r"(?!\d)", o.get("note") or ""):
             return False
         return True
     except Exception:
         log.exception("order_ok failed for %s", order_id)
         return False
+
+
+def completed_order(order_id):
+    """{"note": str, "amount": cents} for a COMPLETED order, else None (unknown, unpaid, or
+    any error). The caller decides what the note and amount must be."""
+    if not order_id:
+        return None
+    try:
+        o = _request("GET", f"/v2/orders/{order_id}").get("order", {})
+        if o.get("state") != "COMPLETED":
+            return None
+        return {"note": o.get("note") or "",
+                "amount": int((o.get("total_money") or {}).get("amount") or 0)}
+    except Exception:
+        log.exception("completed_order failed for %s", order_id)
+        return None
 
 
 def order_meet_id(order_id):

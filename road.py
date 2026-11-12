@@ -22,7 +22,7 @@ from .meets import load_meet, can_view_meet, can_setup_meet, _purge_meet
 from .xc import _is_org, _match_event
 from .ui import shell, CSRF_JS, BRAND_HTML, POWERED_BY_HTML, HEAD_EXTRA, STICKER_TIP
 
-HOST_FEE_CENTS = int(os.environ.get("XC_HOST_FEE_CENTS", "5000"))   # self-serve event fee ($50)
+HOST_FEE_CENTS = int(os.environ.get("XC_HOST_FEE_CENTS", "10000"))  # self-serve event fee ($100, as of 1.112.0)
 
 bp = Blueprint("road", __name__)
 
@@ -279,9 +279,11 @@ def list_organizers():
         for c in codes)
     promo_card = (
         '<div class="card"><h2>🎟 Promo codes</h2>'
-        '<p class="muted">Codes for the $50 self-serve event fee. <b>100% = free</b> (publishes with no '
-        'payment); a partial % sends the host to card checkout for the reduced amount. A host enters the '
-        'code on their Go-live banner. Leave “max uses” blank for unlimited.</p>'
+        f'<p class="muted">Codes for the {_fee_whole(HOST_FEE_CENTS)} go-live fee, on fun-run events and on '
+        'pay-per-meet school meets alike. <b>100% = free</b> (goes live with no payment); a partial % '
+        'sends the host to card checkout for the reduced amount. A host enters the code on their Go-live '
+        'banner. “First event only” means once per fun-run host, or once per host school. Leave “max '
+        'uses” blank for unlimited.</p>'
         + (f'<table><tr><th>Code</th><th>Label</th><th>Discount</th><th>Scope</th><th>Used</th><th>Status</th><th></th></tr>'
            f'{crows}</table>' if codes else '<p class="muted">No codes yet.</p>')
         + '<form method="post" action="/host-codes" class="row" style="gap:.5rem;flex-wrap:wrap;margin-top:.6rem">'
@@ -855,7 +857,7 @@ def event_settings(mid):
     web = _web_org_id(cwo)
     cwo.commit()
     cwo.close()
-    # Self-serve web events can't open registration until the $50 is paid (pay-to-go-live).
+    # Self-serve web events can't open registration until the event fee is paid (pay-to-go-live).
     unpaid_web = (m["organizer_id"] == web) and not s.get("host_paid")
     wanted_open = bool(request.form.get("reg_open"))
     s["reg_open"] = wanted_open and not unpaid_web
@@ -1185,7 +1187,7 @@ def participant_tags(mid):
 
 # ============================ self-serve "host your own fun run" ============================
 # Strangers create a SINGLE community event under one shared "XCTimer Web" organizer, get a
-# magic link scoped to just that event, pay $50 to go live (Venmo now; Square later), and the
+# magic link scoped to just that event, pay the event fee to go live (Square card checkout), and the
 # event auto-deletes 30 days after its date (see reap_web_events + the xctimer-reap timer).
 
 def _web_org_id(conn):
@@ -1471,10 +1473,12 @@ def owner_session_response(u):
 @login_required
 def host_publish(mid):
     m = load_meet(mid)
-    if not can_setup_meet(m):
+    # Was the honor-system "I paid by Venmo" button. Nothing links to it any more, so it is
+    # Super Admin only (1.112.0): a host goes live by card or with a promo code.
+    if not g.principal.is_super or not can_setup_meet(m):
         abort(403)
     s = _load_settings(mid)
-    s["host_paid"] = True     # honor-system Venmo confirmation
+    s["host_paid"] = True     # manual override
     _save_settings(mid, s)
     _attr_mark_published(mid)
     return redirect(f"/meets/{mid}")
@@ -1678,11 +1682,14 @@ def square_webhook():
             mid = square.order_meet_id(pay["order_id"])
             if mid:
                 _mark_host_paid(mid, pay["order_id"])
+            else:                              # a school meet's $100 go-live fee (billing.py)
+                from . import billing
+                billing.handle_webhook_order(pay["order_id"])
     return ("", 200)
 
 
 def host_banner(m):
-    """Pay-to-go-live banner shown on a self-serve web event until the $50 is paid."""
+    """Pay-to-go-live banner shown on a self-serve web event until the event fee is paid."""
     if not _is_org(m):
         return ""
     conn = db.connect()
@@ -1787,8 +1794,8 @@ How XCTimer self-serve works (rely on these facts):
   "10 & Under, 11-14, 15-19, 20-29, 30+" — you can copy/paste the same groups between races);
   upload your event logo; optionally set an Entry fee and your Venmo so runners pay you when they
   register. Timing is always tap-then-scan (no mode to pick).
-- Go live: $50 per event. Build it free, then pay the $50 by card (Square — instant) or Venmo to
-  open registration. Registration stays closed until you pay.
+- Go live: $100 per event. Build it free, then pay the $100 by card (Square, instant) to
+  open registration, or enter a promo code. Registration stays closed until you pay.
 - Public registration: share the registration link/QR; runners self-register (name, age, gender,
   city, club) and pick their race — no account needed.
 - Participants tab: import a CSV, add runners by hand, or let them self-register. Print bibs here on

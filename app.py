@@ -9,6 +9,7 @@ Serve: waitress on XC_HOST:XC_PORT (defaults 127.0.0.1:5006), via the systemd un
 import hmac
 import os
 import secrets
+from urllib.parse import quote
 
 from flask import Flask, jsonify, g, redirect, request, make_response
 
@@ -26,8 +27,9 @@ from .waivers import bp as waivers_bp
 from .road import bp as road_bp
 from .coursemap import bp as coursemap_bp
 from .guest import bp as guest_bp
+from .billing import bp as billing_bp
 
-APP_VERSION = "1.111.2-one-phone-app"
+APP_VERSION = "1.112.0-pay-per-meet"
 
 LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width, initial-scale=1">
@@ -877,7 +879,7 @@ def create_app():
     app.before_request(auth.demo_readonly_guard)
 
     for bp in (auth_bp, tenancy_bp, schools_bp, meets_bp, xc_bp, track_bp,
-               admin_bp, insights_bp, phone_bp, waivers_bp, road_bp, coursemap_bp, guest_bp):
+               admin_bp, insights_bp, phone_bp, waivers_bp, road_bp, coursemap_bp, guest_bp, billing_bp):
         app.register_blueprint(bp)
 
     @app.before_request
@@ -1035,6 +1037,18 @@ def create_app():
 
     @app.errorhandler(403)
     def _e403(e):
+        mid = getattr(g, "meet_locked", None)     # set by meets.can_record_meet (billing.py)
+        if mid:
+            from . import billing
+            wants_json = (request.method != "GET" or request.is_json
+                          or request.path.startswith(("/phone/api/", "/api/"))
+                          or "application/json" in (request.headers.get("Accept") or ""))
+            if wants_json:
+                return jsonify(error=billing.LOCKED_MSG, locked=True), 403
+            p = getattr(g, "principal", None)
+            if p and not getattr(p, "meet_scope", None) and request.path != f"/meets/{mid}":
+                return redirect(f"/meets/{mid}?err=" + quote(billing.LOCKED_MSG))
+            return error_page(403, "Not live yet", billing.LOCKED_MSG), 403
         return error_page(403, "Not allowed", "You don't have access to that."), 403
 
     @app.errorhandler(404)

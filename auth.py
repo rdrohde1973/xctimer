@@ -802,6 +802,11 @@ def meet_timer_link(token):
                          "This timer link isn't active.",
                          "<p class=center>Ask the meet host for a current link.</p>",
                          err="Link invalid or revoked."), 403
+    from . import billing
+    if not billing.meet_live(meet):          # pay-per-meet district, fee not paid yet
+        return auth_page("Not live yet", "This meet isn't live yet.",
+                         "<p class=center>Timing opens once the host takes the meet live. "
+                         "Ask the meet host, then scan again.</p>"), 403
     token = create_session(None, kind="meet_timer", meet_id=meet["id"], ttl_days=1)
     # Lands on the phone timing app, scoped to this one meet.
     return _set_session_cookie(make_response(redirect("/phone")), token)
