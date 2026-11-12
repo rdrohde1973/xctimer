@@ -1806,17 +1806,20 @@ How XCTimer self-serve works (rely on these facts):
   event, no login. Timing is tap-then-scan: a helper taps each runner as they cross the finish line
   (captures time + order), then you scan or type each runner's bib to attach names — this works even
   after you stop the clock. There's also a finish-line camera that reads the ArUco bib tags.
-- Phone scanner: in the Phone Timer App open the race and tap the 📷 at the top to open the camera.
-  One helper taps each finisher at the line; a second stands in the chute just past the line and
-  points the phone at each runner's bib sticker, in the order they finished. Each bib read fills the
-  next open place. Handheld is fine. If a bib will not read, type the number. Keep runners in finish
-  order until they are scanned.
-- BIB BOARD (strongly recommended at every event): after each runner is scanned, have a helper peel
-  the bib sticker off and stick it on a poster board in the exact order the runners finished, top to
-  bottom, one board per race. That board is the paper record of the finish order. If there is any
-  timing question afterwards (a missed scan, two runners swapped, someone disputing a place), compare
-  the board to the results list and it is fixed in a minute. It also makes it easy to check that
-  everyone was scanned in properly. Bring a poster board, a marker and one helper for it.
+- BIB BOARD (strongly recommended at every event, and the easiest way to scan): keep runners in
+  finish order in the chute. At the end of the chute a helper peels each runner's bib sticker off and
+  sticks it on a poster board in the exact order the runners finished, top to bottom, one board per
+  race. Then scan the bibs off the board, not off the runners: a bib lying flat on a board reads far
+  more easily than one on the shirt of a tired, moving runner. The board is also the paper record of
+  the finish order. If there is any timing question afterwards (a missed scan, two runners swapped,
+  someone disputing a place), compare the board to the results list and it is fixed in a minute, and
+  it is easy to check that everyone was scanned in properly. Bring poster boards, a marker and one
+  helper for it.
+- Phone scanner: one helper taps each finisher at the line (time + place). To attach the names, open
+  the race in the Phone Timer App and tap the 📷 at the top to open the camera, then point it at the
+  bibs on the bib board, top to bottom, in the order they finished. Each bib read fills the next open
+  place, and it keeps working after you stop the clock. Handheld is fine. If a bib will not read, type
+  the number. Order matters: scan out of order and names land on the wrong times.
 - Results: live, by gender x age group; share the public results link/QR with the crowd.
 - Your event auto-deletes 30 days after the event date.
 

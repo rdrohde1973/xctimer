@@ -479,24 +479,26 @@ type) their bib to attach names — works even after you stop the clock; a bib t
 records silently as "Bib N". Insert a missed runner mid-list and everyone shifts down. Share the
 no-login phone timer QR with helpers.
 
-PHONE SCANNER (cross country): In the Phone Timer App open the race, then tap the 📷 at the top of
-the timer to open the camera. It works best with two helpers. One stands at the finish line and
-taps FINISHER for each runner as they cross: that records the time and the place. The other stands
-in the chute just past the line and points the phone camera at each runner's bib sticker, in the
-order they finished. Each bib the camera reads fills the next open place, top to bottom. Handheld is
-fine; hold the phone a few feet from the bib so the square tag is clear and not folded. It keeps
-working after Stop, so the scanner can finish the chute after the last runner is in. If a bib will
-not read (folded, sweaty, covered by a hand), type the bib number instead. Keep runners in finish
-order in the chute until they are scanned: scan out of order and names land on the wrong times. If
-a runner was missed, insert them at their place on the race console and everyone below shifts down.
+BIB BOARD (strongly recommended at every cross country meet, and the easiest way to scan): keep
+runners in finish order in the chute. At the end of the chute a helper peels each runner's bib
+sticker off and sticks it on a poster board in the exact order the runners finished, top to bottom,
+one board per race. Then scan the bibs off the board, not off the runners. A bib lying flat on a
+board reads far more easily than one on the shirt of a tired, moving runner. The board is also the
+paper record of the finish order. If there is any timing question afterwards (a missed scan, two
+runners swapped, a coach's protest), compare the board to the results list and it is fixed in a
+minute, and it is easy to check that everyone was scanned in properly: the board and the results
+should show the same bibs in the same order. Bring poster boards, a marker and one helper for it to
+every meet.
 
-BIB BOARD (strongly recommended at every cross country meet): after each runner is scanned, have a
-helper peel the bib sticker off and stick it on a poster board in the exact order the runners
-finished, top to bottom, one board per race. That board is the paper record of the finish order.
-If there is any timing question afterwards (a missed scan, two runners swapped, a coach's protest),
-compare the board to the results list and it is fixed in a minute. It also makes it easy to check
-that everyone was scanned in properly: the board and the results should show the same bibs in the
-same order. Bring a poster board, a marker and one helper for it to every meet.
+PHONE SCANNER (cross country): One helper stands at the finish line and taps FINISHER for each
+runner as they cross: that records the time and the place. To attach the names, open the race in the
+Phone Timer App and tap the 📷 at the top of the timer to open the camera. Point it at the bibs on
+the bib board, top to bottom, in the order they finished. Each bib the camera reads fills the next
+open place. Handheld is fine; hold the phone close enough that the square tag is clear. It keeps
+working after Stop, so you can scan the board after the last runner is in. If a bib will not read
+(folded or torn), type the bib number instead. Order matters: scan out of order and names land on
+the wrong times. If a runner was missed, insert them at their place on the race console and everyone
+below shifts down. You can scan bibs on the runners in the chute instead, but the board is easier.
 
 RESULTS & INSIGHTS: The public results page (share its link/QR) shows a live board, a meet-progress
 timeline, team scores, and an xlsx export. Each athlete has a Progress card with per-event PRs and
