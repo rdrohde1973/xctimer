@@ -286,4 +286,17 @@ e = new_meet(pcoach, name="Code E", school_ids=[PN])
 assert redeem(pcoach, e, "ONCE").status_code == 400 and not can_time(pcoach, e)    # used up
 print("PASS 13: promo codes take a school meet live (free, or by card for the reduced amount); "
       "first-meet codes work once per host school")
+
+# 14. pricing has its own public page, linked from the marketing page; both match the app
+import re                                                                          # noqa: E402
+anon = application.test_client()
+home = anon.get("/welcome").get_data(as_text=True)
+assert home.count('href="/pricing"') == 2 and 'id="pricing"' not in home and '<div class="amt">' not in home
+r = anon.get("/pricing"); page = r.get_data(as_text=True)
+assert r.status_code == 200 and "<title>Pricing — XCTimer</title>" in page and not re.search(r"\$50(?!0)", page)
+assert page.count('<div class="amt">$100<span>') == 3 and billing.fee_str() == "$100" == road._fee_whole(road.HOST_FEE_CENTS)
+assert pcoach.get("/pricing").status_code == 200                                   # signed in or not
+host = anon.get("/host").get_data(as_text=True)
+assert "then $100 per event" in host and "$50" not in host
+print("PASS 14: /pricing is public and linked from the marketing page; every page says $100")
 print("ALL PASS")

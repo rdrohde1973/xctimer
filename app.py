@@ -213,6 +213,26 @@ LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
   footer{border-top:1px solid var(--line);padding:2rem 0;color:var(--gray);
          font-size:.85rem;text-align:center}
   footer a{color:var(--ink);font-weight:700}
+  /* pricing */
+  nav a.navlink{color:#c9d5e2;font-weight:700;margin-right:1.1rem}
+  nav a.navlink:hover{color:#fff}
+  #pricing{background:var(--bg);border-bottom:1px solid var(--line);padding-top:2.6rem;min-height:70vh}
+  #pricing h1{font-size:clamp(1.7rem,4.2vw,2.4rem);color:var(--ink);letter-spacing:-.015em;line-height:1.15;margin:.1em 0 .4em}
+  .prices{grid-template-columns:repeat(auto-fit,minmax(260px,1fr));align-items:stretch;margin-top:1.9rem}
+  .price{display:flex;flex-direction:column;position:relative;padding:1.5rem 1.4rem 1.4rem}
+  .price h3{margin:0;font-size:1.06rem}
+  .price .amt{font-size:2.6rem;font-weight:800;color:var(--ink);line-height:1.1;margin:.3rem 0 .9rem;
+              letter-spacing:-.02em}
+  .price .amt span{display:block;font-size:.92rem;font-weight:600;color:var(--gray);letter-spacing:0;
+                   margin-top:.2rem}
+  .price ul{list-style:none;padding:0;margin:0 0 1.3rem;display:grid;gap:.5rem;color:#3f4c5a;font-size:.95rem}
+  .price li{display:flex;gap:.55rem;align-items:flex-start}
+  .price li::before{content:"✓";color:var(--green);font-weight:800;flex-shrink:0}
+  .price .btn{margin-top:auto;text-align:center;font-size:.96rem;padding:.65rem 1rem}
+  .price.best{border:2px solid var(--orange);box-shadow:0 10px 30px rgba(240,100,30,.12)}
+  .price .tag{position:absolute;top:-.8rem;left:1.3rem;background:var(--orange);color:#fff;font-size:.7rem;
+              font-weight:800;letter-spacing:.08em;text-transform:uppercase;padding:.2rem .7rem;border-radius:999px}
+  .pricenote{margin:1.3rem 0 0;color:var(--gray);font-size:.92rem}
   @media(max-width:860px){
     .hero .wrap,.split{grid-template-columns:1fr;gap:1.8rem}
     section{padding:2.4rem 0}
@@ -222,7 +242,7 @@ LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
 
 <nav><div class="wrap">
   <span class="wordmark"><span class="bx">xc</span><span class="bt">t<span class="bi">i</span>mer</span><span class="bd">.com</span></span>
-  <a class="signin" href="/login">Sign in</a>
+  <span><a class="navlink" href="/pricing">Pricing</a><a class="signin" href="/login">Sign in</a></span>
 </div></nav>
 
 <header class="hero"><div class="wrap">
@@ -742,12 +762,82 @@ LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
   <div style="display:flex;gap:.8rem;justify-content:center;flex-wrap:wrap">
     <a class="btn" href="/host">🏁 Set up a fun run</a>
     <a class="btn ghost2" href="mailto:rob@xctimer.com?subject=XCTimer%20for%20our%20district">Bring XCTimer to your district</a>
+    <a class="btn ghost2" href="/pricing">💵 See pricing</a>
   </div>
 </div></section>
 
 <footer>© XCTimer · xctimer.com · the do-it-yourself meet manager for junior high cross country &amp; track
 <br><a href="/security">Security &amp; data privacy</a></footer>
 </body></html>"""
+
+
+# Public pricing page (1.112.0). Reuses the landing page's <head> and styles so the two never
+# drift apart. The $100 figures are the defaults of billing.MEET_FEE_CENTS and
+# road.HOST_FEE_CENTS; scripts/test_pay_per_meet.py fails if the page and the app disagree.
+PRICING = (LANDING.split("</style></head><body>", 1)[0]
+           .replace("<title>XCTimer — the do-it-yourself meet manager for junior high &amp; middle school XC &amp; track</title>",
+                    "<title>Pricing — XCTimer</title>")
+           + """</style></head><body>
+
+<nav><div class="wrap">
+  <a href="/welcome" class="wordmark"><span class="bx">xc</span><span class="bt">t<span class="bi">i</span>mer</span><span class="bd">.com</span></a>
+  <span><a class="navlink" href="/welcome">Home</a><a class="signin" href="/login">Sign in</a></span>
+</div></nav>
+
+<section id="pricing"><div class="wrap">
+  <span class="kicker">💵 Simple pricing</span>
+  <h1>$100 a meet. Or one price for the whole season.</h1>
+  <p class="lead">Set everything up for free. You only pay when a meet goes live.</p>
+  <div class="grid prices">
+    <div class="card price">
+      <h3>Per meet</h3>
+      <div class="amt">$100<span>per meet you host</span></div>
+      <ul>
+        <li>Build the meet free: rosters, entries, heats and printing</li>
+        <li>Pay by card when you are ready to time it</li>
+        <li>One payment covers every team in the meet</li>
+        <li>Visiting teams and practice time trials are free</li>
+      </ul>
+      <a class="btn ghost2" href="mailto:rob@xctimer.com?subject=XCTimer%20for%20our%20school">Get your school set up</a>
+    </div>
+    <div class="card price best">
+      <span class="tag">Best for districts</span>
+      <h3>Season subscription</h3>
+      <div class="amt">$100<span>per school, per season</span></div>
+      <ul>
+        <li>Unlimited meets all season</li>
+        <li>Cross country is one season. Track, indoor included, is one.</li>
+        <li>Every team and level at the school</li>
+        <li>$500 district minimum per school year</li>
+      </ul>
+      <a class="btn" href="mailto:rob@xctimer.com?subject=XCTimer%20for%20our%20district">Bring XCTimer to your district</a>
+    </div>
+    <div class="card price">
+      <h3>Fun run or community 5K</h3>
+      <div class="amt">$100<span>per event</span></div>
+      <ul>
+        <li>Public sign-up page, printed bibs and live results</li>
+        <li>Build it free, pay when you open registration</li>
+        <li>First event free with code FIRSTRACE</li>
+      </ul>
+      <a class="btn ghost2" href="/host">Set up a fun run</a>
+    </div>
+  </div>
+  <p class="pricenote">Have a promo code? Enter it on the meet page when you go live.</p>
+</div></section>
+
+<section class="final"><div class="wrap">
+  <h2>Questions about which one fits?</h2>
+  <p class="lead" style="margin:.4rem auto 1.4rem">Tell us how many schools and meets you have and we will point you to the cheaper option.</p>
+  <div style="display:flex;gap:.8rem;justify-content:center;flex-wrap:wrap">
+    <a class="btn" href="mailto:rob@xctimer.com?subject=XCTimer%20pricing">Email us</a>
+    <a class="btn ghost2" href="/welcome">See what XCTimer does</a>
+  </div>
+</div></section>
+
+<footer>© XCTimer · xctimer.com · the do-it-yourself meet manager for junior high cross country &amp; track
+<br><a href="/security">Security &amp; data privacy</a></footer>
+</body></html>""")
 
 
 SECURITY = """<!doctype html><html lang=en><head><meta charset=utf-8>
@@ -950,6 +1040,11 @@ def create_app():
             return redirect(home_url(g.principal))
         from .road import capture_attribution
         return capture_attribution(make_response(LANDING))
+
+    @app.get("/pricing")
+    def pricing_page():
+        from .road import capture_attribution
+        return capture_attribution(make_response(PRICING))
 
     @app.get("/welcome")
     def welcome():
