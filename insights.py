@@ -502,12 +502,46 @@ _SYS = ("You are XCTimer's assistant for a school running program (Cross Country
         + _PLATFORM_HELP)
 
 
+def _needs_subscription(p):
+    """AI Insights is part of the district subscription (1.113.0): a pay-per-meet district sees
+    what it is and how to get it, but cannot ask. The Super Admin is never locked out."""
+    if p.is_super:
+        return False
+    from . import billing
+    return billing.district_plan(p.district_id) == billing.PLAN_MEET
+
+
+SUBSCRIPTION_MSG = "AI Insights is part of the district subscription."
+
+
 @bp.get("/insights")
 @login_required
 def insights_page():
     p = g.principal
     if p.role == "timer" or p.meet_scope:
         abort(403)
+    if _needs_subscription(p):
+        from . import billing
+        fee = billing.fee_str()
+        body = f"""
+<h1>AI Insights &amp; Help</h1>
+<p class="sub">Ask questions about your rosters, results, PRs and records, in plain English.</p>
+<div class="card" style="border:2px solid #ea6a2d">
+  <h2 style="margin-top:0">✨ Included with the district subscription</h2>
+  <p>Your school is on pay per meet, which covers everything you need to run a meet. AI Insights
+  comes with the season subscription:</p>
+  <ul style="margin:.4rem 0 .9rem;padding-left:1.2rem">
+    <li>“Who are my fastest 800m runners this season?”</li>
+    <li>“Which 8th graders set a PR last week?”</li>
+    <li>“What is the district record in the girls 1600m?”</li>
+    <li>“How do I draw heats for a track meet?”</li>
+  </ul>
+  <p class="muted">The subscription is {fee} per school per season with unlimited meets.</p>
+  <a class="btn" href="mailto:rob@xctimer.com?subject=XCTimer%20district%20subscription">Ask about the subscription</a>
+  <a class="btn ghost" href="/pricing" style="margin-left:.4rem">See pricing</a>
+</div>"""
+        return shell(p, body, active="insights", active_district=active_district_id(),
+                     districts=_districts_for_switcher())
     scope_lbl = ("your schools" if p.role == "coach"
                  else "all districts" if (p.is_super and active_district_id() is None)
                  else "this district")
@@ -559,6 +593,8 @@ def insights_ask():
     p = g.principal
     if p.role == "timer" or p.meet_scope:
         abort(403)
+    if _needs_subscription(p):
+        return jsonify(error=SUBSCRIPTION_MSG, subscription=True), 403
     q = (request.get_json(silent=True) or {}).get("question", "").strip()
     if not q:
         return jsonify(error="Ask a question"), 400

@@ -19,7 +19,7 @@ _MT = ZoneInfo("America/Denver")   # Mountain Time (handles MST/MDT)
 from markupsafe import escape
 from flask import Blueprint, request, redirect, g, abort, jsonify, Response
 
-from . import db, audit, billing
+from . import db, audit, billing, signup
 from .auth import (login_required, role_required, create_user, issue_reset_token,
                    send_setup_email, hash_password, ROLES)
 from .tenancy import (active_district_id, require_district, all_districts, parse_grades,
@@ -112,6 +112,7 @@ def dashboard():
     body = (
         f"<h1>Dashboard</h1><p class='sub'>Signed in as "
         f"<b>{escape(p.name or p.email)}</b> · {escape(scope_note)}</p>"
+        f'{signup.getting_started(p, did)}'
         f'<div class="row">{cards}</div>{branding}{_waiver_card(p)}'
     )
     return shell(p, body, active="dashboard",
@@ -119,6 +120,19 @@ def dashboard():
 
 
 # ------------------------------- districts -------------------------------
+def _self_serve_note(d):
+    """Districts page: mark a district a school created for itself at /start (signup.py)."""
+    try:
+        ss = json.loads(d["settings_json"] or "{}").get("self_serve")
+    except (ValueError, TypeError):
+        ss = None
+    if not ss:
+        return ""
+    bits = " · ".join(escape(str(x)) for x in ((ss.get("at") or "")[:10], ss.get("state"), ss.get("by")) if x)
+    return (f'<br><span style="background:#eaf3fb;color:#12385f;border-radius:6px;padding:.05rem .4rem;'
+            f'font-size:.72rem;font-weight:700">Self-serve</span> <span class="muted" style="font-size:.78rem">{bits}</span>')
+
+
 @bp.get("/districts")
 @role_required("super_admin")
 def list_districts():
@@ -160,7 +174,7 @@ def list_districts():
                      f'style="width:140px;font-size:.72rem"> <button class="ghost" type="submit">Set</button></form>')
         body_rows.append(
             f'<tr><td><b>{escape(d["name"])}</b><br>'
-            f'<span class="muted">{escape(d["slug"])}</span></td>'
+            f'<span class="muted">{escape(d["slug"])}</span>{_self_serve_note(d)}</td>'
             f'<td>{logo_cell}</td>'
             f'<td>{sc} schools</td><td>{us} users</td>'
             f'<td>{billing.plan_cell(d)}</td>'

@@ -28,8 +28,9 @@ from .road import bp as road_bp
 from .coursemap import bp as coursemap_bp
 from .guest import bp as guest_bp
 from .billing import bp as billing_bp
+from .signup import bp as signup_bp
 
-APP_VERSION = "1.112.0-pay-per-meet"
+APP_VERSION = "1.113.0-school-signup"
 
 LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width, initial-scale=1">
@@ -760,7 +761,8 @@ LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
   <p class="lead" style="margin:.4rem auto 1.4rem">School meet or community fun run — no timing
      company, no big invoice.</p>
   <div style="display:flex;gap:.8rem;justify-content:center;flex-wrap:wrap">
-    <a class="btn" href="/host">🏁 Set up a fun run</a>
+    <a class="btn" href="/start">🏫 Set up your school</a>
+    <a class="btn ghost2" href="/host">🏁 Set up a fun run</a>
     <a class="btn ghost2" href="mailto:rob@xctimer.com?subject=XCTimer%20for%20our%20district">Bring XCTimer to your district</a>
     <a class="btn ghost2" href="/pricing">💵 See pricing</a>
   </div>
@@ -798,7 +800,7 @@ PRICING = (LANDING.split("</style></head><body>", 1)[0]
         <li>One payment covers every team in the meet</li>
         <li>Visiting teams and practice time trials are free</li>
       </ul>
-      <a class="btn ghost2" href="mailto:rob@xctimer.com?subject=XCTimer%20for%20our%20school">Get your school set up</a>
+      <a class="btn ghost2" href="/start">Set up your school</a>
     </div>
     <div class="card price best">
       <span class="tag">Best for districts</span>
@@ -806,6 +808,7 @@ PRICING = (LANDING.split("</style></head><body>", 1)[0]
       <div class="amt">$100<span>per school, per season</span></div>
       <ul>
         <li>Unlimited meets all season</li>
+        <li>AI Insights: ask questions about your rosters, results and records</li>
         <li>Cross country is one season. Track, indoor included, is one.</li>
         <li>Every team and level at the school</li>
         <li>$500 district minimum per school year</li>
@@ -969,7 +972,7 @@ def create_app():
     app.before_request(auth.demo_readonly_guard)
 
     for bp in (auth_bp, tenancy_bp, schools_bp, meets_bp, xc_bp, track_bp,
-               admin_bp, insights_bp, phone_bp, waivers_bp, road_bp, coursemap_bp, guest_bp, billing_bp):
+               admin_bp, insights_bp, phone_bp, waivers_bp, road_bp, coursemap_bp, guest_bp, billing_bp, signup_bp):
         app.register_blueprint(bp)
 
     @app.before_request
