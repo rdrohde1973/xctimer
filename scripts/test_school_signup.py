@@ -86,26 +86,32 @@ assert "Getting started" not in c.get("/dashboard").get_data(as_text=True)      
 assert anon().get("/start").status_code == 200 and c.get("/start").status_code == 302  # signed in: go home
 print("PASS 3: the setup link signs them in; they can build a roster and a meet, which stays locked until paid")
 
-# 4. AI Insights belongs to the subscription
+# 4. pay per meet keeps the how-to help; questions about their own data belong to the subscription
 ins = c.get("/insights").get_data(as_text=True)
-assert "Included with the district subscription" in ins and 'id="q"' not in ins
+assert 'id="q"' in ins and "Ask about your own data with the district subscription" in ins
+assert "How do I import my roster?" in ins and "Who is my fastest 200m runner?" not in ins
 r = c.post("/api/insights/ask", json={"question": "Who is fastest?"}, headers=H)
-assert r.status_code == 403 and r.get_json()["subscription"] and not ASKED
+assert r.status_code == 200 and r.get_json()["help_only"] and len(ASKED) == 1
+system, user = ASKED[0][0], ASKED[0][1]
+assert "NO access" in system and "district subscription" in system and "HOW XCTIMER WORKS" in system
+assert "DATA DIGEST" not in user and "Ada Runner" not in user and "Ada Runner" not in system   # no roster leaves
 conn = db.connect()
 billing.set_district_plan(conn, d["id"], "subscription"); conn.commit(); conn.close()
-assert 'id="q"' in c.get("/insights").get_data(as_text=True)
+ins = c.get("/insights").get_data(as_text=True)
+assert 'id="q"' in ins and "Who is my fastest 200m runner?" in ins and "district subscription" not in ins
 r = c.post("/api/insights/ask", json={"question": "Who is fastest?"}, headers=H)
-assert r.status_code == 200 and r.get_json()["answer"] == "The answer." and len(ASKED) == 1
+assert r.status_code == 200 and "help_only" not in r.get_json() and len(ASKED) == 2
+assert "DATA DIGEST" in ASKED[1][1] and "Ada Runner" in ASKED[1][1]                  # subscribers get their data
 conn = db.connect()
 billing.set_district_plan(conn, d["id"], "per_meet"); conn.commit(); conn.close()
 conn = db.connect()
 sup = conn.execute("INSERT INTO users (email, name, role) VALUES ('root@x.example','Root','super_admin')").lastrowid
 conn.commit(); conn.close()
 root = application.test_client(); root.set_cookie(auth.SESSION_COOKIE, auth.create_session(sup)); root.set_cookie("csrftoken", "x")
-assert 'id="q"' in root.get("/insights").get_data(as_text=True)                      # Super Admin never locked
+assert "Who is my fastest 200m runner?" in root.get("/insights").get_data(as_text=True)   # Super Admin never limited
 dpage = root.get("/districts").get_data(as_text=True)
 assert "Self-serve</span>" in dpage and "pat@maplegrove.example" in dpage and "Pay per meet</span>" in dpage
-print("PASS 4: AI Insights is off for pay-per-meet districts (with an upsell) and on for subscriptions")
+print("PASS 4: pay-per-meet districts get how-to help only (no data sent); subscriptions get data answers")
 
 # 5. an address that already has a login gets the same page and an honest email; nothing is created
 MAIL.clear()

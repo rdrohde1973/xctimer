@@ -6,6 +6,8 @@
   Q&A over a compact data digest. Timers get no insights (handoff §11); demo
   accounts DO (read-only showcase).
 """
+import json
+
 from markupsafe import escape
 from flask import Blueprint, request, g, abort, jsonify
 
@@ -502,16 +504,36 @@ _SYS = ("You are XCTimer's assistant for a school running program (Cross Country
         + _PLATFORM_HELP)
 
 
+_SYS_HELP = ("You are XCTimer's help assistant for a school running program (Cross Country + Track). "
+             "Answer HOW-TO / platform questions only (how do I set up a meet, draw heats, time with "
+             "phones, print bibs, mark a DQ, import a roster, invite visiting teams, pay to go live, "
+             "what can XCTimer do, etc.) from the HOW XCTIMER WORKS guide below. Be specific and "
+             "step-by-step; never invent features — if it's not covered, say you're not sure and "
+             "suggest emailing admin@xctimer.com.\n"
+             "You have NO access to this school's rosters, results, PRs or records. If the question "
+             "is about their data ('who is fastest', 'top 5', 'what is X's time', records, PRs), do "
+             "not guess or invent anything: say in one or two sentences that questions about their "
+             "own data are part of the XCTimer district subscription, and that the Pricing page "
+             "(xctimer.com/pricing) has the details. Then offer to help with a how-to question.\n"
+             "This school pays per meet. Building a meet is free: schools, events, entries, heats "
+             "and printing all work before paying. Race day timing, the Phone Timer App and results "
+             "turn on when the meet goes live: the orange 'Go live' banner at the top of every meet "
+             "page has a 'Pay with Square (card)' button and a promo code box. One payment covers "
+             "every team in the meet; visiting teams and practice time trials are free.\n"
+             "Tailor answers to the user's role (given below). Be concise, friendly, and plain-text "
+             "(no markdown tables).\n\n"
+             + _PLATFORM_HELP)
+
+
 def _needs_subscription(p):
-    """AI Insights is part of the district subscription (1.113.0): a pay-per-meet district sees
-    what it is and how to get it, but cannot ask. The Super Admin is never locked out."""
+    """Questions about a district's own data are part of the district subscription (1.113.0).
+    A pay-per-meet district still gets the how-to help (_SYS_HELP), with no data sent to the
+    model at all. The Super Admin is never limited."""
     if p.is_super:
         return False
     from . import billing
     return billing.district_plan(p.district_id) == billing.PLAN_MEET
 
-
-SUBSCRIPTION_MSG = "AI Insights is part of the district subscription."
 
 
 @bp.get("/insights")
@@ -520,40 +542,49 @@ def insights_page():
     p = g.principal
     if p.role == "timer" or p.meet_scope:
         abort(403)
-    if _needs_subscription(p):
-        from . import billing
-        fee = billing.fee_str()
-        body = f"""
-<h1>AI Insights &amp; Help</h1>
-<p class="sub">Ask questions about your rosters, results, PRs and records, in plain English.</p>
-<div class="card" style="border:2px solid #ea6a2d">
-  <h2 style="margin-top:0">✨ Included with the district subscription</h2>
-  <p>Your school is on pay per meet, which covers everything you need to run a meet. AI Insights
-  comes with the season subscription:</p>
-  <ul style="margin:.4rem 0 .9rem;padding-left:1.2rem">
-    <li>“Who are my fastest 800m runners this season?”</li>
-    <li>“Which 8th graders set a PR last week?”</li>
-    <li>“What is the district record in the girls 1600m?”</li>
-    <li>“How do I draw heats for a track meet?”</li>
-  </ul>
-  <p class="muted">The subscription is {fee} per school per season with unlimited meets.</p>
-  <a class="btn" href="mailto:rob@xctimer.com?subject=XCTimer%20district%20subscription">Ask about the subscription</a>
-  <a class="btn ghost" href="/pricing" style="margin-left:.4rem">See pricing</a>
-</div>"""
-        return shell(p, body, active="insights", active_district=active_district_id(),
-                     districts=_districts_for_switcher())
+    help_only = _needs_subscription(p)
     scope_lbl = ("your schools" if p.role == "coach"
                  else "all districts" if (p.is_super and active_district_id() is None)
                  else "this district")
+    if help_only:
+        from . import billing
+        intro = ('<p class="sub">Ask how to use XCTimer: setup, heats, phone timing, bibs, '
+                 'visiting teams, DQ/DNF…</p>')
+        placeholder = "e.g. How do I import my roster?"
+        suggest = ["How do I import my roster?", "How do I set up a meet?",
+                   "How do I invite visiting teams?", "How do I draw heats for a track meet?",
+                   "How do I time a race with phones?", "How do I print bibs?",
+                   "How do I take a meet live?"]
+        upsell = f'''
+<div class="card" style="border:2px solid #ea6a2d">
+  <h2 style="margin-top:0">✨ Ask about your own data with the district subscription</h2>
+  <p style="margin:.2rem 0 .5rem">Subscribers can also ask about their rosters, results, PRs and records:</p>
+  <ul style="margin:.2rem 0 .8rem;padding-left:1.2rem">
+    <li>“Who are my fastest 800m runners this season?”</li>
+    <li>“Which 8th graders set a PR last week?”</li>
+    <li>“What is the district record in the girls 1600m?”</li>
+  </ul>
+  <p class="muted">The subscription is {billing.fee_str()} per school per season with unlimited meets.</p>
+  <a class="btn" href="mailto:rob@xctimer.com?subject=XCTimer%20district%20subscription">Ask about the subscription</a>
+  <a class="btn ghost" href="/pricing" style="margin-left:.4rem">See pricing</a>
+</div>'''
+    else:
+        intro = (f'<p class="sub">Ask about {escape(scope_lbl)} — rosters, results, PRs and records '
+                 f'(from your data), or how to use XCTimer (setup, heats, phone timing, bibs, DQ/DNF…).</p>')
+        placeholder = "e.g. Who are my fastest boys this season?"
+        suggest = ["Who is my fastest 200m runner?", "Top 5 girls in the 1600m",
+                   "What's the district record for the 100m?", "How do I draw heats for a track meet?",
+                   "How do I time a race with phones?", "How do I mark a runner DQ?",
+                   "How do I import my roster?"]
+        upsell = ""
     body = f"""
 <h1>AI Insights &amp; Help</h1>
-<p class="sub">Ask about {escape(scope_lbl)} — rosters, results, PRs and records (from your data),
-or how to use XCTimer (setup, heats, phone timing, bibs, DQ/DNF…).</p>
+{intro}
 <div class="card">
   <div id="log" style="min-height:60px"></div>
   <div id="chips" style="display:flex;flex-wrap:wrap;gap:.4rem;margin-top:.5rem"></div>
   <div class="row" style="margin-top:.6rem">
-    <div style="flex:1"><input id="q" placeholder="e.g. Who are my fastest boys this season?"
+    <div style="flex:1"><input id="q" placeholder="{placeholder}"
       onkeydown="if(event.key==='Enter')ask()"></div>
     <div style="display:flex;align-items:flex-end"><button onclick="ask()">Ask</button></div>
   </div>
@@ -562,10 +593,7 @@ or how to use XCTimer (setup, heats, phone timing, bibs, DQ/DNF…).</p>
   border-radius:999px;padding:.3rem .8rem;font-size:.85rem;cursor:pointer}}
 .aichip:hover{{border-color:var(--acc)}}</style>
 <script>
-const SUGGEST=["Who is my fastest 200m runner?","Top 5 girls in the 1600m",
-  "What's the district record for the 100m?","How do I draw heats for a track meet?",
-  "How do I time a race with phones?","How do I mark a runner DQ?",
-  "How do I import my roster?"];
+const SUGGEST={json.dumps(suggest)};
 document.getElementById('chips').innerHTML =
   SUGGEST.map(s=>'<button class="aichip" onclick="askQ(this.textContent)">'+esc(s)+'</button>').join('');
 let HIST=[];
@@ -582,7 +610,7 @@ async function ask(){{
   catch(e){{ document.getElementById('pend').outerHTML='<p class="msg err">'+esc(e.message)+'</p>'; }}
   log.scrollTop=log.scrollHeight;
 }}
-</script>"""
+</script>{upsell}"""
     return shell(p, body, active="insights", active_district=active_district_id(),
                  districts=_districts_for_switcher())
 
@@ -593,8 +621,6 @@ def insights_ask():
     p = g.principal
     if p.role == "timer" or p.meet_scope:
         abort(403)
-    if _needs_subscription(p):
-        return jsonify(error=SUBSCRIPTION_MSG, subscription=True), 403
     q = (request.get_json(silent=True) or {}).get("question", "").strip()
     if not q:
         return jsonify(error="Ask a question"), 400
@@ -604,6 +630,10 @@ def insights_ask():
                 else "coach (own school(s) only)" if p.role == "coach"
                 else "district admin (whole district)")
     try:
+        if _needs_subscription(p):       # pay per meet: how-to help only, no roster/results digest
+            answer = ai.claude_chat(_SYS_HELP, f"USER ROLE: {role_lbl}\n\nQUESTION: {q}",
+                                    max_tokens=1000, history=history)
+            return jsonify(answer=answer, help_only=True)
         digest = _digest(p, q)
         answer = ai.claude_chat(_SYS, f"USER ROLE: {role_lbl}\n\nDATA DIGEST:\n{digest}\n\nQUESTION: {q}",
                                 max_tokens=1000, history=history)
