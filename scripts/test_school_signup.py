@@ -169,4 +169,27 @@ for prompt in (insights._SYS, insights._SYS_HELP, road._HOST_HELP_SYS):
 assert "How do I use the phone scanner?" in c.get("/insights").get_data(as_text=True)      # pay per meet
 assert "How do I use the phone scanner?" in root.get("/insights").get_data(as_text=True)   # full Insights
 print("PASS 8: the assistants explain the phone scanner and strongly recommend the bib board")
+
+# 9. "Ask the Ref" also shows for a race director who creates events from the Events page
+conn = db.connect()
+org = conn.execute("INSERT INTO organizers (name, slug) VALUES ('Town Rec','town-rec')").lastrowid
+rd = conn.execute("INSERT INTO users (organizer_id, email, name, role) VALUES (?,?,?,?)",
+                  (org, "director@townrec.example", "Dee Rector", "race_director")).lastrowid
+conn.commit(); conn.close()
+dw = application.test_client(); dw.set_cookie(auth.SESSION_COOKIE, auth.create_session(rd)); dw.set_cookie("csrftoken", "x")
+r = dw.post("/events", data={"name": "Town 5K", "date": "2027-05-01"}, headers=H)
+ev = int(re.search(r"/meets/(\d+)", r.headers["Location"]).group(1))
+for path in ("/events", f"/meets/{ev}", f"/meets/{ev}/participants"):
+    assert "Ask the Ref" in dw.get(path).get_data(as_text=True), path
+ASKED.clear()
+r = dw.post("/host/chat", json={"message": "How do I use the phone scanner?"}, headers=H)
+assert r.status_code == 200 and r.get_json()["reply"] == "The answer." and len(ASKED) == 1
+guide = " ".join(ASKED[0][0].split())
+assert "BIB BOARD" in guide and "xctimer.com/login" in guide and "Events page" in guide
+assert "$100" not in guide and "xctimer.com/host" not in guide and "auto-deletes" not in guide
+own = " ".join(road._HOST_HELP_SYS.split())                                           # self-serve guide unchanged
+assert "$100 per event" in own and "xctimer.com/host" in own and "auto-deletes 30 days" in own
+assert "Ask the Ref" not in c.get("/dashboard").get_data(as_text=True)                 # a school admin: no Ref
+assert c.post("/host/chat", json={"message": "hi"}, headers=H).status_code == 403
+print("PASS 9: race directors get the Ref on their event pages, with a guide that fits their account")
 print("ALL PASS")

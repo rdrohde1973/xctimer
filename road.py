@@ -1829,12 +1829,38 @@ checking results, STRONGLY recommend the bib board described above, even if they
 Be encouraging and practical. Prefer step-by-step answers a first-time race director can follow."""
 
 
+def _director_help_sys():
+    """The Ref's guide for a race director who signs in to an organization's Events page
+    (not a self-serve /host event): same product, but no magic link, no per-event checkout
+    and no 30-day clean-up. Built by swapping the three self-serve-only facts."""
+    s = _HOST_HELP_SYS
+    for old, new in (
+        ("- Create an event at xctimer.com/host; you get a private email link to manage it (bookmark it, or\n"
+         "  use \"Email my link\" on /host to get it again).",
+         "- You sign in at xctimer.com/login with your email and password. The Events page lists your\n"
+         "  organization's events; create a new one there with a name and a date."),
+        ("- Go live: $100 per event. Build it free, then pay the $100 by card (Square, instant) to\n"
+         "  open registration, or enter a promo code. Registration stays closed until you pay.",
+         "- There is no per-event checkout on this account: the organization is set up directly with\n"
+         "  XCTimer. Open registration from the registration settings on the Setup tab when you are ready."),
+        ("- Your event auto-deletes 30 days after the event date.",
+         "- Your events stay on the Events page until you delete them there."),
+        ("How XCTimer self-serve works (rely on these facts):",
+         "How XCTimer community events work (rely on these facts):"),
+    ):
+        s = s.replace(old, new)
+    return s
+
+
 @bp.post("/host/chat")
 @login_required
 def host_chat():
-    """Setup-assistant chat for self-serve event owners (uses the Anthropic key)."""
+    """Setup-assistant chat ("Ask the Ref") for people running a community event: self-serve
+    event owners, race directors of an organization, and the Super Admin."""
     p = g.principal
-    if getattr(p, "owns_meet", None) is None and not p.is_super:
+    owner = getattr(p, "owns_meet", None) is not None
+    director = getattr(p, "is_race_director", False) and not getattr(p, "meet_scope", None)
+    if not (owner or director or p.is_super):
         abort(403)
     data = request.get_json(silent=True) or {}
     msg = (data.get("message") or "").strip()[:1000]
@@ -1843,7 +1869,8 @@ def host_chat():
         return jsonify(reply="Ask me anything about setting up or running your event!")
     from . import ai
     try:
-        reply = ai.claude_chat(_HOST_HELP_SYS, msg, history=history, max_tokens=700)
+        system = _director_help_sys() if (director and not owner) else _HOST_HELP_SYS
+        reply = ai.claude_chat(system, msg, history=history, max_tokens=700)
     except Exception:
         return jsonify(reply="Sorry — the assistant is unavailable right now. "
                              "Email admin@xctimer.com and we'll help."), 200
@@ -1851,7 +1878,8 @@ def host_chat():
 
 
 def host_chat_widget():
-    """Floating 'Ask the Ref' chat (referee-styled), injected by ui.shell for event owners only."""
+    """Floating 'Ask the Ref' chat (referee-styled), injected by ui.shell for self-serve event
+    owners and race directors (and admins looking at a self-serve event)."""
     return """
 <div id="hcbtn" onclick="hcToggle()" style="position:fixed;right:18px;bottom:18px;z-index:9998;
   display:flex;align-items:center;gap:.5rem;background:#141414;color:#fff;border:2px solid #fff;

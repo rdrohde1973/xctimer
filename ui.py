@@ -327,6 +327,11 @@ def shell(principal, body, *, active="", active_district=None, districts=None,
     # viewing a self-serve (XCTimer Web) event page — so it's not hidden from super admins.
     chat = ""
     show_ref = bool(getattr(principal, "owns_meet", None))
+    # A race director who signs in to an organization's Events page runs the same kind of event
+    # as a self-serve host, so they get the Ref too (1.113.1) -- it used to be owner-only, which
+    # hid it from every event created from the Events page.
+    if role == "race_director" and not getattr(principal, "meet_scope", None):
+        show_ref = True
     if not show_ref and role in ("super_admin", "district_admin"):
         try:
             import re as _re
