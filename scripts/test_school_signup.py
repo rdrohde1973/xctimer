@@ -163,6 +163,7 @@ print("PASS 7: bad input, the bot trap, floods and missing security tokens are a
 # 8. both assistants know the phone scanner and push the finish-order bib board
 from xctimerpkg import insights, road                                              # noqa: E402
 for prompt in (insights._SYS, insights._SYS_HELP, road._HOST_HELP_SYS):
+    prompt = " ".join(prompt.split())                    # the guides are hard-wrapped
     assert "BIB BOARD" in prompt and "poster board" in prompt and "STRONGLY recommend" in prompt
     assert "📷" in prompt and "in the order they finished" in prompt
 assert "How do I use the phone scanner?" in c.get("/insights").get_data(as_text=True)      # pay per meet
