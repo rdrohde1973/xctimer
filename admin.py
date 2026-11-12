@@ -1148,6 +1148,12 @@ def console():
              + tile("4XX CLIENT", buckets[4], "color:var(--warn)" if buckets[4] else "")
              + tile("5XX SERVER", buckets[5], "color:var(--err)" if buckets[5] else "")
              + '</div>')
+    # Unique people who clicked through to the pricing page (audit.note_pricing_click).
+    pc_recent, pc_total = audit.pricing_click_counts({"1h": 1, "24h": 24, "7d": 168}.get(rng, 1))
+    tiles += ('<div style="display:flex;gap:.6rem;flex-wrap:wrap;margin:0 0 .6rem">'
+              + tile("PRICING BUTTON · UNIQUE PEOPLE", f'{pc_recent}<div class="muted" '
+                     f'style="font-size:.78rem;font-weight:400">in the last {label} · {pc_total} all time</div>')
+              + '</div>')
 
     top_ips = sorted(ips.items(), key=lambda kv: -kv[1]["n"])[:12]
     ip_rows = "".join(

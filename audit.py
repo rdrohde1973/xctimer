@@ -117,3 +117,61 @@ def prune():
                 conn.close()
             except Exception:
                 pass
+
+
+# ------------------------------- pricing page clicks -------------------------------
+_BOT_UA = ("bot", "crawl", "spider", "slurp", "facebookexternalhit", "preview", "monitor", "curl",
+           "wget", "python-requests", "headless", "lighthouse", "scan")
+
+
+def note_pricing_click():
+    """Record one click through to /pricing, for the Console's "unique people" tile.
+
+    A click = a browser that arrives from one of our own pages (same-site Referer), which is
+    what pressing a Pricing button looks like; a crawler or someone opening the address cold
+    is not counted, nor is the Super Admin looking at their own page. People are told apart
+    by a short hash of the browser's CSRF cookie (one per browser, 30 days), so no IP address
+    is stored. Never raises: counting must not break the page."""
+    conn = None
+    try:
+        from urllib.parse import urlparse
+        import hashlib
+        ref = urlparse(request.referrer or "")
+        if not ref.hostname or ref.hostname.lower() != (request.host or "").split(":")[0].lower():
+            return
+        if ref.path == "/pricing":                      # a reload, not a click
+            return
+        ua = (request.headers.get("User-Agent") or "").lower()
+        if not ua or any(b in ua for b in _BOT_UA):
+            return
+        p = getattr(g, "principal", None)
+        if p is not None and getattr(p, "is_super", False):
+            return
+        tok = request.cookies.get("csrftoken") or (
+            (request.headers.get("CF-Connecting-IP") or request.remote_addr or "") + "|" + ua)
+        visitor = hashlib.sha256(("pricing:" + tok).encode()).hexdigest()[:16]
+        conn = db.connect()
+        conn.execute("INSERT INTO pricing_clicks (ts, visitor, src) VALUES (?,?,?)",
+                     (datetime.now(timezone.utc).isoformat(), visitor, (ref.path or "/")[:80]))
+        conn.commit()
+    except Exception:  # noqa: BLE001
+        pass
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:  # noqa: BLE001
+                pass
+
+
+def pricing_click_counts(hours):
+    """(unique people in the last `hours`, unique people all time) for the Console."""
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+    conn = db.connect()
+    try:
+        recent = conn.execute("SELECT COUNT(DISTINCT visitor) FROM pricing_clicks WHERE ts>=?",
+                              (cutoff,)).fetchone()[0]
+        total = conn.execute("SELECT COUNT(DISTINCT visitor) FROM pricing_clicks").fetchone()[0]
+    finally:
+        conn.close()
+    return recent, total

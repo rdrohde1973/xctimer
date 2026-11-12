@@ -602,6 +602,12 @@ def migrate(conn):
     conn.execute("CREATE INDEX IF NOT EXISTS idx_host_attribution_email ON host_attribution(email)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_host_attribution_signed ON host_attribution(signed_up_at)")
 
+    # Clicks through to the public pricing page (Console tile, 1.114.0). `visitor` is a short
+    # hash of the browser's own token -- no IP address or account is stored.
+    conn.execute("CREATE TABLE IF NOT EXISTS pricing_clicks ("
+                 "id INTEGER PRIMARY KEY, ts TEXT NOT NULL, visitor TEXT NOT NULL, src TEXT)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_pricing_clicks_ts ON pricing_clicks(ts)")
+
     ptcols = _column_names(conn, "points_tables")
     if "relay_multiplier" not in ptcols:
         conn.execute("ALTER TABLE points_tables ADD COLUMN relay_multiplier REAL DEFAULT 1.0")
