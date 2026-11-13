@@ -53,9 +53,20 @@ def _reg_base():
     return os.environ.get("XC_PUBLIC_URL", request.host_url.rstrip("/"))
 
 
+def _reserved_spares(conn, mid):
+    """Spare bib numbers already printed as blank stickers (1.125.0). They are held for
+    race-day sign-ups, so no online registration, import or blank-bib add ever gets one."""
+    row = conn.execute("SELECT settings_json FROM meets WHERE id=?", (mid,)).fetchone()
+    try:
+        got = json.loads((row["settings_json"] if row else None) or "{}").get("spare_bibs") or []
+    except (ValueError, TypeError):
+        got = []
+    return sorted({int(b) for b in got if str(b).isdigit()})
+
+
 def _next_bib(conn, mid):
     row = conn.execute("SELECT COALESCE(MAX(bib),0) FROM participants WHERE meet_id=?", (mid,)).fetchone()
-    return (row[0] or 0) + 1
+    return max([row[0] or 0] + _reserved_spares(conn, mid)) + 1
 
 
 def _norm_gender(v):
@@ -897,13 +908,24 @@ def participant_stickers(mid):
     ps = conn.execute(
         "SELECT bib, name FROM participants WHERE meet_id=? AND bib IS NOT NULL ORDER BY bib",
         (mid,)).fetchall()
+    held = _reserved_spares(conn, mid)
     conn.close()
     from . import pdfs
     athletes = [{"bib": p["bib"], "name": p["name"], "code": code} for p in ps]
-    nextspare = max((p["bib"] for p in ps), default=0) + 1
-    for _ in range(spares):    # blank stickers (number + code, no name) to hand-write walk-ups
-        athletes.append({"bib": nextspare, "name": "", "code": code})
+    # Blank stickers (number + code, no name) for race-day sign-ups. Their numbers are
+    # reserved (settings.spare_bibs) so a later online sign-up can never get the same one:
+    # a reprint reuses spares nobody has taken yet, and only new ones extend the range.
+    used = {p["bib"] for p in ps}
+    blanks = [b for b in held if b not in used][:spares]
+    nextspare = max([0] + list(used) + held) + 1
+    while len(blanks) < spares:
+        blanks.append(nextspare)
         nextspare += 1
+    if blanks:
+        s["spare_bibs"] = sorted(set(held) | set(blanks))
+        _save_settings(mid, s)
+    for b in blanks:
+        athletes.append({"bib": b, "name": "", "code": code})
     base = os.environ.get("XC_PUBLIC_URL", request.host_url.rstrip("/"))
     results_url = f"{base}/r/{m['public_token']}" if m["public_token"] else None
     data = pdfs.bib_stickers_pdf(m["name"], athletes, template=template,

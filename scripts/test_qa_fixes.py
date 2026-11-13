@@ -259,4 +259,24 @@ assert "Tap → scan or select" in day and ">tapselect<" not in day
 ph = client(COACH).get("/phone").get_data(as_text=True)
 assert "· Tap → scan or select" in ph and "· tapselect" not in ph
 print("PASS 9: capture modes read as words on race day and in the phone heat list")
+# 10. printed spare bibs are held for race-day sign-ups: online sign-ups never get one (1.125.0)
+R5K = q("SELECT id FROM races WHERE meet_id=?", A1)[0][0]
+for i in (1, 2, 3):
+    ex("INSERT INTO participants (meet_id, race_id, bib, name) VALUES (?,?,?,?)", A1, R5K, i, f"Pre {i}")
+assert wa1.get(f"/meets/{A1}/participants/stickers.pdf?spares=2").status_code == 200
+assert settings(A1)["spare_bibs"] == [4, 5]
+st = settings(A1); st["reg_open"] = True
+ex("UPDATE meets SET settings_json=? WHERE id=?", json.dumps(st), A1)
+bibs = lambda: [r[0] for r in q("SELECT bib FROM participants WHERE meet_id=? ORDER BY bib", A1)]   # noqa: E731
+client().post("/register/A1", data=dict(rname="Online One", rage="30", rgender="F", rrace=str(R5K),
+                                        rcity="", rclub="", website=""), headers=H)
+assert bibs() == [1, 2, 3, 6], bibs()                               # skipped the printed spares 4 and 5
+wa1.get(f"/meets/{A1}/participants/stickers.pdf?spares=2")          # reprint: same two spares, none burned
+assert settings(A1)["spare_bibs"] == [4, 5]
+wa1.post(f"/meets/{A1}/participants", data=dict(name="Walk Up", bib="4", race_id=str(R5K)), headers=H)
+wa1.post(f"/meets/{A1}/participants", data=dict(name="Blank Bib", race_id=str(R5K)), headers=H)
+assert bibs() == [1, 2, 3, 4, 6, 7], bibs()                          # a blank bib skips spare 5 too
+wa1.get(f"/meets/{A1}/participants/stickers.pdf?spares=2")          # 4 is taken: keep 5, add 8
+assert settings(A1)["spare_bibs"] == [4, 5, 8]
+print("PASS 10: printed spare bibs are reserved, reused on reprint, and never given to a later sign-up")
 print("ALL PASS")

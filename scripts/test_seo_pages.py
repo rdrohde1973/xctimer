@@ -116,6 +116,7 @@ for want in ("Registration open", "Venmo", "Phone Timer App", "listen for the gu
     assert want in fivek, want
 for guide in (timing, fivek):                     # 1.124.1: how many phones, scanning on its own phone
     assert "Three phones" in guide and "Two phones" in guide and "keep the scanning phone separate" in guide
+assert "Charity run or school fundraiser?" in fivek and "Close registration before you print" not in fivek
 for gone in ("$500 to $1,000 or more", "Include a waiver", "Three months out"):
     assert gone not in fivek, gone
 assert "lap counters, not a race timer" in fivek                       # no false promise about jog-a-thons

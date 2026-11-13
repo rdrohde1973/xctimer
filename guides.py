@@ -320,6 +320,8 @@ parking, packet pickup) and tick <b>Registration open</b>.</li>
 <li>Set an <b>entry fee</b> if you charge one. Add your Venmo username and runners are sent to Venmo to
 pay right after they sign up. Without Venmo, the page shows the fee as owed and you collect it at
 packet pickup.</li>
+<li><b>Charity run or school fundraiser?</b> Put the charity's, PTA's or booster club's Venmo
+username here and entry fees go straight to that account. XCTimer never touches the money.</li>
 <li>Share the <b>public registration link</b> or its QR code: on flyers, in the school newsletter, in
 local Facebook groups.</li>
 </ol>
@@ -337,8 +339,9 @@ and XCTimer numbers it.</li>
 <li><b>Print bibs</b>: each sticker has your logo, the bib number, the runner's name and a square tag
 the phone camera reads. Add a few blank spares for race-day sign-ups. Avery 5523 weatherproof labels
 hold up to rain and sweat; any Avery 5163-size sheet works.</li>
-<li><b>Close registration before you print.</b> Spares take the next numbers after your last runner,
-so anyone who signs up online after you print would get the same number as a spare.</li>
+<li><b>Print whenever you like.</b> Spare numbers are held for race-day sign-ups, so anyone who
+registers online after you print gets a new number, never one of your spares. Print again later and
+XCTimer reuses the spares nobody has taken.</li>
 </ul>
 
 <h2>What XCTimer leaves to you</h2>
@@ -432,8 +435,9 @@ the board for a misread number or add a race-day runner.</li>
 tab has a live public page with a QR code for the crowd and an Excel export. Your event and its
 runner list are removed 30 days after the event date, so download the results first.</p>
 
-<h2>School fun runs</h2>
-<p>Run each grade as its own short race so a pack of kids never swamps the finish line. If your event
+<h2>School fun runs and charity runs</h2>
+<p>Set the entry fee and the school's or charity's Venmo on the Setup tab, and every sign-up is sent
+to pay it right away. Run each grade as its own short race so a pack of kids never swamps the finish line. If your event
 counts laps for pledges instead of timing a distance, you need lap counters, not a race timer.</p>
 
 <h2>Who you need</h2>
