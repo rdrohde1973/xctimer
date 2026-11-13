@@ -148,11 +148,29 @@ def mark_paid(mid, order_id, by=None):
     conn.close()
     if not row:
         return False
-    if (_json(row["settings_json"]).get("meet_fee") or {}).get("how") == "square":
+    s = _json(row["settings_json"])
+    if (s.get("meet_fee") or {}).get("how") == "square":
         return True
     log.info("meet %s paid via Square order %s", mid, order_id)
-    return _set_fee(mid, {"paid": True, "how": "square", "order_id": order_id,
-                          "at": _now(), "by": by})
+    state = {"paid": True, "how": "square", "order_id": order_id, "at": _now(), "by": by}
+    promo = s.get("meet_fee_promo") or {}
+    if promo.get("code"):
+        # A partial-discount code is counted as used here, when the money arrives, not when
+        # it was typed in: backing out of Square uses nothing.
+        from .road import _consume_promo
+        from .meets import load_meet
+        m = load_meet(mid)
+        _consume_promo(promo["code"])
+        conn = db.connect()
+        conn.execute("INSERT INTO promo_redemptions (email, code, meet_token, created_at) VALUES (?,?,?,?)",
+                     (_promo_key(m), promo["code"], m["public_token"], _now()))
+        cur = _json(conn.execute("SELECT settings_json FROM meets WHERE id=?", (mid,)).fetchone()["settings_json"])
+        cur.pop("meet_fee_promo", None)
+        conn.execute("UPDATE meets SET settings_json=? WHERE id=?", (json.dumps(cur), mid))
+        conn.commit()
+        conn.close()
+        state["code"], state["pct"] = promo["code"], promo.get("pct")
+    return _set_fee(mid, state)
 
 
 def meet_id_from_note(note):
@@ -167,14 +185,34 @@ def discounted_cents(pct):
 def amount_due(mid):
     """What a Square order must cover for this meet: the fee, less a partial promo code the
     host has already applied."""
+    pend = pending_promo(mid)
+    return discounted_cents(pend[1]) if pend else MEET_FEE_CENTS
+
+
+def pending_promo(mid):
+    """The partial-discount code applied to this meet and not yet paid with, as (code, pct), or
+    None. Dropped if it is a first-meet code the host school has since used on another meet."""
     conn = db.connect()
-    row = conn.execute("SELECT settings_json FROM meets WHERE id=?", (mid,)).fetchone()
+    m = conn.execute("SELECT * FROM meets WHERE id=?", (mid,)).fetchone()
     conn.close()
+    if not m:
+        return None
+    s = _json(m["settings_json"])
+    promo = s.get("meet_fee_promo") or {}
     try:
-        pct = int((_json(row["settings_json"] if row else None).get("meet_fee_promo") or {}).get("pct") or 0)
+        code, pct = str(promo.get("code") or ""), int(promo.get("pct") or 0)
     except (ValueError, TypeError):
-        pct = 0
-    return discounted_cents(pct) if 0 < pct < 100 else MEET_FEE_CENTS
+        return None
+    if not code or not 0 < pct < 100:
+        return None
+    if _first_meet_violation(code, m):
+        conn = db.connect()
+        s.pop("meet_fee_promo", None)
+        conn.execute("UPDATE meets SET settings_json=? WHERE id=?", (json.dumps(s), mid))
+        conn.commit()
+        conn.close()
+        return None
+    return code, pct
 
 
 def order_pays_meet(order, mid):
@@ -281,16 +319,18 @@ def redeem(mid):
         return jsonify(error="Enter a promo code."), 400
     if _first_meet_violation(code, m):          # before consuming, so a refusal doesn't burn a use
         return jsonify(error="That code is for a school's first meet only."), 400
-    from .road import _consume_promo
-    pct = _consume_promo(code)
+    from .road import _consume_promo, _peek_promo
+    pct = _peek_promo(code)
     if pct is None:
         return jsonify(error="That promo code isn’t valid (or it’s been used up)."), 400
-    conn = db.connect()
-    conn.execute("INSERT INTO promo_redemptions (email, code, meet_token, created_at) VALUES (?,?,?,?)",
-                 (_promo_key(m), code, m["public_token"], _now()))
-    conn.commit()
-    conn.close()
     if pct >= 100:
+        if _consume_promo(code) is None:
+            return jsonify(error="That promo code isn’t valid (or it’s been used up)."), 400
+        conn = db.connect()
+        conn.execute("INSERT INTO promo_redemptions (email, code, meet_token, created_at) VALUES (?,?,?,?)",
+                     (_promo_key(m), code, m["public_token"], _now()))
+        conn.commit()
+        conn.close()
         _set_fee(mid, {"paid": True, "how": "promo", "code": code, "at": _now(), "by": g.principal.email})
         return jsonify(paid=True)
     from . import square
@@ -441,12 +481,16 @@ def banner(mid):
         f'if(j&&j.paid){{location.href="/meets/{mid}?msg="+encodeURIComponent("Code applied. This meet is live.");return;}}'
         f'if(j&&j.url){{location.href=j.url;return;}}throw new Error("Please try again.");}}'
         f'catch(e){{b.disabled=false;alert(e.message||"That promo code isn\u2019t valid.");}}}}</script>')
+    pend = pending_promo(mid)
     due = amount_due(mid)
     if due != MEET_FEE_CENTS and square.is_configured():
         pay_btn = pay_btn.replace(f"Pay {fee} with", f"Pay {fee_str(due)} with")
     sup = _super_tools(m, st) if p.is_super else ""
+    head = (f'🚦 Go live: {fee_str(due)} for this meet <span class="muted" style="font-size:.85rem;'
+            f'font-weight:400">code {escape(pend[0])} applied, regular {fee}</span>' if pend
+            else f'🚦 Go live: {fee} for this meet')
     return (f'<div class="card" style="border:2px solid #ea6a2d">'
-            f'<h2 style="margin-top:0">🚦 Go live: {fee} for this meet</h2>'
+            f'<h2 style="margin-top:0">{head}</h2>'
             f'<p style="margin:.2rem 0 .6rem">Build the whole meet first: schools, events, entries, '
             f'heats and printing all work now. Paying turns on Race day timing, the Phone Timer App '
             f'and results. One payment covers every team in the meet. Have a promo code? Enter it '

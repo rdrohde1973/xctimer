@@ -1506,8 +1506,9 @@ def host_pay_square(mid):
     base = os.environ.get("XC_PUBLIC_URL", request.host_url.rstrip("/"))
     ret = f"{base}/meets/{mid}/host-square-return"
     try:
-        url = square.create_payment_link(f"XCTimer event — {m['name']}", HOST_FEE_CENTS,
-                                          ret, f"xctimer_meet={mid}")
+        pend = _pending_promo(mid)          # a half-price code already applied still applies
+        title = f"XCTimer event — {m['name']}" + (f" ({pend[1]}% off)" if pend else "")
+        url = square.create_payment_link(title, _host_amount_due(mid), ret, f"xctimer_meet={mid}")
     except Exception:
         logging.getLogger("xctimer.road").exception("host_pay_square failed for meet %s", mid)
         return jsonify(error="Couldn’t start Square checkout — please try again."), 502
@@ -1528,6 +1529,45 @@ def host_square_return(mid):
         _mark_host_paid(mid, oid)
         return redirect(f"/meets/{mid}?paid=1")
     return redirect(f"/meets/{mid}?payerr=1")
+
+
+def _peek_promo(code):
+    """percent_off of an active code that still has uses left, WITHOUT using one up; else None."""
+    code = (code or "").strip().upper()
+    if not code:
+        return None
+    conn = db.connect()
+    row = conn.execute("SELECT * FROM promo_codes WHERE code=? AND active=1", (code,)).fetchone()
+    conn.close()
+    if not row or (row["max_uses"] is not None and (row["used_count"] or 0) >= row["max_uses"]):
+        return None
+    return row["percent_off"] if row["percent_off"] is not None else 100
+
+
+def _pending_promo(mid):
+    """The partial-discount code a host has applied but not yet paid with, as (code, pct), or
+    None. Dropped (and the full fee charged) if it is a first-event code this host has since
+    used on another event."""
+    s = _load_settings(mid)
+    pend = s.get("promo_pending") or {}
+    try:
+        code, pct = str(pend.get("code") or ""), int(pend.get("pct") or 0)
+    except (ValueError, TypeError):
+        return None
+    if not code or not 0 < pct < 100 or s.get("host_paid"):
+        return None
+    if _first_event_violation(code, mid):
+        s.pop("promo_pending", None)
+        _save_settings(mid, s)
+        return None
+    return code, pct
+
+
+def _host_amount_due(mid):
+    pend = _pending_promo(mid)
+    if not pend:
+        return HOST_FEE_CENTS
+    return max(50, round(HOST_FEE_CENTS * (100 - pend[1]) / 100))   # Square min ~$0.50
 
 
 def _consume_promo(code):
@@ -1631,12 +1671,15 @@ def host_redeem(mid):
             or request.form.get("code") or request.args.get("code") or "").strip().upper()
     if _first_event_violation(code, mid):      # before consuming, so a rejection doesn't burn a use
         return jsonify(error="This code is for your first event only."), 400
-    pct = _consume_promo(code)
+    pct = _peek_promo(code)
     if pct is None:
         return jsonify(error="That promo code isn’t valid (or it’s been used up)."), 400
-    _record_redemption(code, mid)
     if pct >= 100:                              # free -> publish now, skip Square
+        if _consume_promo(code) is None:
+            return jsonify(error="That promo code isn’t valid (or it’s been used up)."), 400
+        _record_redemption(code, mid)
         s = _load_settings(mid)
+        s.pop("promo_pending", None)
         s["host_paid"] = True
         s["promo_code"] = code
         _save_settings(mid, s)
@@ -1646,6 +1689,12 @@ def host_redeem(mid):
     from . import square
     if not square.is_configured():
         return jsonify(error="Card payments aren’t set up, so a partial discount can’t be applied."), 400
+    # Remember the code on the event now; it is counted as USED only when the payment
+    # completes (_mark_host_paid). A host who backs out of Square has used nothing, and the
+    # event page keeps showing the discounted price.
+    s = _load_settings(mid)
+    s["promo_pending"] = {"code": code, "pct": pct}
+    _save_settings(mid, s)
     amount = max(50, round(HOST_FEE_CENTS * (100 - pct) / 100))   # Square min ~$0.50
     base = os.environ.get("XC_PUBLIC_URL", request.host_url.rstrip("/"))
     ret = f"{base}/meets/{mid}/host-square-return"
@@ -1655,19 +1704,23 @@ def host_redeem(mid):
     except Exception:
         logging.getLogger("xctimer.road").exception("host-redeem partial checkout failed for meet %s", mid)
         return jsonify(error="Couldn’t start the discounted checkout — try again."), 502
-    s = _load_settings(mid)
-    s["promo_code"] = code
-    s["promo_pct"] = pct
-    _save_settings(mid, s)
     return jsonify(url=url)
 
 
 def _mark_host_paid(mid, order_id):
     s = _load_settings(mid)
     if not s.get("host_paid"):
+        pend = _pending_promo(mid)
+        s = _load_settings(mid)
+        s.pop("promo_pending", None)
         s["host_paid"] = True
         s["square_order_id"] = order_id
+        if pend:
+            s["promo_code"], s["promo_pct"] = pend
         _save_settings(mid, s)
+        if pend:                               # paid with the discount: now the code is used
+            _consume_promo(pend[0])
+            _record_redemption(pend[0], mid)
         _attr_mark_published(mid)
 
 
@@ -1725,6 +1778,9 @@ def host_banner(m):
         msg = ('<p style="color:var(--err);font-weight:600;margin:.2rem 0">⚠ Payment didn\'t complete — '
                'try again.</p>')
     # Verified card payment via Square (auto-publishes on a completed order).
+    pend = _pending_promo(mid)
+    if pend:                                   # a half-price code is applied: show what they will pay
+        full, fee = fee, _fee_str(_host_amount_due(mid))
     sq = ""
     if square.is_configured():
         # NB not a <form> that POSTs+redirects: CSP form-action 'self' blocks the cross-origin
@@ -1758,11 +1814,18 @@ def host_banner(m):
              f'if(j&&j.paid){{location.href="/meets/{mid}?paid=1";return;}}'
              f'if(j&&j.url){{location.href=j.url;return;}}throw new Error("Try again.");}}'
              f'catch(e){{b.disabled=false;alert(e.message||"That promo code isn\\u2019t valid.");}}}}</script>')
+    if pend:
+        head = f'🚦 Go live — {fee} with code {escape(pend[0])}'
+        blurb = (f'Code <b>{escape(pend[0])}</b> is applied: {fee} instead of {full}. Pay by card when '
+                 f'you\'re ready to open registration and time the race.')
+    else:
+        head = f'🚦 Go live — {fee} per event'
+        blurb = (f'Build your event below. When you\'re ready to open registration and time the race, '
+                 f'pay the {fee} event fee by card. Have a promo code? Enter it to publish free or '
+                 f'take a discount off the fee.')
     return (f'<div class="card" style="border:2px solid #ea6a2d">'
-            f'<h2 style="margin-top:0">🚦 Go live — {fee} per event</h2>'
-            f'<p style="margin:.2rem 0 .6rem">Build your event below. When you\'re ready to open '
-            f'registration and time the race, pay the {fee} event fee by card. Have a promo code? '
-            f'Enter it to publish free or take a discount off the fee.</p>{msg}'
+            f'<h2 style="margin-top:0">{head}</h2>'
+            f'<p style="margin:.2rem 0 .6rem">{blurb}</p>{msg}'
             f'<div style="display:flex;gap:.5rem;flex-wrap:wrap;align-items:center">{sq}{promo}{none_note}</div></div>')
 
 

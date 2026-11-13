@@ -78,7 +78,7 @@ def _phone_doc(title, body, extra_css=""):
     return f"""<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <title>{escape(title)} · XCTimer</title>{HEAD_EXTRA}<style>{CSS}{extra_css}</style></head>
-<body class="phone">{body}<script>{JS}</script></body></html>"""
+<body class="phone"><script>{JS}</script>{body}</body></html>"""
 
 
 def _district_brand(p):

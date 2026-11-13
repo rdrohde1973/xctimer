@@ -1713,15 +1713,25 @@ def save_marks(meid):
     q = ",".join("?" * len(meids))
     entries = conn.execute(f"SELECT * FROM entries WHERE meet_event_id IN ({q})", tuple(meids)).fetchall()
     hj = _is_hj(me)
+    bad = []                                  # (competitor, what was typed) that could not be read
     for e in entries:
         eid = e["id"]
         dq = 1 if request.form.get(f"dq_{eid}") else 0
         mark_seconds = mark_metric = None
         attempts = None
+        typed = (request.form.get(f"mark_{eid}") or "").strip()
         if me["unit"] == "seconds":
-            mark_seconds = parse_time(request.form.get(f"mark_{eid}"))
+            mark_seconds = parse_time(typed)
         elif hj:
-            mark_metric = parse_metric(request.form.get(f"mark_{eid}"))
+            mark_metric = parse_metric(typed)
+        if (me["unit"] == "seconds" or hj) and typed and mark_seconds is None and mark_metric is None:
+            # Not a time or height we can read: say so, and leave whatever was saved before
+            # (it used to be wiped without a word).
+            bad.append((_entry_label(conn, e)[0] or "?", typed))
+            conn.execute("UPDATE results SET dq=? WHERE entry_id=?", (dq, eid))
+            continue
+        if me["unit"] == "seconds" or hj:
+            pass
         else:  # LJ / SP: three attempts kept verbatim (incl 'F' fouls), best = max legal
             attempts = [(request.form.get(f"a{n}_{eid}") or "").strip() for n in (1, 2, 3)]
             legal = [v for v in (_parse_ht(x) for x in attempts) if v is not None]
@@ -1738,6 +1748,9 @@ def save_marks(meid):
         _recompute_places(conn, load_meet_event(m2))
     conn.commit()
     conn.close()
+    if bad:
+        from urllib.parse import quote
+        return redirect(f"/meet-events/{meid}?bad=" + quote("; ".join(f"{n}: {v}" for n, v in bad)[:400]))
     return redirect(f"/meet-events/{meid}")
 
 
@@ -2043,6 +2056,11 @@ def event_page(meid):
              "bib": "Enter a bib number to add an athlete."}
     err = (f'<div class="msg err">{_errs[request.args["err"]]}</div>'
            if request.args.get("err") in _errs else "")
+    if request.args.get("bad"):
+        example = "a number" if hj else "a time like 12.34 or 2:05.4"
+        err += (f'<div class="msg err">Not saved, because I could not read: '
+                f'<b>{escape(request.args["bad"][:400])}</b>. Enter {example}. '
+                f'Everything else was saved.</div>')
 
     # Entries + marks form
     def mark_cell(e):

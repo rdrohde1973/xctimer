@@ -568,7 +568,7 @@ async function tog(aid, sport, el){
 </form></div>
 
 <div class="card"><h2>Import roster</h2>
-<p class="muted">Upload Excel/CSV/PDF/Word, or paste a Google Sheet link. Claude
+<p class="muted">Upload Excel, CSV, PDF, Word or a photo of a paper list, or paste a Google Sheet link. Claude
 normalizes names, then you confirm before anything is saved.</p>
 <p><a class="btn ghost" href="/roster-template.xlsx">⬇ Download roster template (Excel)</a>
  <button type="button" class="btn ghost"
@@ -613,7 +613,7 @@ normalizes names, then you confirm before anything is saved.</p>
 <div class="row">
   <div>
     <label>File</label>
-    <input type="file" id="impfile" accept=".xlsx,.xls,.csv,.tsv,.txt,.pdf,.docx">
+    <input type="file" id="impfile" accept=".xlsx,.xls,.csv,.tsv,.txt,.pdf,.docx,.jpg,.jpeg,.png,.webp">
     <button type="button" onclick="uploadImport()" style="margin-top:.6rem">Parse file</button>
   </div>
   <div>

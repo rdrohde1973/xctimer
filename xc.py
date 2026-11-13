@@ -436,6 +436,21 @@ def assign_athlete(rid):
     return jsonify(ok=True)
 
 
+def _back_link(m):
+    """Top-of-page link: organizer (fun-run) events live under Events; /meets is the school
+    list, which sends a fun-run host to the phone heat picker."""
+    return '<a href="/events">← Events</a>' if _is_org(m) else '<a href="/meets">← Meets</a>'
+
+
+def _unknown_bib_note(m, bib, snap, warn):
+    """A calm, non-blocking note when a bib has no runner behind it at a school meet (road
+    events already warn through _road_unassigned_warn). The read is still saved: a walk-up
+    with a spare sticker is real, and a timer must never be stopped by a popup."""
+    if warn or bib is None or snap[0]:
+        return None
+    return f"Bib {bib} isn't in this meet. Saved without a name; fix the number or add the runner."
+
+
 def _road_unassigned_warn(conn, m, rid, bib):
     """Warn text if a scanned bib isn't registered/assigned to this distance."""
     if m["sport"] != "road" or bib is None:
@@ -571,7 +586,7 @@ def road_assign(mid):
     msg_html = f'<div class="card" style="border-color:var(--ok)">{escape(msg)}</div>' if msg else ""
 
     body = (
-        f'<p class="muted"><a href="/meets">← Meets</a></p><h1>{escape(m["name"])} — Assign</h1>'
+        f'<p class="muted">{_back_link(m)}</p><h1>{escape(m["name"])} — Assign</h1>'
         f'{_xc_tabs(mid, "assign", road=True)}'
         f'<style>.arow{{display:flex;justify-content:space-between;align-items:center;gap:.6rem;'
         f'padding:.35rem .2rem;border-bottom:1px solid var(--line);flex-wrap:wrap}}'
@@ -884,7 +899,7 @@ def xc_meet_day(mid):
             f'<br><span class="muted" style="font-size:.85rem">{STICKER_TIP}</span></div>')
     walkup = "" if _is_org(m) else _walkup_card(m, mid)
     from .meets import timer_qr_card
-    body = (f'<p class="muted"><a href="/meets">← Meets</a></p><h1>{escape(m["name"])}</h1>'
+    body = (f'<p class="muted">{_back_link(m)}</p><h1>{escape(m["name"])}</h1>'
             f'{_xc_tabs(mid, "meetday", road=(m["sport"]=="road"), organizer=_is_org(m))}'
             f'{allcam}{tbl}{print_bar}{walkup}{timer_qr_card(m)}')
     return shell(g.principal, body, active="meets")
@@ -943,6 +958,7 @@ def console(rid):
     <button onclick="recordBib()">✔ <span id="verb">Assign</span></button>
     <span id="slot" class="muted"></span>
   </div>
+  <div id="bibmsg" role="status" style="margin-top:.5rem;font-weight:600;color:#f0b429"></div>
   <div id="help" class="muted" style="margin-top:.5rem"></div>
 </div>
 <div class="card"><h2>Finishers (<span id="count">0</span>)</h2>
@@ -1064,8 +1080,11 @@ async function toggleLock(){{
                      +'edits keep working.'))return;
     try{{ await jpost('/races/'+RID+'/lock',{{}}); }}catch(e){{ alert(e.message); }} }}
   load(); }}
+function bibMsg(t){{ document.getElementById('bibmsg').textContent=t||''; }}
 async function recordBib(){{ const el=document.getElementById('bib'); const v=el.value.trim(); if(!v)return;
   try{{ const j=await jpost('/races/'+RID+'/finish',{{bib:v}});
+    if(j&&j.duplicate) bibMsg('⚠ Bib '+v+(j.name?' ('+j.name+')':'')+' is already in'+(j.place?' at #'+j.place:'')+'. Not added again.');
+    else bibMsg(j&&j.note?'⚠ '+j.note:'');
     if(j&&j.warn) alert('⚠ '+j.warn); el.value=''; el.focus(); load(); }}
   catch(e){{ alert(e.message); el.select(); }} }}
 async function ins(id){{ if(!confirm('Open this place for a missed runner? The runners from here down each slide one place later into the tapped times below - no times change. Then type the missed bib into the blank row.'))return;
@@ -1075,7 +1094,7 @@ async function ins(id){{ if(!confirm('Open this place for a missed runner? The r
   await load();
   const box=document.querySelector('#rows tr:nth-child('+(at+1)+') input'); if(box) box.focus(); }}
 async function insEnd(){{ await jpost('/races/'+RID+'/insert',{{}}); load(); }}
-async function setBib(id,v){{ try{{ const j=await jpost('/finishers/'+id+'/bib',{{bib:v}}); if(j&&j.warn) alert('⚠ '+j.warn); }}catch(e){{ alert(e.message); }} load(); }}
+async function setBib(id,v){{ try{{ const j=await jpost('/finishers/'+id+'/bib',{{bib:v}}); bibMsg(j&&j.note?'⚠ '+j.note:''); if(j&&j.warn) alert('⚠ '+j.warn); }}catch(e){{ alert(e.message); }} load(); }}
 async function dq(id){{ await jpost('/finishers/'+id+'/dq',{{}}); load(); }}
 async function del(id){{ if(!confirm('Delete finisher?'))return; await jpost('/finishers/'+id+'/delete',{{}}); load(); }}
 function dstart(e,id){{ dragging=true; dragId=id; e.dataTransfer.effectAllowed='move'; }}
@@ -1409,12 +1428,13 @@ def race_finish(rid):
     if bib <= 0:
         return jsonify(error="Enter a bib number"), 400
     conn = db.connect()
-    dup = conn.execute("SELECT snap_name FROM finishers WHERE race_id=? AND bib=?",
+    dup = conn.execute("SELECT seq, snap_name FROM finishers WHERE race_id=? AND bib=?",
                        (rid, bib)).fetchone()
     if dup:
-        # Accidental double-scan at the line: silently discard, don't block the timer.
+        # Accidental double-scan at the line: discard, don't block the timer. The caller is
+        # told which finisher already has the bib so a typed duplicate isn't a silent no-op.
         conn.close()
-        return jsonify(ok=True, duplicate=True)
+        return jsonify(ok=True, duplicate=True, bib=bib, name=dup["snap_name"], place=dup["seq"])
     cam_mode = (request.get_json(silent=True) or {}).get("mode")  # noqa: F841 (kept for callers)
     snap = _snap_for_bib(conn, m, bib)
     # An open (bib-less) slot means a runner ALREADY crossed at a known time — from a tap,
@@ -1435,7 +1455,8 @@ def race_finish(rid):
         warn = _road_unassigned_warn(conn, m, rid, bib)
         conn.commit()
         conn.close()
-        return jsonify(ok=True, bib=bib, name=snap[0], school=snap[3], remaining=remaining, warn=warn)
+        return jsonify(ok=True, bib=bib, name=snap[0], school=snap[3], remaining=remaining, warn=warn,
+                       note=_unknown_bib_note(m, bib, snap, warn))
     # No open slot: record a new finisher at the current race time (scan-at-finish).
     # Requires the race to be running.
     start = _parse(r["start_time"])
@@ -1452,7 +1473,8 @@ def race_finish(rid):
     warn = _road_unassigned_warn(conn, m, rid, bib)
     conn.commit()
     conn.close()
-    return jsonify(ok=True, bib=bib, name=snap[0], school=snap[3], remaining=0, warn=warn)
+    return jsonify(ok=True, bib=bib, name=snap[0], school=snap[3], remaining=0, warn=warn,
+                   note=_unknown_bib_note(m, bib, snap, warn))
 
 
 @bp.post("/races/<int:rid>/tap")
@@ -1491,7 +1513,7 @@ def finisher_bib(fid):
     _, m = _race_or_403(f["race_id"], can_record_meet)
     raw = (request.get_json(silent=True) or {}).get("bib")
     conn = db.connect()
-    warn = None
+    warn = note = None
     if raw in (None, "", "0"):
         conn.execute("UPDATE finishers SET bib=NULL, snap_name=NULL, snap_grade=NULL, "
                      "snap_gender=NULL, snap_school=NULL, snap_age=NULL WHERE id=?", (fid,))
@@ -1512,9 +1534,10 @@ def finisher_bib(fid):
             "UPDATE finishers SET bib=?, snap_name=?, snap_grade=?, snap_gender=?, snap_school=?, "
             "snap_age=? WHERE id=?", (bib, *snap, fid))
         warn = _road_unassigned_warn(conn, m, f["race_id"], bib)
+        note = _unknown_bib_note(m, bib, snap, warn)
     conn.commit()
     conn.close()
-    return jsonify(ok=True, warn=warn)
+    return jsonify(ok=True, warn=warn, note=note)
 
 
 @bp.post("/finishers/<int:fid>/dq")

@@ -250,8 +250,40 @@ def extract_text(filename, data):
         return _pdf_text(data)
     if ext in ("docx", "doc"):
         return _docx_text(data)
+    if ext in IMAGE_EXTS:
+        return _photo_text(data)
+    if ext in ("heic", "heif"):
+        raise RosterParseError("that photo format (HEIC) can't be read here; send it as a JPEG "
+                               "or PNG, or take a screenshot of it")
     # Unknown — try utf-8.
     return data.decode("utf-8", "replace")
+
+
+IMAGE_EXTS = ("jpg", "jpeg", "png", "webp", "gif")
+_ROSTER_PHOTO_SYS = (
+    "You transcribe a photographed or scanned team roster or sign-up sheet. Copy EVERY row "
+    "exactly as written: one person per line, columns separated by a tab, with the header row "
+    "first if the sheet has one. Do not skip rows, do not correct or invent names, and do not "
+    "add commentary. Write [illegible] for a cell you cannot read. Output only the transcription."
+)
+
+
+def _photo_text(data):
+    """A photo of a paper roster -> its rows as tab-separated text, which normalize_roster then
+    reads like any spreadsheet. The coach still reviews every row before anything is saved."""
+    try:
+        from PIL import Image, ImageOps
+        im = ImageOps.exif_transpose(Image.open(io.BytesIO(data))).convert("RGB")
+        im.thumbnail((2200, 2200))            # plenty for handwriting, well under the upload limit
+        buf = io.BytesIO()
+        im.save(buf, "JPEG", quality=88)
+    except Exception as e:                    # noqa: BLE001 -- not an image we can open
+        raise RosterParseError("that photo could not be opened; send a JPEG or PNG") from e
+    text = claude_vision(_ROSTER_PHOTO_SYS, "Transcribe this roster.", buf.getvalue(),
+                         media_type="image/jpeg", max_tokens=8000)
+    if not (text or "").strip():
+        raise RosterParseError("no names could be read from that photo")
+    return text
 
 
 def _xlsx_text(data):
