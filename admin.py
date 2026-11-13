@@ -133,6 +133,45 @@ def _self_serve_note(d):
             f'font-size:.72rem;font-weight:700">Self-serve</span> <span class="muted" style="font-size:.78rem">{bits}</span>')
 
 
+def _domain_cell(d, all_rows):
+    """Districts page: the email domain(s) whose coaches join this district when they sign
+    themselves up at /start (signup.py)."""
+    mine = signup.email_domains(d["settings_json"])
+    shared = sorted({x for o in all_rows if o["id"] != d["id"]
+                     for x in signup.email_domains(o["settings_json"]) if x in mine})
+    warn = (f'<br><span style="color:#b3261e;font-size:.74rem">⚠ {escape(", ".join(shared))} is also on '
+            f'another district, so it matches neither</span>' if shared else "")
+    return (f'<form class="inline" method="post" action="/districts/{d["id"]}/email-domains" '
+            f'style="display:block;margin-top:.3rem"><input name="domains" value="{escape(", ".join(mine))}" '
+            f'placeholder="email domain, e.g. district.org" title="A coach who signs up at /start with an '
+            f'address at exactly this domain joins this district instead of getting a new one. '
+            f'Blank = nobody joins automatically." style="width:170px;font-size:.78rem"> '
+            f'<button class="ghost" type="submit">Set</button></form>{warn}')
+
+
+@bp.post("/districts/<int:did>/email-domains")
+@role_required("super_admin")
+def set_email_domains(did):
+    conn = db.connect()
+    d = conn.execute("SELECT settings_json FROM districts WHERE id=?", (did,)).fetchone()
+    if not d:
+        conn.close()
+        abort(404)
+    try:
+        s = json.loads(d["settings_json"] or "{}")
+    except (ValueError, TypeError):
+        s = {}
+    doms = signup.parse_domains(request.form.get("domains"))
+    if doms:
+        s["email_domains"] = doms
+    else:
+        s.pop("email_domains", None)
+    conn.execute("UPDATE districts SET settings_json=? WHERE id=?", (json.dumps(s), did))
+    conn.commit()
+    conn.close()
+    return redirect("/districts")
+
+
 @bp.get("/districts")
 @role_required("super_admin")
 def list_districts():
@@ -174,7 +213,7 @@ def list_districts():
                      f'style="width:140px;font-size:.72rem"> <button class="ghost" type="submit">Set</button></form>')
         body_rows.append(
             f'<tr><td><b>{escape(d["name"])}</b><br>'
-            f'<span class="muted">{escape(d["slug"])}</span>{_self_serve_note(d)}</td>'
+            f'<span class="muted">{escape(d["slug"])}</span>{_self_serve_note(d)}{_domain_cell(d, rows)}</td>'
             f'<td>{logo_cell}</td>'
             f'<td>{sc} schools</td><td>{us} users</td>'
             f'<td>{billing.plan_cell(d)}</td>'
@@ -186,7 +225,7 @@ def list_districts():
             f'onsubmit="return confirm(\'Delete {escape(d["name"])} and ALL its data?\')">'
             f'<button class="danger" type="submit">Delete</button></form></td></tr>'
         )
-    table = (f'<div class="card"><table><tr><th>District</th><th>Logo</th><th>Schools</th>'
+    table = (f'<div class="card"><table><tr><th>District<br><span class="muted" style="font-weight:400;font-size:.74rem">and sign-up email domain</span></th><th>Logo</th><th>Schools</th>'
              f'<th>Users</th><th>Plan</th><th>Public results</th><th>Road races</th><th>Grades</th><th></th></tr>'
              f'{"".join(body_rows)}</table></div>'
              if rows else '<div class="card muted">No districts yet.</div>')

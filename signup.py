@@ -16,10 +16,25 @@ Nothing here costs XCTimer anything: the meet they build cannot be timed until t
 meet fee is paid or a promo code is entered. Every sign-up emails the operator, so each one
 is a lead -- including the ones that belong in a district subscription instead.
 
-A sign-up never joins an existing district, even when the name matches: that would show
-another school's roster to whoever typed the name. The operator email points out a likely
-match so the two can be merged by hand.
+A sign-up never joins an existing district because the NAME matches: that would show another
+school's roster to whoever typed the name. The operator email points out a likely match so the
+two can be merged by hand.
+
+Joining by email domain (1.118.0, Rob 2026-11-13). A district can carry its email domain(s) in
+settings_json["email_domains"] -- set by Super Admin on the Districts page, and recorded
+automatically when a self-serve district is created from a non-public address. When a new
+sign-up's address is at exactly that domain:
+
+  * the school is added to that district instead of a new district being made, or
+  * if the school looks like one already there, the coach is shown it and asked to confirm,
+    and is then added as a coach of the existing school.
+
+What keeps this safe is the same thing that proves any sign-up: the login only works from the
+link emailed to that address, so only someone with a mailbox at the district's domain gets in.
+Public mail providers (gmail.com and friends) never match and are never recorded. A domain
+claimed by two districts matches neither. Every join emails the operator.
 """
+import difflib
 import json
 import logging
 import os
@@ -41,19 +56,100 @@ LEVELS = {                      # form value -> (label, district grade list or N
     "hs": ("High school", [9, 10, 11, 12]),
     "both": ("Both (grades 6-12)", [6, 7, 8, 9, 10, 11, 12]),
 }
-_HITS = {}                      # ip -> [timestamps]; a small in-memory brake on scripted sign-ups
-_MAX_PER_HOUR = 5
+_HITS = {}                      # (bucket, ip) -> [timestamps]; a small in-memory brake on scripted sign-ups
+_MAX_PER_HOUR = 5               # sign-ups (anything that creates a row or sends an email)
+_MAX_LOOKUPS = 30               # "is this your school?" pages, which create and send nothing
+
+# Mail providers anyone can get an address at: never a district's own domain.
+PUBLIC_DOMAINS = frozenset("""
+gmail.com googlemail.com yahoo.com ymail.com rocketmail.com yahoo.co.uk yahoo.ca hotmail.com
+hotmail.co.uk outlook.com live.com msn.com icloud.com me.com mac.com aol.com aim.com
+proton.me protonmail.com pm.me gmx.com gmx.net mail.com zoho.com hey.com fastmail.com
+fastmail.fm tutanota.com tuta.io yandex.com duck.com comcast.net xfinity.com att.net
+sbcglobal.net bellsouth.net verizon.net cox.net charter.net spectrum.net twc.com rr.com
+roadrunner.com centurylink.net q.com frontier.com frontiernet.net windstream.net
+earthlink.net juno.com netzero.net optonline.net optimum.net suddenlink.net mediacombb.net
+cableone.net sparklight.net tds.net embarqmail.com shaw.ca rogers.com bell.net telus.net
+sympatico.ca btinternet.com sky.com qq.com 163.com mail.ru
+""".split())
 
 
-def _throttled(ip):
+def _throttled(ip, bucket="signup", limit=_MAX_PER_HOUR):
     now = time.time()
-    hits = [t for t in _HITS.get(ip, []) if now - t < 3600]
-    if len(hits) >= _MAX_PER_HOUR:
-        _HITS[ip] = hits
+    key = (bucket, ip)
+    hits = [t for t in _HITS.get(key, []) if now - t < 3600]
+    if len(hits) >= limit:
+        _HITS[key] = hits
         return True
     hits.append(now)
-    _HITS[ip] = hits
+    _HITS[key] = hits
     return False
+
+
+# ------------------------------- joining a district by email domain -------------------------------
+def parse_domains(text):
+    """'@Alpine District.org, foo.k12.ut.us' -> ['alpinedistrict.org', ...]; junk and public
+    mail providers are dropped."""
+    out = []
+    for raw in re.split(r"[\s,;]+", (text or "").lower()):
+        d = raw.strip().lstrip("@").strip(".")
+        if re.fullmatch(r"[a-z0-9-]+(\.[a-z0-9-]+)+", d) and d not in PUBLIC_DOMAINS and d not in out:
+            out.append(d)
+    return out[:5]
+
+
+def email_domains(settings_json):
+    try:
+        v = json.loads(settings_json or "{}").get("email_domains") or []
+    except (ValueError, TypeError):
+        return []
+    return [d for d in v if isinstance(d, str)]
+
+
+def districts_claiming(conn, domain):
+    if not domain or domain in PUBLIC_DOMAINS:
+        return []
+    return [d for d in conn.execute("SELECT id, name, settings_json FROM districts ORDER BY id").fetchall()
+            if domain in email_domains(d["settings_json"])]
+
+
+def district_for_domain(conn, domain):
+    """The one district whose email domain is exactly `domain`, else None (two claims = none)."""
+    hits = districts_claiming(conn, domain)
+    return hits[0] if len(hits) == 1 else None
+
+
+_LEVEL_WORDS = {"middle", "junior", "jr", "high", "senior", "sr", "school", "schools", "ms", "jhs",
+                "jh", "hs", "intermediate", "the"}
+
+
+def _core(name):
+    """'Lehi Jr. High School' -> 'lehi': the part of a school name people actually type."""
+    toks = re.sub(r"[^a-z0-9 ]+", " ", (name or "").lower().replace("&", " and ")).split()
+    return " ".join([t for t in toks if t not in _LEVEL_WORDS] or toks)
+
+
+def _looks_like(a, b):
+    """Score 0..3 for how alike two school names are (0 = not alike)."""
+    a, b = _core(a), _core(b)
+    if not a or not b:
+        return 0
+    if a == b:
+        return 3
+    if min(len(a), len(b)) >= 4 and (a.startswith(b + " ") or b.startswith(a + " ")):
+        return 2
+    initials = lambda s: "".join(t[0] for t in s.split())                    # noqa: E731
+    if (len(a) >= 2 and " " in b and initials(b) == a) or (len(b) >= 2 and " " in a and initials(a) == b):
+        return 2                                                             # "AF" ~ "American Fork"
+    return 1 if difflib.SequenceMatcher(None, a, b).ratio() >= 0.85 else 0
+
+
+def matching_schools(conn, did, name):
+    """Schools already in the district that look like the one typed, best match first."""
+    rows = conn.execute("SELECT id, name FROM schools WHERE district_id=? AND COALESCE(guest,0)=0 "
+                        "ORDER BY name", (did,)).fetchall()
+    scored = [(_looks_like(name, r["name"]), r) for r in rows]
+    return [r for sc, r in sorted(scored, key=lambda x: -x[0]) if sc][:4]
 
 
 def _ip():
@@ -148,6 +244,25 @@ def _sent(email):
                  f'<a href="/start">Go back</a>.</p></div>')
 
 
+def _confirm(f, district, cands):
+    """The district is already here and a school in it looks like theirs: ask, do not guess."""
+    hidden = "".join(f'<input type="hidden" name="{k}" value="{escape(f.get(k, ""))}">'
+                     for k in ("school", "district", "state", "who", "email", "level"))
+    yes = "".join(f'<button class="btn" style="display:block;width:100%;margin:.5rem 0;text-align:left" '
+                  f'name="match" value="{c["id"]}" type="submit">Yes, I coach at {escape(c["name"])}</button>'
+                  for c in cands)
+    one = len(cands) == 1
+    return _page("Is this your school?", f"""<h1>Is this your school?</h1>
+<div class="card"><p><b>{escape(district["name"])}</b> already uses XCTimer, and
+{"a school there looks" if one else "these schools there look"} like <b>{escape(f["school"])}</b>.</p>
+<form method="post" action="/start">{hidden}{yes}
+<button class="btn" style="display:block;width:100%;margin:.5rem 0;text-align:left;background:#fff;color:#164271;border:1px solid #cdd7e2"
+ name="match" value="new" type="submit">No, add {escape(f["school"])} as a new school</button>
+<p class="fine" style="margin:.8rem 0 0">Either way we email <b>{escape(f["email"])}</b> a private link to
+finish. Choosing your existing school adds you as one of its coaches, with its roster and meets.</p>
+</form></div><p class="fine"><a href="/start">← Start over</a></p>""")
+
+
 @bp.get("/start")
 def start():
     if getattr(g, "principal", None) and not getattr(g.principal, "meet_scope", None):
@@ -166,9 +281,34 @@ def create():
         return _sent(f["email"] or "you")
     if not f["school"] or not f["who"] or not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", f["email"]):
         return _form("Please enter your school, your name and a valid email.", f), 400
+    too_many = (_form("Too many sign-ups from this network. Please try again in an hour, "
+                      "or email rob@xctimer.com.", f), 429)
+
+    # Is their district already here? Only an exact email-domain match counts (see the docstring).
+    domain = f["email"].rsplit("@", 1)[1]
+    conn = db.connect()
+    home = district_for_domain(conn, domain)
+    home = dict(home) if home else None
+    join = None                                      # the existing school they confirmed, if any
+    if home:
+        choice = request.form.get("match", "")
+        if choice.isdigit():
+            join = conn.execute("SELECT id, name FROM schools WHERE id=? AND district_id=? AND "
+                                "COALESCE(guest,0)=0", (int(choice), home["id"])).fetchone()
+            join = dict(join) if join else None
+        if not join and choice != "new":
+            cands = [dict(c) for c in matching_schools(conn, home["id"], f["school"])]
+            if cands:
+                # Asked before the existing-account check on purpose: the page must look the
+                # same whether or not this address already has a login.
+                conn.close()
+                if _throttled(_ip(), "lookup", _MAX_LOOKUPS):
+                    return too_many
+                return _confirm(f, home, cands)
+    conn.close()
+
     if _throttled(_ip()):
-        return _form("Too many sign-ups from this network. Please try again in an hour, "
-                     "or email rob@xctimer.com.", f), 429
+        return too_many
 
     existing = find_user_by_email(f["email"])
     if existing:
@@ -178,6 +318,28 @@ def create():
 
     from .road import _attr_from_cookie
     attr = _attr_from_cookie()
+
+    if home:                                         # join the district that is already here
+        did = home["id"]
+        if join:
+            sid, school, kind = join["id"], join["name"], "coach"
+        else:
+            conn = db.connect()
+            sid = conn.execute("INSERT INTO schools (district_id, name) VALUES (?,?)",
+                               (did, f["school"])).lastrowid
+            conn.commit()
+            conn.close()
+            school, kind = f["school"], "school"
+        _uid, token = create_user(f["email"], "coach", district_id=did, name=f["who"], school_ids=[sid])
+        log.info("self-serve sign-up joined district %s by email domain: %s %s", did, kind, sid)
+        _send_welcome(f["email"], f["who"], school, token, joined=home["name"], kind=kind,
+                      subscribed=billing.plan_of(home["settings_json"]) == billing.PLAN_SUB)
+        try:
+            _notify_operator(f, did, [], attr, joined=home, kind=kind, school=school)
+        except Exception:
+            log.exception("sign-up notification failed for district %s", did)
+        return _sent(f["email"])
+
     dname = f["district"] or f["school"]
     conn = db.connect()
     similar = [r["name"] for r in conn.execute(
@@ -185,6 +347,8 @@ def create():
     settings = {"plan": billing.PLAN_MEET,
                 "self_serve": {"at": _iso(_now()), "by": f["email"], "state": f["state"],
                                "level": f["level"], "attribution": attr}}
+    if domain not in PUBLIC_DOMAINS and parse_domains(domain) and not districts_claiming(conn, domain):
+        settings["email_domains"] = [domain]         # the next coach at this domain joins this district
     if LEVELS[f["level"]][1]:
         settings["grades"] = LEVELS[f["level"]][1]
     did = conn.execute("INSERT INTO districts (name, slug, settings_json) VALUES (?,?,?)",
@@ -203,15 +367,31 @@ def create():
 
 
 # ------------------------------- emails -------------------------------
-def _send_welcome(email, who, school, token):
+def _send_welcome(email, who, school, token, joined=None, kind=None, subscribed=False):
+    """joined = the name of the existing district they were added to (by email domain);
+    kind = "coach" (an existing school) or "school" (a new school in that district)."""
     link = f"{_public_url()}/setup?token={token}"
     fee = billing.fee_str()
-    send_email(email, f"Finish setting up {school} on XCTimer",
-               f"<p>Hi {escape(who)},</p>"
-               f"<p><b>{escape(school)}</b> is ready on XCTimer. Choose a password to get in:</p>"
+    if joined and kind == "coach":
+        subject = f"You're a coach for {school} on XCTimer"
+        intro = (f"<p>You have been added as a coach for <b>{escape(school)}</b>, which "
+                 f"{escape(joined)} already has on XCTimer. Choose a password to get in:</p>")
+        nxt = "<p>Your school's roster and meets are already there. "
+    elif joined:
+        subject = f"Finish setting up {school} on XCTimer"
+        intro = (f"<p><b>{escape(school)}</b> has been added to <b>{escape(joined)}</b>, which already "
+                 f"uses XCTimer. Choose a password to get in:</p>")
+        nxt = "<p>Then import your roster and build your first meet. "
+    else:
+        subject = f"Finish setting up {school} on XCTimer"
+        intro = f"<p><b>{escape(school)}</b> is ready on XCTimer. Choose a password to get in:</p>"
+        nxt = "<p>Then import your roster and build your first meet. "
+    money = ("</p>" if joined and subscribed else
+             f"Setting everything up is free. It is {fee} when a meet goes live, and visiting teams never pay.</p>")
+    send_email(email, subject,
+               f"<p>Hi {escape(who)},</p>{intro}"
                f'<p><a href="{link}">{link}</a></p>'
-               f"<p>Then import your roster and build your first meet. Setting everything up is free. "
-               f"It is {fee} when a meet goes live, and visiting teams never pay.</p>"
+               f"{nxt}{money}"
                f"<p>The link works for 7 days. If you didn't ask for this, ignore this email.</p>"
                f"<p>Questions? Just reply, or write to rob@xctimer.com.</p>")
 
@@ -230,8 +410,10 @@ def _email_existing(u):
     send_email(u["email"], "Your XCTimer account", body + "<p>If this wasn't you, ignore this email.</p>")
 
 
-def _notify_operator(f, did, similar, attr):
+def _notify_operator(f, did, similar, attr, joined=None, kind=None, school=None):
     to = os.environ.get("XC_REG_NOTIFY", "rob@xctimer.com")
+    if joined:
+        return _notify_join(to, f, joined, kind, school, attr)
     rows = [("School", f["school"]), ("District", f["district"] or "(none given)"),
             ("Level", LEVELS[f["level"]][0]), ("State", f["state"] or "-"),
             ("Contact", f"{f['who']} <{f['email']}>"),
@@ -246,6 +428,34 @@ def _notify_operator(f, did, similar, attr):
                f'<p><a href="{_public_url()}/districts">Open Districts</a></p>')
 
 
+def _notify_join(to, f, district, kind, school, attr):
+    """A sign-up that joined an existing district because the email domain matched."""
+    plan = billing.PLAN_LABEL[billing.plan_of(district["settings_json"])]
+    domain = f["email"].rsplit("@", 1)[1]
+    if kind == "coach":
+        subject = f"Coach joined {school}: {f['who']}"
+        what = (f"A coach signed up and confirmed an existing school, so they were added as a coach "
+                f"of <b>{escape(school)}</b> and can see its roster and meets.")
+        typed = [("They typed", f["school"])]
+    else:
+        subject = f"School joined {district['name']}: {school}"
+        what = (f"A coach signed up and <b>{escape(school)}</b> was added as a new school in this "
+                f"district. Check it is not a duplicate of a school already there"
+                + (", and bill the school: this district is on the subscription." if plan == "Paid subscription" else "."))
+        typed = []
+    rows = [("District", f"{district['name']} (id {district['id']}, {plan})"),
+            ("Matched on", f"email domain {domain}"), ("School", school)] + typed + [
+            ("Level", LEVELS[f["level"]][0]), ("State", f["state"] or "-"),
+            ("Contact", f"{f['who']} <{f['email']}>"),
+            ("Came from", ", ".join(f"{k}={v}" for k, v in attr.items()) or "direct")]
+    trs = "".join(f"<tr><td><b>{escape(k)}</b></td><td>{escape(str(v))}</td></tr>" for k, v in rows)
+    send_email(to, subject,
+               f"<p>{what}</p><table cellpadding=4>{trs}</table>"
+               f"<p>They get in only from the link emailed to that address. If this person should not "
+               f"be there, remove them on the Users page.</p>"
+               f'<p><a href="{_public_url()}/districts">Open Districts</a></p>')
+
+
 # ------------------------------- first-run help -------------------------------
 def getting_started(p, did):
     """First-run card for a self-serve district until it has a roster and a meet. Shown on the
@@ -257,11 +467,17 @@ def getting_started(p, did):
     if not d or not is_self_serve(d["settings_json"]):
         conn.close()
         return ""
-    n_ath = conn.execute("SELECT COUNT(*) FROM athletes a JOIN schools s ON s.id=a.school_id "
-                         "WHERE s.district_id=?", (did,)).fetchone()[0]
+    mine = sorted(p.school_ids()) if p.role == "coach" else []
+    if mine:                                             # a coach: their own school's roster
+        marks = ",".join("?" * len(mine))
+        n_ath = conn.execute(f"SELECT COUNT(*) FROM athletes WHERE school_id IN ({marks})", mine).fetchone()[0]
+        sid = {"id": mine[0]}
+    else:
+        n_ath = conn.execute("SELECT COUNT(*) FROM athletes a JOIN schools s ON s.id=a.school_id "
+                             "WHERE s.district_id=?", (did,)).fetchone()[0]
+        sid = conn.execute("SELECT id FROM schools WHERE district_id=? AND COALESCE(guest,0)=0 ORDER BY id",
+                           (did,)).fetchone()
     n_meet = conn.execute("SELECT COUNT(*) FROM meets WHERE district_id=?", (did,)).fetchone()[0]
-    sid = conn.execute("SELECT id FROM schools WHERE district_id=? AND COALESCE(guest,0)=0 ORDER BY id",
-                       (did,)).fetchone()
     conn.close()
     if n_ath and n_meet:
         return ""

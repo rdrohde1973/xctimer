@@ -55,6 +55,7 @@ d = q("SELECT * FROM districts")[0]
 s = json.loads(d["settings_json"])
 assert d["name"] == "Maple Grove School District" and s["plan"] == "per_meet" and "grades" not in s
 assert s["self_serve"]["by"] == "pat@maplegrove.example" and s["self_serve"]["state"] == "Utah"
+assert s["email_domains"] == ["maplegrove.example"]          # the next coach at this domain joins this district
 sch = q("SELECT * FROM schools")[0]
 u = q("SELECT * FROM users")[0]
 assert sch["district_id"] == d["id"] and sch["name"] == "Maple Grove Middle School"
@@ -128,7 +129,9 @@ conn.execute("INSERT INTO users (district_id, email, name, role, setup_token) VA
              (d["id"], "invited@maplegrove.example", "Invited", "coach", "oldtoken"))
 conn.commit(); conn.close()
 MAIL.clear()
-anon("10.0.0.2").post("/start", data=dict(FORM, email="invited@maplegrove.example"), headers=H)
+r = anon("10.0.0.2").post("/start", data=dict(FORM, email="invited@maplegrove.example"), headers=H)
+assert b"Is this your school?" in r.data and not MAIL        # same question as for a brand-new address
+anon("10.0.0.2").post("/start", data=dict(FORM, email="invited@maplegrove.example", match=str(sch["id"])), headers=H)
 tok = q("SELECT setup_token FROM users WHERE email='invited@maplegrove.example'")[0][0]
 assert len(MAIL) == 1 and tok != "oldtoken" and f"/setup?token={tok}" in MAIL[0][2]
 print("PASS 5: signing up with an existing address creates nothing and never reveals the account on the page")
@@ -136,13 +139,14 @@ print("PASS 5: signing up with an existing address creates nothing and never rev
 # 6. a matching district name makes a SEPARATE district and flags it to the operator
 MAIL.clear()
 r = anon("10.0.0.3").post("/start", data=dict(FORM, school="Maple Grove High School", level="hs",
-                                             email="lee@maplegrove.example", who="Lee Coach"), headers=H)
+                                             email="lee@elsewhere.example", who="Lee Coach"), headers=H)
+assert b"Check your email" in r.data                          # a different email domain: no question asked
 ds = q("SELECT * FROM districts ORDER BY id")
 assert len(ds) == 2 and ds[1]["slug"] != ds[0]["slug"] and json.loads(ds[1]["settings_json"])["grades"] == [9, 10, 11, 12]
-assert q("SELECT district_id FROM users WHERE email='lee@maplegrove.example'")[0][0] == ds[1]["id"]
+assert q("SELECT district_id FROM users WHERE email='lee@elsewhere.example'")[0][0] == ds[1]["id"]
 assert "already exists" in MAIL[1][2]
 lee = application.test_client()
-lee.set_cookie(auth.SESSION_COOKIE, auth.create_session(q("SELECT id FROM users WHERE email='lee@maplegrove.example'")[0][0]))
+lee.set_cookie(auth.SESSION_COOKIE, auth.create_session(q("SELECT id FROM users WHERE email='lee@elsewhere.example'")[0][0]))
 assert lee.get(f"/schools/{sch['id']}").status_code in (403, 404)                    # cannot see the other school
 assert lee.get(f"/meets/{mid}").status_code == 403
 # no district given: the school name is used
@@ -158,7 +162,7 @@ assert anon("10.0.0.5").post("/start", data=dict(FORM, email="not-an-email"), he
 assert anon("10.0.0.5").post("/start", data=dict(FORM, school="", email="a@b.example"), headers=H).status_code == 400
 r = anon("10.0.0.5").post("/start", data=dict(FORM, email="bot@spam.example", website="http://spam"), headers=H)
 assert r.status_code == 200 and not q("SELECT 1 FROM users WHERE email='bot@spam.example'")
-codes = [anon("10.0.0.9").post("/start", data=dict(FORM, school=f"Flood {i}", email=f"f{i}@flood.example"),
+codes = [anon("10.0.0.9").post("/start", data=dict(FORM, school=f"Flood {i}", email=f"f{i}@flood{i}.example"),
                                headers=H).status_code for i in range(7)]
 assert codes == [200] * 5 + [429] * 2, codes
 assert len(q("SELECT 1 FROM districts")) == n + 5
@@ -198,4 +202,108 @@ assert "$100 per event" in own and "xctimer.com/host" in own and "auto-deletes 3
 assert "Ask the Ref" not in c.get("/meets").get_data(as_text=True)                     # a school coach: no Ref
 assert c.post("/host/chat", json={"message": "hi"}, headers=H).status_code == 403
 print("PASS 9: race directors get the Ref on their event pages, with a guide that fits their account")
+
+# 10. a coach whose email domain is exactly an existing district's joins that district
+def users_of(email):
+    return q("SELECT u.*, (SELECT group_concat(school_id) FROM user_schools WHERE user_id=u.id) AS sids "
+             "FROM users u WHERE email=?", email)
+
+n_d = len(q("SELECT 1 FROM districts"))
+n_s = len(q("SELECT 1 FROM schools"))
+# a NEW school at the district's domain is added to that district: no new district, no question
+MAIL.clear()
+r = anon("10.0.1.1").post("/start", data=dict(FORM, school="Oak Hollow Middle School", district="whatever they type",
+                                             email="Kim@MapleGrove.example", who="Kim Coach"), headers=H)
+assert r.status_code == 200 and b"Check your email" in r.data
+assert len(q("SELECT 1 FROM districts")) == n_d and len(q("SELECT 1 FROM schools")) == n_s + 1
+oak = q("SELECT * FROM schools WHERE name='Oak Hollow Middle School'")[0]
+kim = users_of("kim@maplegrove.example")[0]
+assert oak["district_id"] == d["id"] and kim["district_id"] == d["id"] and kim["role"] == "coach"
+assert kim["sids"] == str(oak["id"]) and not kim["password_hash"]
+(to1, subj1, html1), (to2, subj2, html2) = MAIL
+assert to1 == "kim@maplegrove.example" and "has been added to <b>Maple Grove School District</b>" in html1
+assert kim["setup_token"] in html1 and "$100 when a meet goes live" in html1
+assert to2 == "rob@xctimer.com" and subj2 == "School joined Maple Grove School District: Oak Hollow Middle School"
+assert "email domain maplegrove.example" in html2 and "not a duplicate" in html2 and "bill the school" not in html2
+
+# a school that LOOKS like one already there: they are asked first, and nothing is created yet
+MAIL.clear()
+before = (len(q("SELECT 1 FROM users")), len(q("SELECT 1 FROM schools")))
+r = anon("10.0.1.2").post("/start", data=dict(FORM, school="maple grove jr. high", email="jo@maplegrove.example", who="Jo Coach"), headers=H)
+page = r.get_data(as_text=True)
+assert r.status_code == 200 and "Is this your school?" in page and "Maple Grove School District" in page
+assert f'name="match" value="{sch["id"]}"' in page and "Yes, I coach at Maple Grove Middle School" in page
+assert 'name="match" value="new"' in page and "No, add maple grove jr. high as a new school" in page
+assert "Oak Hollow" not in page                               # only schools that look like theirs are shown
+assert 'name="email" value="jo@maplegrove.example"' in page and 'name="who" value="Jo Coach"' in page
+assert not MAIL and before == (len(q("SELECT 1 FROM users")), len(q("SELECT 1 FROM schools")))
+
+# "Yes": added as a coach of the EXISTING school; no new school, no new district
+r = anon("10.0.1.2").post("/start", data=dict(FORM, school="maple grove jr. high", email="jo@maplegrove.example",
+                                             who="Jo Coach", match=str(sch["id"])), headers=H)
+assert b"Check your email" in r.data
+jo = users_of("jo@maplegrove.example")[0]
+assert jo["role"] == "coach" and jo["district_id"] == d["id"] and jo["sids"] == str(sch["id"])
+assert len(q("SELECT 1 FROM schools")) == before[1] and len(q("SELECT 1 FROM districts")) == n_d
+assert "added as a coach for <b>Maple Grove Middle School</b>" in MAIL[0][2] and jo["setup_token"] in MAIL[0][2]
+assert MAIL[1][1] == "Coach joined Maple Grove Middle School: Jo Coach" and "maple grove jr. high" in MAIL[1][2]
+jw = anon()
+jw.post("/setup", data={"token": jo["setup_token"], "password": "correct horse", "confirm": "correct horse"}, headers=H)
+roster = jw.get(f"/schools/{sch['id']}")
+assert roster.status_code == 200 and "Ada Runner" in roster.get_data(as_text=True)          # the existing roster
+assert jw.get(f"/schools/{oak['id']}").status_code in (403, 404)                          # not the other school
+
+# "No, add it as a new school": a second school with a similar name in the same district
+MAIL.clear()
+r = anon("10.0.1.3").post("/start", data=dict(FORM, school="Maple Grove High School", email="hs@maplegrove.example",
+                                             who="Hy Coach", match="new"), headers=H)
+assert b"Check your email" in r.data
+hs = q("SELECT * FROM schools WHERE name='Maple Grove High School' AND district_id=?", d["id"])
+assert len(hs) == 1 and users_of("hs@maplegrove.example")[0]["sids"] == str(hs[0]["id"])
+assert len(q("SELECT 1 FROM districts")) == n_d
+
+# a made-up or foreign school id is not a way in: they are asked again and nothing is created
+lone = q("SELECT id FROM schools WHERE name='Lone Pine Academy'")[0][0]
+for bad in (str(lone), "999999", "0", "x"):
+    r = anon("10.0.1.4").post("/start", data=dict(FORM, email="eve@maplegrove.example", match=bad), headers=H)
+    assert b"Is this your school?" in r.data, bad
+assert not users_of("eve@maplegrove.example")
+
+# public mail providers never match and are never recorded; a near-miss domain does not match
+anon("10.0.1.5").post("/start", data=dict(FORM, school="Gmail Middle School", district="", email="a.coach@gmail.com"), headers=H)
+anon("10.0.1.5").post("/start", data=dict(FORM, school="Other Gmail School", district="", email="b.coach@gmail.com"), headers=H)
+g1, g2 = users_of("a.coach@gmail.com")[0], users_of("b.coach@gmail.com")[0]
+assert g1["district_id"] != g2["district_id"]
+assert "email_domains" not in json.loads(q("SELECT settings_json FROM districts WHERE id=?", g1["district_id"])[0][0])
+for near in ("x@mail.maplegrove.example", "x@maplegrove.example.org", "x@notmaplegrove.example"):
+    r = anon("10.0.1.6").post("/start", data=dict(FORM, email=near), headers=H)
+    assert b"Check your email" in r.data, near
+    assert users_of(near)[0]["district_id"] != d["id"], near
+assert signup.parse_domains("@Alpine-District.org, gmail.com; bad_domain, k12.ut.us x") == ["alpine-district.org", "k12.ut.us"]
+
+# Super Admin sets a district's domain on the Districts page; a subscription district says so to the operator
+conn = db.connect()
+big = conn.execute("INSERT INTO districts (name, slug, settings_json) VALUES ('Big Valley Schools','big-valley',?)",
+                   (json.dumps({"plan": "subscription"}),)).lastrowid
+bvs = conn.execute("INSERT INTO schools (district_id, name) VALUES (?, 'Timberline')", (big,)).lastrowid
+conn.commit(); conn.close()
+assert c.post(f"/districts/{big}/email-domains", data={"domains": "bigvalley.example"}, headers=H).status_code == 403
+assert root.post(f"/districts/{big}/email-domains", data={"domains": " @BigValley.example, gmail.com "}, headers=H).status_code == 302
+assert signup.email_domains(q("SELECT settings_json FROM districts WHERE id=?", big)[0][0]) == ["bigvalley.example"]
+assert 'value="bigvalley.example"' in root.get("/districts").get_data(as_text=True)
+r = anon("10.0.1.7").post("/start", data=dict(FORM, school="Timberline Middle School", email="t@bigvalley.example", who="Tim"), headers=H)
+assert b"Yes, I coach at Timberline" in r.data
+MAIL.clear()
+anon("10.0.1.7").post("/start", data=dict(FORM, school="Cedar Fort Middle", email="cf@bigvalley.example", who="Cee"), headers=H)
+assert users_of("cf@bigvalley.example")[0]["district_id"] == big
+assert "$100" not in MAIL[0][2] and "bill the school" in MAIL[1][2] and "Paid subscription" in MAIL[1][2]
+# the same domain on two districts matches neither (a fresh district is made) and the page warns
+root.post(f"/districts/{lp['id']}/email-domains", data={"domains": "bigvalley.example"}, headers=H)
+assert "matches neither" in root.get("/districts").get_data(as_text=True)
+anon("10.0.1.8").post("/start", data=dict(FORM, school="Timberline", email="amb@bigvalley.example"), headers=H)
+amb = users_of("amb@bigvalley.example")[0]
+assert amb["district_id"] not in (big, lp["id"])
+root.post(f"/districts/{lp['id']}/email-domains", data={"domains": ""}, headers=H)             # cleared
+assert "email_domains" not in json.loads(q("SELECT settings_json FROM districts WHERE id=?", lp["id"])[0][0])
+print("PASS 10: an exact email-domain match joins the existing district; a look-alike school is confirmed first")
 print("ALL PASS")
