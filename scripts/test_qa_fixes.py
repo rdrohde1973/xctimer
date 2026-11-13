@@ -228,4 +228,28 @@ page = c.get(loc).get_data(as_text=True)
 assert "Not saved, because I could not read" in page and "Runner 1: abc" in page and "Everything else was saved" in page
 assert "Not saved" not in c.get(f"/meet-events/{ME}").get_data(as_text=True)
 print("PASS 7: an unreadable track time is named on the page and the earlier mark is kept")
+
+# 8. meets held before the change keep the team scores they were announced with
+from xctimerpkg import xc                                              # noqa: E402
+order = ["A"] * 7 + ["B"] + ["A", "A"] + ["B"] * 4
+def meet_with(date):
+    mid = ex("INSERT INTO meets (district_id, sport, name, date, public_token, team_scoring) VALUES (?,?,?,?,?,1)",
+             DID, "xc", "Dated " + str(date), date, "tok" + str(date))
+    rid = ex("INSERT INTO races (meet_id, name, capture_mode) VALUES (?, 'Boys', 'tapselect')", mid)
+    for i, s_ in enumerate(order):
+        ex("INSERT INTO finishers (race_id, seq, bib, elapsed_seconds, snap_name, snap_grade, snap_gender, snap_school) "
+           "VALUES (?,?,?,?,?,8,'M',?)", rid, i + 1, 500 + i, 600.0 + i, f"R{i}", s_)
+    return mid
+def b_score(mid):
+    by_race = {t["school"]: t["score"] for g_ in xc.build_results(mid).values() if isinstance(g_, dict)
+               for t in (g_.get("teams") or [])}
+    by_grade = {t["school"]: t["score"] for _l, teams, _n in xc._team_grade_gender_groups(mid) for t in teams}
+    return by_race.get("B"), by_grade.get("B")
+assert xc.FIRST_SEVEN_FROM == "2026-11-13"
+assert b_score(meet_with("2026-10-07")) == (58, 58)        # last season: as announced
+assert b_score(meet_with("2026-11-12")) == (58, 58)
+assert b_score(meet_with("2026-11-13")) == (50, 50)        # from the change on: first seven
+assert b_score(meet_with("2027-09-01")) == (50, 50)
+assert b_score(meet_with(None)) == (50, 50)                # undated: the current rule
+print("PASS 8: meets before 2026-11-13 keep their announced team scores; later meets use first seven")
 print("ALL PASS")

@@ -6,6 +6,7 @@ gender, MileSplit-style team scoring, xlsx export, and a public results page.
 """
 import io
 import json
+import os
 import re
 import time
 from collections import defaultdict
@@ -1663,7 +1664,21 @@ def race_insert(rid):
 
 
 # ------------------------------- scoring -------------------------------
-def team_scores(runners, fill_missing=False):
+# Meets dated before this keep the scoring they were announced with: every finisher on a
+# complete team held a team place. From this date on, only a team's first seven do
+# (Rob, 2026-11-13: "keep past meets as is"). A meet with no date uses the current rule.
+FIRST_SEVEN_FROM = os.environ.get("XC_FIRST_SEVEN_FROM", "2026-11-13")
+
+
+def first_seven_applies(mid):
+    conn = db.connect()
+    r = conn.execute("SELECT date FROM meets WHERE id=?", (mid,)).fetchone()
+    conn.close()
+    d = (r["date"] or "") if r else ""
+    return not d or d >= FIRST_SEVEN_FROM
+
+
+def team_scores(runners, fill_missing=False, first_seven=True):
     """MileSplit/Hy-Tek scoring. `runners` = time-sorted list of dicts with
     keys school, place-eligible. Drops teams <5, keeps each team's first 7, re-ranks,
     sums top 5, tracks 6th/7th displacers. Returns ranked list of team dicts.
@@ -1671,6 +1686,8 @@ def team_scores(runners, fill_missing=False):
     Only a team's first seven finishers hold a team place (1.117.0): the eighth runner and
     beyond are taken out of the team count like a runner from an incomplete team, so a big
     squad cannot push other teams' scorers back. Individual places are not affected.
+    first_seven=False is the earlier rule (every finisher on a complete team holds a place),
+    kept only so meets held before FIRST_SEVEN_FROM still show the scores they were given.
 
     fill_missing (the District Championship's 9th-grade rule): every school scores, even
     with fewer than 5 runners -- each "missing" runner counts as the number of finishers
@@ -1684,7 +1701,7 @@ def team_scores(runners, fill_missing=False):
     seen, scoring = defaultdict(int), []
     for r in on_teams:
         seen[r["school"]] += 1
-        if seen[r["school"]] <= 7:
+        if seen[r["school"]] <= 7 or not first_seven:
             scoring.append(r)
     for i, r in enumerate(scoring):
         r["score_place"] = i + 1  # re-ranked among each complete team's first seven only
@@ -1860,6 +1877,7 @@ def build_road_results(m):
 
 def build_results(mid):
     """Return {gender_key: {'label','individuals','teams'}} plus 'overall'."""
+    seven = first_seven_applies(mid)
     fins = [f for f in _meet_finishers(mid)
             if f["elapsed_seconds"] is not None]
     conn = db.connect()
@@ -1889,7 +1907,7 @@ def build_results(mid):
                 "gender": f["snap_gender"], "dq": bool(f["dq"]),
             })
         scoring_runners = [dict(i) for i in indiv if not i["dq"] and i["school"]]
-        teams = team_scores(scoring_runners) if team_on else []
+        teams = team_scores(scoring_runners, first_seven=seven) if team_on else []
         return indiv, teams
 
     for key, label in GENDERS:
@@ -2170,6 +2188,7 @@ def _team_grade_gender_groups(mid):
     not lumped across all grades. Returns (label, teams, note) -- note explains a
     special rule when one applied, else ''."""
     champ = _is_championship(mid)
+    seven = first_seven_applies(mid)
     conn = db.connect()
     ts = conn.execute("SELECT team_scoring, time_trial FROM meets WHERE id=?", (mid,)).fetchone()
     conn.close()
@@ -2198,7 +2217,7 @@ def _team_grade_gender_groups(mid):
         # District Championship: so many 9th graders run at the high school that most
         # teams can't field 5, so 9th grade scores every team, filling the gaps.
         ninth = champ and str(grade).strip() == "9"
-        teams = team_scores(runners, fill_missing=ninth) if team_on else []
+        teams = team_scores(runners, fill_missing=ninth, first_seven=seven) if team_on else []
         gword = {"F": "Girls", "M": "Boys"}.get(gender, "Other")
         label = f"{grade}th Grade {gword}" if grade is not None else gword
         note = ""

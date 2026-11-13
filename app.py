@@ -32,7 +32,7 @@ from .billing import bp as billing_bp
 from .signup import bp as signup_bp
 from .guides import bp as guides_bp, PATHS as GUIDE_PATHS
 
-APP_VERSION = "1.120.0-qa-fixes"
+APP_VERSION = "1.121.0-past-meets-kept"
 
 LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width, initial-scale=1">
