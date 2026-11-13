@@ -178,13 +178,24 @@ satellite map. Parents get a fly-over of the course from the results page.</li>
 <li>A <b>finish chute</b>: two lines of cones or flagging, a few yards wide at the line and narrowing
 to single file, long enough to hold a pack.</li>
 <li>A <b>poster board and a marker</b> for each race.</li>
-<li><b>Two phones</b>: one for the starter and one at the finish. A spare is useful.</li>
+<li><b>Two or three phones</b>, charged: see How many phones below.</li>
 </ul>
 
 <h2>Phones on race day</h2>
 <p>The Race day tab shows a <b>Phone Timer App</b> QR code. Every helper scans it and lands in the
 timer with no login and no app to install. They pick the heat they are working, and every phone on
 that heat shows the same clock and the same finish list.</p>
+
+<h3>How many phones</h3>
+<ul>
+<li><b>Three phones</b> when the start is out of sight of the finish: one for the starter, one for the
+finish timer, and one to scan the bib board.</li>
+<li><b>Two phones</b> when the start and finish are close together: the starter starts the heat
+and carries the same phone to the finish line to tap finishers. A second phone scans the bib
+board.</li>
+</ul>
+<p>Either way, keep the scanning phone separate from the tapping phone, so nobody has to stop tapping
+to scan. A spare phone with the timer open is cheap insurance.</p>
 
 <h2>The start</h2>
 <p>The starter stands at the start line with the heat open and taps <b>START</b> at the gun. Or they
@@ -259,13 +270,13 @@ from their best earlier time trial.</p>
 <h2>Who you need</h2>
 <div class="tw"><table>
 <tr><th>Job</th><th>How many</th><th>What they do in XCTimer</th></tr>
-<tr><td>Starter</td><td class="n">1</td><td>Starts each heat from their phone at the start line</td></tr>
+<tr><td>Starter</td><td class="n">1</td><td>Starts each heat from their phone at the start line, and can then tap the finish too</td></tr>
 <tr><td>Finish timer</td><td class="n">1</td><td>Taps FINISHER for every runner, then STOP</td></tr>
 <tr><td>Chute keeper</td><td class="n">1 or 2</td><td>Keeps runners single file in finish order</td></tr>
 <tr><td>Bib collector</td><td class="n">1 per board</td><td>Peels bibs onto the poster board in order</td></tr>
-<tr><td>Scanner</td><td class="n">1</td><td>Scans the board with the phone camera after the race</td></tr>
+<tr><td>Scanner</td><td class="n">1</td><td>Scans the bib board with their own phone's camera</td></tr>
 </table></div>
-<p>The finish timer can scan the board once the heat is over. For fields of more than about 60, add a
+<p>For fields of more than about 60, add a
 second chute keeper and a second bib collector working side by side on the same board, and run boys
 and girls, or each grade, as separate heats.</p>
 
@@ -350,6 +361,17 @@ with a <b>poster board and a marker</b> for each race at the end of it.</p>
 timer with no login and no app to install. They pick the race they are working, and every phone on
 that race shows the same clock and the same finish list.</p>
 
+<h3>How many phones</h3>
+<ul>
+<li><b>Three phones</b> when the start is out of sight of the finish: one for the starter, one for the
+finish timer, and one to scan the bib board.</li>
+<li><b>Two phones</b> when the start and finish are close together: the starter starts the race
+and carries the same phone to the finish line to tap finishers. A second phone scans the bib
+board.</li>
+</ul>
+<p>Either way, keep the scanning phone separate from the tapping phone, so nobody has to stop tapping
+to scan. A spare phone with the timer open is cheap insurance.</p>
+
 <h2>The start</h2>
 <p>The starter stands at the start line with the race open and taps <b>START</b> as the race goes. Or
 they tap <b>Auto-start: listen for the gun</b> and the phone starts the clock itself on the horn or
@@ -418,13 +440,13 @@ counts laps for pledges instead of timing a distance, you need lap counters, not
 <div class="tw"><table>
 <tr><th>Job</th><th>How many</th><th>What they do in XCTimer</th></tr>
 <tr><td>Registration table</td><td class="n">1 or 2</td><td>Hands out bibs, adds race-day sign-ups</td></tr>
-<tr><td>Starter</td><td class="n">1</td><td>Starts each race from their phone at the start line</td></tr>
+<tr><td>Starter</td><td class="n">1</td><td>Starts each race from their phone at the start line, and can then tap the finish too</td></tr>
 <tr><td>Finish timer</td><td class="n">1</td><td>Taps FINISHER for every runner, then STOP</td></tr>
 <tr><td>Chute keeper</td><td class="n">1 or 2</td><td>Keeps runners single file in finish order</td></tr>
 <tr><td>Bib collector</td><td class="n">1 per board</td><td>Peels bibs onto the poster board in order</td></tr>
+<tr><td>Scanner</td><td class="n">1</td><td>Scans the bib board with their own phone's camera</td></tr>
 <tr><td>Course marshals</td><td class="n">1 per turn</td><td>Point runners the right way</td></tr>
 </table></div>
-<p>The finish timer can scan the board once the race is over.</p>
 
 <div class="box x">
 <h2>Build your event</h2>

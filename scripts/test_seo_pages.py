@@ -114,6 +114,8 @@ assert "half price with code XCTIMERHALF" in fivek and "FIRSTRACE" not in fivek 
 for want in ("Registration open", "Venmo", "Phone Timer App", "listen for the gun", "FINISHER", "📷",
              "Scan all races, one camera", "does not collect one", "30 days after the event date"):
     assert want in fivek, want
+for guide in (timing, fivek):                     # 1.124.1: how many phones, scanning on its own phone
+    assert "Three phones" in guide and "Two phones" in guide and "keep the scanning phone separate" in guide
 for gone in ("$500 to $1,000 or more", "Include a waiver", "Three months out"):
     assert gone not in fivek, gone
 assert "lap counters, not a race timer" in fivek                       # no false promise about jog-a-thons
