@@ -16,6 +16,12 @@ from . import db
 from .meets import load_meet, can_record_meet
 from .ui import shell, HEAD_EXTRA, CSS, JS, BRAND_HTML, LOGO_APP_URL, GUN_CONTROLS_HTML, GUN_JS
 
+
+def _mode_label(mode):
+    """A heat's capture mode in words ("Tap → scan or select"), never the stored key."""
+    from .xc import CAPTURE_LABELS
+    return CAPTURE_LABELS.get(mode, mode or "")
+
 bp = Blueprint("phone", __name__)
 
 # Events timed by tapping finishers at the line (distance + 4x400). Sprints and
@@ -156,7 +162,7 @@ def phone_home():
                     cls, lbl = "ns", "ready"
                 heats.append(
                     f'<a class="heat" href="/phone/race/{r["id"]}">'
-                    f'<span class="hn">{escape(r["name"])} <small>· {escape(r["capture_mode"])}</small></span>'
+                    f'<span class="hn">{escape(r["name"])} <small>· {escape(_mode_label(r["capture_mode"]))}</small></span>'
                     f'<span class="st {cls}">{lbl}</span></a>')
             # Community events with >1 race: one camera at the line scans them all, each
             # entrant routed to the race they registered for. School meets time each heat

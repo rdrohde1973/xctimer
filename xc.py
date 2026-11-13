@@ -863,7 +863,7 @@ def xc_meet_day(mid):
     for r in races:
         status = "ended" if r["stop_time"] else ("running" if r["start_time"] else "not started")
         rows.append(
-            f'<tr><td><b>{escape(r["name"])}</b></td><td>{r["capture_mode"]}</td>'
+            f'<tr><td><b>{escape(r["name"])}</b></td><td>{escape(CAPTURE_LABELS.get(r["capture_mode"], r["capture_mode"] or ""))}</td>'
             f'<td>{status}</td><td>{counts.get(r["id"], 0)}</td>'
             f'<td style="text-align:right"><a class="btn" href="/races/{r["id"]}/console">⏱ Time</a>'
             f'</td></tr>')

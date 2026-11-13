@@ -252,4 +252,11 @@ assert b_score(meet_with("2026-11-13")) == (50, 50)        # from the change on:
 assert b_score(meet_with("2027-09-01")) == (50, 50)
 assert b_score(meet_with(None)) == (50, 50)                # undated: the current rule
 print("PASS 8: meets before 2026-11-13 keep their announced team scores; later meets use first seven")
+# 9. race day and the phone heat list name the capture mode in words, never the stored key
+ex("UPDATE races SET capture_mode='tapselect' WHERE id=?", RID)
+day = client(COACH).get(f"/meets/{MID}/xc-day").get_data(as_text=True)
+assert "Tap → scan or select" in day and ">tapselect<" not in day
+ph = client(COACH).get("/phone").get_data(as_text=True)
+assert "· Tap → scan or select" in ph and "· tapselect" not in ph
+print("PASS 9: capture modes read as words on race day and in the phone heat list")
 print("ALL PASS")
