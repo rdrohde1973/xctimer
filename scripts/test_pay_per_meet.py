@@ -291,9 +291,9 @@ print("PASS 13: promo codes take a school meet live (free, or by card for the re
 import re                                                                          # noqa: E402
 anon = application.test_client()
 home = anon.get("/welcome").get_data(as_text=True)
-assert home.count('href="/pricing"') == 2 and 'id="pricing"' not in home and '<div class="amt">' not in home
+assert home.count('href="/pricing"') == 3 and 'id="pricing"' not in home and '<div class="amt">' not in home
 r = anon.get("/pricing"); page = r.get_data(as_text=True)
-assert r.status_code == 200 and "<title>Pricing — XCTimer</title>" in page and not re.search(r"\$50(?!0)", page)
+assert r.status_code == 200 and "<title>XCTimer Pricing: $100 per Meet" in page and not re.search(r"\$50(?!0)", page)
 assert page.count('<div class="amt">$100<span>') == 3 and billing.fee_str() == "$100" == road._fee_whole(road.HOST_FEE_CENTS)
 assert pcoach.get("/pricing").status_code == 200                                   # signed in or not
 host = anon.get("/host").get_data(as_text=True)

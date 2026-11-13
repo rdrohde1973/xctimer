@@ -107,7 +107,7 @@ def _form(err="", v=None):
                    for k, (lbl, _g) in LEVELS.items())
     fee = billing.fee_str()
     errp = f'<p class="err">{escape(err)}</p>' if err else ""
-    return _page("Set up your school", f"""<h1>Set up your school on XCTimer.</h1>
+    return _page("Cross country and track meet timing for your school", f"""<h1>Set up your school on XCTimer.</h1>
 <p>Rosters, bibs, heats, phone timing and live results for your cross country and track meets.
 Build everything free. It is {fee} only when a meet goes live.</p>
 <div class="card" id="create">{errp}<form method="post" action="/start">

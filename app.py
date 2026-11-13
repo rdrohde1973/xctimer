@@ -30,13 +30,14 @@ from .coursemap import bp as coursemap_bp
 from .guest import bp as guest_bp
 from .billing import bp as billing_bp
 from .signup import bp as signup_bp
+from .guides import bp as guides_bp, PATHS as GUIDE_PATHS
 
-APP_VERSION = "1.115.0-sitemap-compare"
+APP_VERSION = "1.116.0-guides"
 
 LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width, initial-scale=1">
-<title>XCTimer — the do-it-yourself meet manager for junior high &amp; middle school XC &amp; track</title>
-<meta name="description" content="Run your own cross-country or track meet — no expensive timing company required. XCTimer is a complete do-it-yourself meet manager for junior high & middle school: rosters, live timing, field events, scoring, and live results the whole crowd can follow. Built by a coach of 8 years and a parent of three XC & track kids.">
+<title>Cross Country &amp; Track Meet Timing and Scoring from a Phone | XCTimer</title>
+<meta name="description" content="Cross country and track meet timing, scoring and live results from your phone. XCTimer is the do-it-yourself meet manager for middle school and junior high. No timing company needed.">
 <style>
   :root{--ink:#0c1929;--ink2:#13283f;--orange:#f0641e;--orange-d:#d4530f;--gray:#6b7684;
         --body:#212b36;--bg:#f6f7f9;--card:#ffffff;--line:#e6e9ee;--green:#2e9e5b}
@@ -256,16 +257,16 @@ LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
 
 <nav><div class="wrap">
   <span class="wordmark"><span class="bx">xc</span><span class="bt">t<span class="bi">i</span>mer</span><span class="bd">.com</span></span>
-  <span><a class="navlink" href="/pricing">Pricing</a><a class="signin" href="/login">Sign in</a></span>
+  <span><a class="navlink" href="/guides">Guides</a><a class="navlink" href="/pricing">Pricing</a><a class="signin" href="/login">Sign in</a></span>
 </div></nav>
 
 <header class="hero"><div class="wrap">
   <div>
-    <span class="kicker">The do-it-yourself meet manager</span>
+    <span class="kicker">Cross country &amp; track meet timing</span>
     <h1>Run the whole meet yourself.</h1>
-    <p class="sub">Rosters, bibs, live timing, field events, scoring, and instant results —
-       a junior high or middle school XC or track meet, start to finish, from a phone.
-       No timing company. No big invoice.</p>
+    <p class="sub">The do-it-yourself meet manager: rosters, bibs, phone timing, field events,
+       cross country scoring and live results. A junior high or middle school cross country or
+       track meet, start to finish, from a phone. No timing company. No big invoice.</p>
     <div class="cta">
       <a class="btn" href="#features">See what it does</a>
       <a class="btn ghost" href="mailto:rob@xctimer.com?subject=XCTimer%20for%20our%20district">Get in touch</a>
@@ -307,13 +308,13 @@ LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
 </div></section>
 
 <section id="features"><div class="wrap">
-  <h2>Not just timing — the whole meet, start to finish.</h2>
+  <h2>Not just a timing system. A meet manager for the whole meet.</h2>
   <p class="lead">Every job you used to hand off, in one tool you run yourself — for cross
      country and track &amp; field.</p>
   <div class="grid">
     <div class="card"><div class="ic">📋</div><h3>AI roster intake &amp; bib stickers</h3>
       <p>Drop in a spreadsheet, PDF, or photo of a roster — AI cleans it up, assigns bibs, and prints Avery stickers.</p></div>
-    <div class="card"><div class="ic">⏱️</div><h3>Time it from a phone</h3>
+    <div class="card"><div class="ic">⏱️</div><h3>Cross country &amp; track timing from a phone</h3>
       <p>Tap finishers for cross country, heats &amp; lanes for track — with a no-login QR so helpers can pitch in.</p></div>
     <div class="card"><div class="ic">🤖</div><h3>Robot-vision camera</h3>
       <p>Point a phone at the finish line and bibs read themselves — hands-free timing no other phone can do.</p></div>
@@ -321,8 +322,8 @@ LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
       <p>Long Jump and Shot Put with all three attempts, plus a High Jump make/miss grid — the way officials record them.</p></div>
     <div class="card"><div class="ic">🖨️</div><h3>Heat sheets that scan back</h3>
       <p>Print clean heat sheets, mark them up at the event, snap a photo — the marks read straight in.</p></div>
-    <div class="card"><div class="ic">🏆</div><h3>Results, scoring &amp; AI insights</h3>
-      <p>A public results page with a QR, team scoring by grade &amp; gender, Excel export — and AI answers for PRs and records.</p></div>
+    <div class="card"><div class="ic">🏆</div><h3>Results, team scoring &amp; AI insights</h3>
+      <p>A public results page with a QR, cross country and track team scoring by grade &amp; gender, Excel export — and AI answers for PRs and records.</p></div>
   </div>
 </div></section>
 
@@ -782,25 +783,26 @@ LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
 </div></section>
 
 <footer>© XCTimer · xctimer.com · the do-it-yourself meet manager for junior high cross country &amp; track
-<br><a href="/security">Security &amp; data privacy</a></footer>
+<br><a href="/guides">Guides</a> · <a href="/pricing">Pricing</a> · <a href="/security">Security &amp; data privacy</a></footer>
 </body></html>"""
 
 
 # Public pricing page (1.112.0). Reuses the landing page's <head> and styles so the two never
 # drift apart. The $100 figures are the defaults of billing.MEET_FEE_CENTS and
 # road.HOST_FEE_CENTS; scripts/test_pay_per_meet.py fails if the page and the app disagree.
+_HOME_TITLE = "<title>Cross Country &amp; Track Meet Timing and Scoring from a Phone | XCTimer</title>"
+assert _HOME_TITLE in LANDING
 _PRICING_DESC = ("XCTimer pricing: $100 per meet you host, $100 per school per season for unlimited "
                  "meets, or $100 per fun run. Build everything free and pay only when a meet goes live.")
 PRICING = (re.sub(r'<meta name="description" content="[^"]*">',
                   lambda _m: f'<meta name="description" content="{_PRICING_DESC}">',
                   LANDING.split("</style></head><body>", 1)[0], count=1)
-           .replace("<title>XCTimer — the do-it-yourself meet manager for junior high &amp; middle school XC &amp; track</title>",
-                    "<title>Pricing — XCTimer</title>")
+           .replace(_HOME_TITLE, "<title>XCTimer Pricing: $100 per Meet for Cross Country &amp; Track Timing</title>")
            + """</style></head><body>
 
 <nav><div class="wrap">
   <a href="/welcome" class="wordmark"><span class="bx">xc</span><span class="bt">t<span class="bi">i</span>mer</span><span class="bd">.com</span></a>
-  <span><a class="navlink" href="/welcome">Home</a><a class="signin" href="/login">Sign in</a></span>
+  <span><a class="navlink" href="/welcome">Home</a><a class="navlink" href="/guides">Guides</a><a class="signin" href="/login">Sign in</a></span>
 </div></nav>
 
 <section id="pricing"><div class="wrap">
@@ -873,11 +875,11 @@ PRICING = (re.sub(r'<meta name="description" content="[^"]*">',
 </div></section>
 
 <footer>© XCTimer · xctimer.com · the do-it-yourself meet manager for junior high cross country &amp; track
-<br><a href="/security">Security &amp; data privacy</a></footer>
+<br><a href="/guides">Guides</a> · <a href="/pricing">Pricing</a> · <a href="/security">Security &amp; data privacy</a></footer>
 </body></html>""")
 
 
-SITEMAP_PATHS = ("/", "/pricing", "/start", "/host", "/security")
+SITEMAP_PATHS = ("/", "/pricing", "/start", "/host", "/security") + GUIDE_PATHS
 
 
 def _canonical(html, path):
@@ -1001,6 +1003,15 @@ def create_app():
 
     db.init_db()
 
+    @app.before_request
+    def _one_hostname():
+        """www.xctimer.com is the same site: send it to the bare address, so search engines see
+        one copy of each page and nobody ends up signed in on one name and not the other."""
+        host = (request.host or "").lower()
+        if host.startswith("www.") and request.method in ("GET", "HEAD"):
+            qs = ("?" + request.query_string.decode()) if request.query_string else ""
+            return redirect(f"https://{host[4:]}{request.path}{qs}", code=301)
+
     # Backstop for db.connect()'s per-request connection registry: whatever a route
     # leaked (crash between write and close) gets closed here, releasing its lock.
     @app.teardown_appcontext
@@ -1015,7 +1026,7 @@ def create_app():
     app.before_request(auth.demo_readonly_guard)
 
     for bp in (auth_bp, tenancy_bp, schools_bp, meets_bp, xc_bp, track_bp,
-               admin_bp, insights_bp, phone_bp, waivers_bp, road_bp, coursemap_bp, guest_bp, billing_bp, signup_bp):
+               admin_bp, insights_bp, phone_bp, waivers_bp, road_bp, coursemap_bp, guest_bp, billing_bp, signup_bp, guides_bp):
         app.register_blueprint(bp)
 
     @app.before_request

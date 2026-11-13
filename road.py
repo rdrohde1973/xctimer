@@ -1297,12 +1297,13 @@ def host_start():
 <form method="post" action="/host/resend" style="display:flex;gap:.5rem;margin-top:.4rem">
 <input name="email" type="email" placeholder="your email" required>
 <button class="btn" type="submit" style="white-space:nowrap;background:#3d6fa5">Email my link</button></form></div>
-<p style="font-size:.9rem;color:#6a7c8e">Running a school or team meet? <a href="/welcome">See XCTimer for schools</a>.</p>""")
+<p style="font-size:.9rem;color:#6a7c8e">Running a school or team meet? <a href="/welcome">See XCTimer for schools</a>.
+First race? Read <a href="/guides/how-to-organize-a-5k">how to organize a 5K or fun run</a>.</p>""")
     from .ui import seo_head
     head = seo_head("/host", f"Time your own fun run or community 5K with XCTimer: a public sign-up page, "
                              f"printed bibs, phone or camera timing and live results. Build it free, then "
                              f"{fee} per event.")
-    return capture_attribution(make_response(_host_page("Time your own fun run", inner, head=head)))
+    return capture_attribution(make_response(_host_page("5K and fun run timing you run yourself", inner, head=head)))
 
 
 def _send_host_link(email, token):

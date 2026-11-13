@@ -446,7 +446,7 @@ def auth_page(title, sub, body, *, msg=None, err=None):
     """Standalone (no-shell) page for login / setup / reset."""
     return f"""<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width, initial-scale=1">
-<title>{escape(title)} · {BRAND}</title>{HEAD_EXTRA}<style>{CSS}</style><script>{CSRF_JS}</script></head><body>
+<title>{escape(title)} · {BRAND}</title><meta name="robots" content="noindex">{HEAD_EXTRA}<style>{CSS}</style><script>{CSRF_JS}</script></head><body>
 <div class="authwrap"><div class="authcard">
   <div class="authlogo"><img src="{LOGO_DARK_URL}" alt="XCTimer"></div>
   <p class="sub">{escape(sub)}</p>
