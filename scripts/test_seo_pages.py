@@ -114,12 +114,16 @@ teams = xc.team_scores([{"school": s, "place": i + 1, "elapsed_seconds": 600 + i
                         for i, s in enumerate(order)])
 got = {t["school"]: t["score"] for t in teams}
 assert got == {"C": 26, "M": 29}, got
-# ...and the guide is honest about big squads: today an eighth runner holds a place in XCTimer
+# ...and big squads: only a team's first seven hold a team place (the usual rule, 1.117.0)
 big = ["A"] * 7 + ["B"] + ["A", "A"] + ["B"] * 4
 got = {t["school"]: t["score"] for t in xc.team_scores(
     [{"school": s, "place": i + 1, "elapsed_seconds": 600 + i, "bib": i + 1, "name": f"r{i}"} for i, s in enumerate(big)])}
-assert got == {"A": 15, "B": 58}, got          # 58, not 50: if this changes, update the guide's XCTimer box
-assert "including an eighth runner and beyond" in " ".join(score.split())
+assert got == {"A": 15, "B": 50}, got          # 50, not 58: A's 8th and 9th runners hold no team place
+assert "eighth runner and beyond cannot push another team" in " ".join(score.split())
+# the District Championship fill value still counts every team finisher (finishers + 1)
+t = {x["school"]: x for x in xc.team_scores(
+    [{"school": s} for s in ["A"] * 9 + ["B"] * 3], fill_missing=True)}
+assert t["B"]["fill"] == 13 and t["B"]["places"] == [8, 9, 10, 13, 13], t["B"]
 print("PASS 7: three guides plus an index, and the scoring example matches what XCTimer computes")
 
 # 8. www goes to the bare address; sign-in pages are kept out of search results

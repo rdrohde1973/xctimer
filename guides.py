@@ -6,9 +6,9 @@ note on how XCTimer does that job. They exist to be found: the marketing page de
 product, these pages answer the question.
 
 Facts about XCTimer in here must stay true to the app: cross country team scoring is
-xc.team_scores (drop teams under five, re-rank, top five score, ties on the 6th then 7th runner;
-EVERY runner on a complete team keeps a place, so an 8th runner displaces too -- the guide says
-so; if that engine rule changes, change the guide's "Let the meet score itself" box with it); the finish-line method is the same one the assistants teach
+xc.team_scores (drop teams under five, keep each team's first seven, re-rank, top five score,
+ties on the 6th then 7th runner; an 8th runner and beyond hold no team place -- if that engine
+rule changes, change the guide's "Let the meet score itself" box with it); the finish-line method is the same one the assistants teach
 (insights._PLATFORM_HELP, BIB BOARD).
 """
 from flask import Blueprint, abort, make_response
@@ -135,9 +135,10 @@ time a cross country meet</a>.</li>
 
 <div class="box x">
 <h2>Let the meet score itself</h2>
-<p>XCTimer scores the meet as the race finishes. It drops teams with fewer than five, moves
-everyone up, adds each school's first five, and breaks ties on the sixth runner, then the seventh.
-Every finisher on a scoring team holds a place, including an eighth runner and beyond. Scores are
+<p>XCTimer scores the meet as the race finishes. It drops teams with fewer than five, takes out
+each team's eighth runner and beyond, moves everyone up, adds each school's first five, and breaks ties on the sixth runner, then the seventh.
+Only a team's first seven finishers hold a team place, so a big squad's eighth runner and beyond
+cannot push another team's scorers back. Scores are
 kept separately for each race, and by grade and gender, and they update on the live results page
 while runners are still coming in.</p>
 <p>Setting up a meet is free. It is {_fee()} when the meet goes live.</p>

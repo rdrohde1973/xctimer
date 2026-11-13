@@ -1642,21 +1642,30 @@ def race_insert(rid):
 # ------------------------------- scoring -------------------------------
 def team_scores(runners, fill_missing=False):
     """MileSplit/Hy-Tek scoring. `runners` = time-sorted list of dicts with
-    keys school, place-eligible. Drops teams <5, re-ranks, sums top 5, tracks
-    6th/7th displacers. Returns ranked list of team dicts.
+    keys school, place-eligible. Drops teams <5, keeps each team's first 7, re-ranks,
+    sums top 5, tracks 6th/7th displacers. Returns ranked list of team dicts.
+
+    Only a team's first seven finishers hold a team place (1.117.0): the eighth runner and
+    beyond are taken out of the team count like a runner from an incomplete team, so a big
+    squad cannot push other teams' scorers back. Individual places are not affected.
 
     fill_missing (the District Championship's 9th-grade rule): every school scores, even
     with fewer than 5 runners -- each "missing" runner counts as the number of finishers
-    plus 1. Places are then taken among all school runners, since every team scores."""
+    plus 1. Places are then taken among every school's first seven, since every team scores."""
     by_school = defaultdict(list)
     for r in runners:
         if r["school"]:
             by_school[r["school"]].append(r)
     complete = [s for s, rs in by_school.items() if len(rs) >= 5 or fill_missing]
-    scoring = [r for r in runners if r["school"] in complete]
+    on_teams = [r for r in runners if r["school"] in complete]
+    seen, scoring = defaultdict(int), []
+    for r in on_teams:
+        seen[r["school"]] += 1
+        if seen[r["school"]] <= 7:
+            scoring.append(r)
     for i, r in enumerate(scoring):
-        r["score_place"] = i + 1  # re-ranked among complete-team runners only
-    fill = len(scoring) + 1
+        r["score_place"] = i + 1  # re-ranked among each complete team's first seven only
+    fill = len(on_teams) + 1      # "number of finishers plus 1": counts every team finisher
     teams = []
     for s in complete:
         rs = [r for r in scoring if r["school"] == s][:7]
