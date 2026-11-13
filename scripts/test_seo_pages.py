@@ -102,6 +102,12 @@ assert "1 + 3 + 6 + 7 + 9 = <b>26</b>" in score and "2 + 4 + 5 + 8 + 10 =" in sc
 assert "sixth" in score and 'href="/start"' in score and "$100 when the meet goes live" in score
 timing = page("/guides/how-to-time-a-cross-country-meet")
 assert "poster board" in timing and "only once" in timing and "top to bottom" in timing
+# 1.123.0: the XC timing guide walks XCTimer's own screens, not generic hand-timing advice.
+for want in ("Phone Timer App", "listen for the gun", "FINISHER", "Lock bibs &amp; enable printing",
+             "📷", "Walk-ups", "Lock results", "first seven", "Time Trial"):
+    assert want in timing, want
+for gone in ("Start the clock with the gun", "One person starts the timer"):
+    assert gone not in timing, gone
 fivek = page("/guides/how-to-organize-a-5k")
 assert "$500 to $1,000 or more" in fivek and "half price with code XCTIMERHALF" in fivek and "FIRSTRACE" not in fivek and 'href="/host"' in fivek
 assert "lap counters, not a race timer" in fivek                       # no false promise about jog-a-thons

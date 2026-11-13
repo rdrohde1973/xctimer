@@ -8,8 +8,10 @@ product, these pages answer the question.
 Facts about XCTimer in here must stay true to the app: cross country team scoring is
 xc.team_scores (drop teams under five, keep each team's first seven, re-rank, top five score,
 ties on the 6th then 7th runner; an 8th runner and beyond hold no team place -- if that engine
-rule changes, change the guide's "Let the meet score itself" box with it); the finish-line method is the same one the assistants teach
-(insights._PLATFORM_HELP, BIB BOARD).
+rule changes, change the guide's "Let the meet score itself" box and the XC timing guide's
+"Results and team scores" with it). The timing and track guides describe XCTimer's own screens and
+button labels, step by step (Rob, 2026-11-13: "the process XCTimer uses ... not the normal way");
+keep them in step with the app and with the assistants (insights._PLATFORM_HELP, BIB BOARD).
 """
 from flask import Blueprint, abort, make_response
 
@@ -149,65 +151,128 @@ while runners are still coming in.</p>
 
 def _time_xc():
     return f"""
-<p class="lede">You can time a cross country meet accurately with a phone, a few helpers and a
-poster board. No chips, no mats, no timing company. This is the method we use at junior high
-meets, including the paper backup that settles every timing question afterwards.</p>
+<p class="lede">This is how a cross country meet runs in XCTimer, from setup to team scores. Every
+step below is a screen in the app, so you can follow along with your meet open. One phone times the
+finish, a poster board keeps the finish order, and the phone camera puts the names on the times. No
+chips, no mats, no timing company.</p>
 
-<h2>What you need</h2>
-<ul>
-<li><b>Numbered bibs</b> on every runner. Sticker bibs on the front of the shirt work well.</li>
-<li><b>A finish chute:</b> two lines of cones or flagging, a few yards wide at the line and narrowing
-to single file, long enough to hold a pack of finishers.</li>
-<li><b>Three helpers:</b> one to record times at the line, one to keep runners in order in the chute,
-one to collect bibs at the end of it.</li>
-<li><b>A poster board and a marker</b> for each race.</li>
-<li><b>One phone</b> for timing. A second phone is a useful spare.</li>
-</ul>
-
-<h2>The method</h2>
+<h2>Before the meet</h2>
 <ol>
-<li><b>Start the clock with the gun.</b> One person starts the timer as the race starts.</li>
-<li><b>Record a time for every runner who crosses.</b> The helper at the line taps once for each
-finisher. That captures the time and the place. They do not look at bib numbers at all.</li>
-<li><b>Keep the order in the chute.</b> Runners stay in single file, in the order they finished, until
-they reach the end. Nobody passes, nobody steps out.</li>
-<li><b>Collect the bibs in order.</b> At the end of the chute a helper peels each bib and sticks it on
-the poster board, top to bottom, in exactly the order the runners arrive.</li>
-<li><b>Match bibs to times.</b> The first bib on the board belongs to the first time, the second to
-the second, and so on down the list.</li>
+<li><b>Create the meet.</b> On Meets, choose Cross Country, set the date and tick the schools that
+are coming. XCTimer makes a Boys heat and a Girls heat. On the Setup tab, rename them or add one heat
+per race you will run, such as 7th Girls. Team scoring is on unless you untick it.</li>
+<li><b>Bibs are numbered for you.</b> Every cross country runner on each attending school's roster
+gets a bib for this meet, numbered from 1. Visiting teams get one invite link and add their own
+runners.</li>
+<li><b>Lock bibs and print.</b> On the Setup tab, tap <b>Lock bibs &amp; enable printing</b> so the
+numbers cannot shift. Then, on the Race day tab, print the sticker sheets and the bib lists. Each
+sticker has the runner's name, the school logo and a square tag the phone camera reads. Avery 5523 weatherproof labels hold up to rain and
+sweat; any Avery 5163-size sheet works.</li>
+<li><b>Map the course</b> if you like. On the Course tab, click points along the route on the
+satellite map. Parents get a fly-over of the course from the results page.</li>
 </ol>
 
-<h2>Why the poster board matters</h2>
-<p>The board is the paper record of the finish order. If a coach questions a place, if two runners
-look swapped, or if the count of times and the count of bibs do not match, you compare the board
-to the results and fix it in a minute. Without it you are relying on memory. Use one board per
-race and write the race name at the top.</p>
-
-<h2>Common problems and what to do</h2>
+<h2>What to bring</h2>
 <ul>
-<li><b>A pack finishes together.</b> Tap for each runner as they cross and sort the order out in the
-chute. The chute order is the official order.</li>
-<li><b>You missed a tap.</b> Do not stop. Keep tapping, then insert the missing runner at the right
-place afterwards using the board.</li>
-<li><b>A runner lost their bib.</b> Write the name on the board in their place.</li>
-<li><b>More times than bibs, or the reverse.</b> Count both before you publish. The board tells you
-where the extra or missing one is.</li>
+<li>The <b>bib stickers</b>, worn on the front of the shirt.</li>
+<li>A <b>finish chute</b>: two lines of cones or flagging, a few yards wide at the line and narrowing
+to single file, long enough to hold a pack.</li>
+<li>A <b>poster board and a marker</b> for each race.</li>
+<li><b>Two phones</b>: one for the starter and one at the finish. A spare is useful.</li>
 </ul>
 
-<h2>How many helpers for how many runners</h2>
-<p>For a race of up to about 60 runners, three helpers are enough. For bigger fields, add a second
-person in the chute and split the bib collecting between two people working side by side on the
-same board. Run boys and girls, or each grade, as separate races so a pack never overwhelms the line.</p>
+<h2>Phones on race day</h2>
+<p>The Race day tab shows a <b>Phone Timer App</b> QR code. Every helper scans it and lands in the
+timer with no login and no app to install. They pick the heat they are working, and every phone on
+that heat shows the same clock and the same finish list.</p>
+
+<h2>The start</h2>
+<p>The starter stands at the start line with the heat open and taps <b>START</b> at the gun. Or they
+tap <b>Auto-start: listen for the gun</b> and the phone starts the clock itself on the bang.</p>
+<p><b>Why the finish doesn't wait for the gun.</b> The start is stamped on the starter's phone at the
+line, and every other phone shares that clock. The finish timer may be half a mile away and never has
+to see the smoke or hear the gun.</p>
+
+<h2>At the finish line</h2>
+<ol>
+<li><b>Tap every runner.</b> The finish timer taps <b>FINISHER</b> once as each runner crosses. That
+records the time and the place. They do not look at bibs or names. <b>UNDO</b> removes an extra tap.</li>
+<li><b>Keep the chute in order.</b> Runners stay single file, in the order they crossed. Nobody passes
+and nobody steps out.</li>
+<li><b>Build the bib board.</b> At the end of the chute a helper peels each runner's bib sticker and
+sticks it on the poster board, top to bottom, in exactly the order the runners arrive. Write the heat
+name at the top.</li>
+<li>Tap <b>STOP</b> after the last runner. The clock stops; nothing else is lost.</li>
+</ol>
+<p>For a small race you can skip the taps: the timer shows every runner in the heat, and you tap a
+name as that runner crosses. There is a search box for long lists.</p>
+
+<h2>Putting the names on the times</h2>
+<ol>
+<li>Open the heat in the Phone Timer App and tap the <b>📷</b> at the top.</li>
+<li>Point the camera at the bib board and go down it, top to bottom. Each bib it reads fills the next
+open place, so the first bib on the board gets the first time.</li>
+<li>The camera records a bib only once per race. If it sees one it already has, it ignores it, so you
+can sweep back over the board without creating duplicates.</li>
+<li>If a sticker is torn or folded and will not read, type the bib number instead.</li>
+</ol>
+<p>This works after the clock is stopped, so you can scan the board after the last runner is in. Order
+matters: scan out of order and names land on the wrong times. A flat bib on a board reads far more
+easily than one on the shirt of a tired runner, but you can scan in the chute if you have to.</p>
+
+<h2>Fixing problems</h2>
+<p>The race console (<b>⏱ Time</b> on the Race day tab, best on a laptop) lists every place with its
+time. The bib board is your check: the board and the console should show the same bibs in the same
+order.</p>
+<ul>
+<li><b>A runner is missing.</b> Click <b>＋↑</b> at the place they belong. The runners below slide down one
+place, the times stay where they were tapped, and you type the missing bib into the blank row. If
+there is no open place below, the last runner gets an estimated time one second behind the runner
+ahead, and XCTimer warns you to check it.</li>
+<li><b>Two runners are swapped.</b> Drag them into the right order. The times stay put; the runners
+move.</li>
+<li><b>A bib number nobody at the meet has.</b> XCTimer records it as "Bib 57" and warns you, so
+you can check the board for a misread number.</li>
+<li><b>A bib scanned twice.</b> XCTimer says the runner is already in at their place and does not add
+them again.</li>
+<li><b>A runner with no bib.</b> Use the Walk-ups card on the Race day tab to give them a spare sticker
+number, then scan or type it.</li>
+<li><b>A disqualification.</b> Mark the runner DQ. They stay listed but lose their place.</li>
+</ul>
+<p>When the heat is right, tap <b>Lock results</b> so nobody changes it by accident.</p>
+
+<h2>Results and team scores</h2>
+<p>Results build themselves as names go on the times. The Results tab has a live public page with a QR
+code for the stands, and an Excel export.</p>
+<p>Team scores follow the standard rule: each school's first five finishers score, lowest total wins,
+and a school needs five finishers to score. Only a team's first seven hold a team place, and a tie
+goes to the team whose sixth runner finished first, then the seventh. Each heat is scored on its own,
+and the Results tab also scores by grade and gender. See <a
+href="/guides/how-to-score-a-cross-country-meet">how cross country scoring works</a> for a worked
+example.</p>
+
+<h2>Practice time trials</h2>
+<p>A coach can run a time trial for their own team. It has one heat called Time Trial, times exactly
+like a meet, and is free. When you time by tapping names, the list puts your fastest runners first,
+from their best earlier time trial.</p>
+
+<h2>Who you need</h2>
+<div class="tw"><table>
+<tr><th>Job</th><th>How many</th><th>What they do in XCTimer</th></tr>
+<tr><td>Starter</td><td class="n">1</td><td>Starts each heat from their phone at the start line</td></tr>
+<tr><td>Finish timer</td><td class="n">1</td><td>Taps FINISHER for every runner, then STOP</td></tr>
+<tr><td>Chute keeper</td><td class="n">1 or 2</td><td>Keeps runners single file in finish order</td></tr>
+<tr><td>Bib collector</td><td class="n">1 per board</td><td>Peels bibs onto the poster board in order</td></tr>
+<tr><td>Scanner</td><td class="n">1</td><td>Scans the board with the phone camera after the race</td></tr>
+</table></div>
+<p>The finish timer can scan the board once the heat is over. For fields of more than about 60, add a
+second chute keeper and a second bib collector working side by side on the same board, and run boys
+and girls, or each grade, as separate heats.</p>
 
 <div class="box x">
-<h2>Doing it with XCTimer</h2>
-<p>XCTimer is built around this method. A helper taps each finisher on the Phone Timer App, which
-opens from a QR code with no login. Bibs print as stickers with a square tag the phone camera can
-read. Point the camera at the bibs on your poster board, top to bottom, and each one fills the
-next open place. The camera records a bib only once, so there are no duplicate scans, and it
-keeps working after the clock is stopped. Results and team scores appear on a live page parents
-can follow from the fence.</p>
-<p>Setting up a meet is free. It is {_fee()} when the meet goes live.</p>
+<h2>Try it on your next meet</h2>
+<p>Setting up a meet is free: schools, heats, bibs and printing. It is {_fee()} when the meet goes live
+and timing turns on.</p>
 <a class="btn" href="/start">Set up your school</a>
 <a class="btn g" href="/guides/how-to-score-a-cross-country-meet">How scoring works</a>
 </div>
@@ -436,9 +501,9 @@ GUIDES = {
     "how-to-time-a-cross-country-meet": {
         "title": "How to Time a Cross Country Meet With a Phone",
         "h1": "How to time a cross country meet with a phone",
-        "blurb": "A finish chute, three helpers and a poster board. No chips or timing company.",
-        "desc": "Time a cross country meet without chip timing: tap each finisher on a phone, keep runners "
-                "in chute order, and collect bibs on a poster board as the paper record.",
+        "blurb": "Step by step in XCTimer: bibs, the phone start, tapping finishers, the bib board and camera scan.",
+        "desc": "How to time a cross country meet with phones in XCTimer: printed bib stickers, a phone "
+                "start, tapping each finisher, a poster-board bib record and camera scanning for names.",
         "body": _time_xc,
     },
     "how-to-run-a-track-meet": {
