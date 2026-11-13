@@ -109,7 +109,13 @@ for want in ("Phone Timer App", "listen for the gun", "FINISHER", "Lock bibs &am
 for gone in ("Start the clock with the gun", "One person starts the timer"):
     assert gone not in timing, gone
 fivek = page("/guides/how-to-organize-a-5k")
-assert "$500 to $1,000 or more" in fivek and "half price with code XCTIMERHALF" in fivek and "FIRSTRACE" not in fivek and 'href="/host"' in fivek
+assert "half price with code XCTIMERHALF" in fivek and "FIRSTRACE" not in fivek and 'href="/host"' in fivek
+# 1.124.0: the 5K guide walks XCTimer's own screens, and is honest that sign-up has no waiver.
+for want in ("Registration open", "Venmo", "Phone Timer App", "listen for the gun", "FINISHER", "📷",
+             "Scan all races, one camera", "does not collect one", "30 days after the event date"):
+    assert want in fivek, want
+for gone in ("$500 to $1,000 or more", "Include a waiver", "Three months out"):
+    assert gone not in fivek, gone
 assert "lap counters, not a race timer" in fivek                       # no false promise about jog-a-thons
 track_g = " ".join(page("/guides/how-to-run-a-track-meet").split())
 assert "<title>How to Run a Middle School Track Meet | XCTimer</title>" in track_g

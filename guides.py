@@ -283,79 +283,153 @@ def _organize_5k():
     from .road import HOST_FEE_CENTS, _fee_whole
     fee = _fee_whole(HOST_FEE_CENTS)
     return f"""
-<p class="lede">A first 5K or fun run is very doable with a small team and about three months of
-lead time. This is the order to do things in, what each piece costs, and where first-time race
-directors usually get caught out.</p>
+<p class="lede">This is how a 5K or fun run works in XCTimer, from building the event to posting
+results. Every step below is a screen in the app, so you can follow along with your event open.
+Runners sign up from a link, bibs print on stickers, phones time the finish, and results post
+themselves. No chips, no mats, no timing company.</p>
 
-<h2>Three months out: the decisions</h2>
+<h2>Build the event</h2>
+<ol>
+<li><b>Start at <a href="/host">xctimer.com/host</a>.</b> Enter the event name, the date and your
+email. XCTimer emails you a private link that opens your event; there is no password. Lost it? Enter
+the same email on that page and the link is sent again.</li>
+<li><b>Add your races</b> on the Setup tab. XCTimer starts you with a 5K; add a 10K, a 1 mile or a
+Kids Fun Run beside it. Each race has its own start, its own clock and its own results.</li>
+<li><b>Set age groups</b> on each race, for example <b>10 &amp; Under, 11-14, 15-19, 20-29, 30+</b>.
+Copy and paste the same line into the next race to reuse it.</li>
+<li><b>Upload your logo.</b> It goes on the sign-up page and on every bib.</li>
+</ol>
+<p>Building is free. It is {fee} to go live and open registration, paid by card, and your first event
+is {road.FIRST_EVENT_OFFER}.</p>
+
+<h2>Open registration</h2>
+<ol>
+<li>In <b>Event page &amp; registration</b> on the Setup tab, add a welcome message (start time,
+parking, packet pickup) and tick <b>Registration open</b>.</li>
+<li>Set an <b>entry fee</b> if you charge one. Add your Venmo username and runners are sent to Venmo to
+pay right after they sign up. Without Venmo, the page shows the fee as owed and you collect it at
+packet pickup.</li>
+<li>Share the <b>public registration link</b> or its QR code: on flyers, in the school newsletter, in
+local Facebook groups.</li>
+</ol>
+<p>Runners need no account. They enter name, age on race day, sex, city and club, pick their race, and
+can add family members on the same form. Each one gets a bib number on the spot, and you get an email
+for every sign-up. XCTimer collects no email addresses or phone numbers from runners, which keeps a
+school fun run simple.</p>
+
+<h2>The Participants tab</h2>
 <ul>
-<li><b>Purpose and size.</b> A school or charity fundraiser, a community event, or a club race. Be
-honest about turnout: most first-year local races draw 50 to 200 people.</li>
-<li><b>Date.</b> Check the local race calendar, school calendars and holidays for clashes.</li>
-<li><b>Course.</b> A park, a school campus or a trail is far simpler than public roads. Measure it
-with a GPS watch or a mapping tool and walk it for hazards.</li>
-<li><b>Permission.</b> Ask the park, school or city what they require. Road courses often need a
-permit and traffic control, and that can take weeks.</li>
-<li><b>Insurance.</b> Many venues require event liability cover. Ask what they need in writing.</li>
-<li><b>Budget.</b> List every cost before you set the entry fee. See the table below.</li>
+<li>Everyone who registered, with their bib, race and age.</li>
+<li><b>Add a runner by hand</b>, or <b>import a CSV</b> from another sign-up site. Leave the bib blank
+and XCTimer numbers it.</li>
+<li><b>Move a runner</b> to a different race from the drop-down beside their name.</li>
+<li><b>Print bibs</b>: each sticker has your logo, the bib number, the runner's name and a square tag
+the phone camera reads. Add a few blank spares for race-day sign-ups. Avery 5523 weatherproof labels
+hold up to rain and sweat; any Avery 5163-size sheet works.</li>
+<li><b>Close registration before you print.</b> Spares take the next numbers after your last runner,
+so anyone who signs up online after you print would get the same number as a spare.</li>
 </ul>
 
-<h2>Two months out: sign-ups</h2>
+<h2>What XCTimer leaves to you</h2>
+<p>XCTimer handles sign-ups, bibs, timing and results. These are still yours:</p>
 <ul>
-<li><b>Open registration</b> with a page people can reach from a link or QR code. Collect name, age,
-gender and which race they are entering. Include a waiver.</li>
-<li><b>Set age groups</b> if you plan awards, for example 10 and under, 11 to 14, 15 to 19, then by
-decade.</li>
-<li><b>Promote it</b> where your runners already are: school newsletters, local Facebook groups,
-running clubs, a banner at the venue.</li>
-<li><b>Recruit volunteers.</b> Plan on one for every 15 to 20 runners: registration table, course
-marshals at every turn, a water station, the finish line and results.</li>
+<li><b>Permission and insurance.</b> Ask the park, school or city what they require, in writing.</li>
+<li><b>A waiver,</b> if your venue wants one. XCTimer's sign-up does not collect one, so have runners
+sign at packet pickup.</li>
+<li><b>The course.</b> Measure it, mark every turn with cones and arrows, and put a marshal anywhere a
+runner could go wrong.</li>
+<li><b>Water and first aid,</b> and who calls for help if it is needed.</li>
 </ul>
 
-<h2>The last two weeks</h2>
-<ul>
-<li><b>Order or print bibs</b>, with spares for people who sign up on the day.</li>
-<li><b>Mark the course</b> the day before with cones, arrows and flagging. Put a volunteer at every
-place a runner could go wrong.</li>
-<li><b>Plan the finish line:</b> a clear line, a chute to keep finishers in order, water just past it.</li>
-<li><b>Have a first aid plan</b> and know who is calling for help if it is needed.</li>
-<li><b>Send a final email</b> with parking, start time and where to pick up bibs.</li>
-</ul>
+<h2>Race day: the finish chute</h2>
+<p>Set out two lines of cones or flagging, a few yards wide at the line and narrowing to single file,
+with a <b>poster board and a marker</b> for each race at the end of it.</p>
 
-<h2>Timing: your three choices</h2>
+<h2>Phones on race day</h2>
+<p>The Race day tab shows a <b>Phone Timer App</b> QR code. Every helper scans it and lands in the
+timer with no login and no app to install. They pick the race they are working, and every phone on
+that race shows the same clock and the same finish list.</p>
+
+<h2>The start</h2>
+<p>The starter stands at the start line with the race open and taps <b>START</b> as the race goes. Or
+they tap <b>Auto-start: listen for the gun</b> and the phone starts the clock itself on the horn or
+the gun.</p>
+<p><b>Why the finish doesn't wait for the gun.</b> The start is stamped on the starter's phone at the
+line, and every other phone shares that clock. The finish timer can be out of sight of the start and
+never has to see or hear it.</p>
+
+<h2>At the finish line</h2>
+<ol>
+<li><b>Tap every runner.</b> The finish timer taps <b>FINISHER</b> once as each runner crosses. That
+records the time and the place. They do not look at bibs. <b>UNDO</b> removes an extra tap.</li>
+<li><b>Keep the chute in order.</b> Runners stay single file in the order they crossed.</li>
+<li><b>Build the bib board.</b> At the end of the chute a helper peels each runner's bib sticker and
+sticks it on the poster board, top to bottom, in exactly the order they arrive. Write the race name at
+the top.</li>
+<li>Tap <b>STOP</b> after the last runner.</li>
+</ol>
+
+<h2>Putting the names on the times</h2>
+<ol>
+<li>Open the race in the Phone Timer App and tap the <b>📷</b> at the top.</li>
+<li>Point the camera at the bib board and go down it, top to bottom. Each bib it reads fills the next
+open place, so the first bib on the board gets the first time.</li>
+<li>The camera records a bib only once per race, so you can sweep back over the board without creating
+duplicates. If a sticker will not read, type the number.</li>
+</ol>
+<p>This works after the clock is stopped. Order matters: scan out of order and names land on the wrong
+times. If you scan a bib that is registered for a different race, XCTimer warns you.</p>
+
+<h2>Two races at once</h2>
+<p>If a 10K and a 5K share one finish line, start each race from its own heat in the Phone Timer App.
+Then use <b>Scan all races, one camera</b> on the Race day tab: one phone or iPad at the finish reads
+every bib as the runner crosses, puts them in the race they registered for and times them from that
+race's own start. A 10K that started at 7:45 and a 5K at 8:00 both come out right.</p>
+
+<h2>Race-day sign-ups</h2>
+<p>Hand the runner one of your blank spare stickers, then add them on the Participants tab with that
+bib number and their race. They are timed like everyone else.</p>
+
+<h2>Fixing problems</h2>
+<p>The race console (<b>⏱ Time</b> on the Race day tab, best on a laptop) lists every place with its
+time. The bib board is your check: the board and the console should show the same bibs in the same
+order.</p>
+<ul>
+<li><b>A runner is missing.</b> Click <b>＋↑</b> at the place they belong. The runners below slide
+down one place, the times stay where they were tapped, and you type the missing bib into the blank
+row.</li>
+<li><b>Two runners are swapped.</b> Drag them into the right order. The times stay put; the runners
+move.</li>
+<li><b>A bib nobody registered.</b> XCTimer records it as "Bib 57" and warns you, so you can check
+the board for a misread number or add a race-day runner.</li>
+</ul>
+<p>When a race is right, tap <b>Lock results</b> so nobody changes it by accident.</p>
+
+<h2>Results</h2>
+<p>Results build themselves as names go on the times, by sex and age group in each race. The Results
+tab has a live public page with a QR code for the crowd and an Excel export. Your event and its
+runner list are removed 30 days after the event date, so download the results first.</p>
+
+<h2>School fun runs</h2>
+<p>Run each grade as its own short race so a pack of kids never swamps the finish line. If your event
+counts laps for pledges instead of timing a distance, you need lap counters, not a race timer.</p>
+
+<h2>Who you need</h2>
 <div class="tw"><table>
-<tr><th>Option</th><th>Typical cost</th><th>Good for</th></tr>
-<tr><td>Stopwatch and a clipboard</td><td>Free</td><td>Very small runs where places matter more than times</td></tr>
-<tr><td>A phone timing app you run yourself</td><td>About {fee} or less</td><td>Most fun runs and community 5Ks up to a few hundred runners</td></tr>
-<tr><td>A hired chip timing company</td><td>$500 to $1,000 or more</td><td>Large races, road races with split points, certified results</td></tr>
+<tr><th>Job</th><th>How many</th><th>What they do in XCTimer</th></tr>
+<tr><td>Registration table</td><td class="n">1 or 2</td><td>Hands out bibs, adds race-day sign-ups</td></tr>
+<tr><td>Starter</td><td class="n">1</td><td>Starts each race from their phone at the start line</td></tr>
+<tr><td>Finish timer</td><td class="n">1</td><td>Taps FINISHER for every runner, then STOP</td></tr>
+<tr><td>Chute keeper</td><td class="n">1 or 2</td><td>Keeps runners single file in finish order</td></tr>
+<tr><td>Bib collector</td><td class="n">1 per board</td><td>Peels bibs onto the poster board in order</td></tr>
+<tr><td>Course marshals</td><td class="n">1 per turn</td><td>Point runners the right way</td></tr>
 </table></div>
-<p>Whatever you choose, keep runners in finish order in a chute and keep a paper record of that
-order. It is the only thing that settles an argument about places afterwards.</p>
-
-<h2>A simple budget</h2>
-<div class="tw"><table>
-<tr><th>Item</th><th>What to expect</th></tr>
-<tr><td>Venue or permit</td><td>Free at many schools and parks; public roads cost more</td></tr>
-<tr><td>Insurance</td><td>Ask the venue what it requires</td></tr>
-<tr><td>Bibs and pins</td><td>Under a dollar a runner, or print your own on label sheets</td></tr>
-<tr><td>Timing</td><td>Free to $1,000 or more, as above</td></tr>
-<tr><td>Water, cups, snacks</td><td>Often donated by a local sponsor</td></tr>
-<tr><td>Shirts and awards</td><td>Optional, and usually the biggest cost if you add them</td></tr>
-</table></div>
-<p>For a fundraiser, sponsors covering the fixed costs is what makes the entry fees turn into
-money raised.</p>
-
-<h2>School fun runs and fundraisers</h2>
-<p>A school fun run works the same way with one difference: you are timing children, so keep the
-data you collect to a minimum and run each grade as its own short race. If your event counts
-laps for pledges instead of timing a distance, you need lap counters, not a race timer.</p>
+<p>The finish timer can scan the board once the race is over.</p>
 
 <div class="box x">
-<h2>Running it with XCTimer</h2>
-<p>XCTimer gives you the public sign-up page with a QR code, printed bib stickers with your logo,
-phone timing, and live results by gender and age group, all from one link you manage yourself.
-Build the event free. It is {fee} to open registration, and your first event is
-{road.FIRST_EVENT_OFFER}.</p>
+<h2>Build your event</h2>
+<p>Building is free: races, age groups, logo and sign-up page. It is {fee} to go live and open
+registration, and your first event is {road.FIRST_EVENT_OFFER}.</p>
 <a class="btn" href="/host">Set up a fun run</a><a class="btn g" href="/pricing">See pricing</a>
 </div>
 """
@@ -517,9 +591,9 @@ GUIDES = {
     "how-to-organize-a-5k": {
         "title": "How to Organize a 5K or Fun Run",
         "h1": "How to organize a 5K or fun run",
-        "blurb": "A three-month checklist: course, permits, sign-ups, volunteers, timing and budget.",
-        "desc": "A first-timer's checklist for organizing a 5K or fun run: course and permits, registration, "
-                "volunteers, timing options and what each costs.",
+        "blurb": "Step by step in XCTimer: sign-up page, bib stickers, phone timing, the bib board and results.",
+        "desc": "How to run a 5K or fun run in XCTimer: an online sign-up page with a QR code, printed bib "
+                "stickers, phone timing at the finish, camera scanning for names and live results by age group.",
         "body": _organize_5k,
     },
 }
