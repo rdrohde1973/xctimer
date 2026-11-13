@@ -31,7 +31,7 @@ from flask import Blueprint, g, make_response, redirect, request
 
 from . import db, billing
 from .auth import create_user, find_user_by_email, issue_reset_token, send_email, _public_url, _iso, _now
-from .ui import HEAD_EXTRA, CSRF_JS
+from .ui import HEAD_EXTRA, CSRF_JS, seo_head
 
 bp = Blueprint("signup", __name__)
 log = logging.getLogger("xctimer.signup")
@@ -83,10 +83,10 @@ def is_self_serve(settings_json):
 
 
 # ------------------------------- pages -------------------------------
-def _page(title, inner):
+def _page(title, inner, head=""):
     return (f"""<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width, initial-scale=1">
-<title>{escape(title)} · XCTimer</title>{HEAD_EXTRA}<script>{CSRF_JS}</script>
+<title>{escape(title)} · XCTimer</title>{head}{HEAD_EXTRA}<script>{CSRF_JS}</script>
 <style>body{{font:16px/1.6 system-ui,-apple-system,Segoe UI,sans-serif;background:#f5f8fc;color:#20303f;margin:0}}
 .wrap{{max-width:560px;margin:0 auto;padding:1.4rem 1.1rem 3rem}}
 .card{{background:#fff;border:1px solid #e3e9f1;border-radius:12px;padding:1.1rem;margin:0 0 1rem}}
@@ -134,7 +134,10 @@ season with unlimited meets, shared rosters, AI Insights and priority support.
 <a href="mailto:rob@xctimer.com?subject=XCTimer%20for%20our%20district">Get in touch</a> or
 <a href="/pricing">see pricing</a>.</div>
 <p class="fine">Hosting a fun run or community 5K instead? <a href="/host">Set that up here</a>.
-Already have an account? <a href="/login">Sign in</a>.</p>""")
+Already have an account? <a href="/login">Sign in</a>.</p>""",
+                 head=seo_head("/start", f"Set up your school on XCTimer: rosters, bibs, heats, phone timing "
+                                         f"and live results for cross country and track meets. Free to "
+                                         f"build, {fee} when a meet goes live."))
 
 
 def _sent(email):

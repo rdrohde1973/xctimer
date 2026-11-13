@@ -366,6 +366,17 @@ def shell(principal, body, *, active="", active_district=None, districts=None,
 </body></html>"""
 
 
+def seo_head(path, description=None):
+    """<head> tags for a PUBLIC page: its one true address (so "/" and "/welcome", or a link with
+    tracking parameters, are not indexed as separate pages) and its own search-result blurb."""
+    import os
+    base = os.environ.get("XC_PUBLIC_URL", "https://xctimer.com").rstrip("/")
+    out = f'<link rel="canonical" href="{base}{path}">'
+    if description:
+        out += f'\n<meta name="description" content="{escape(description)}">'
+    return out
+
+
 def error_page(code, title, msg):
     """Standalone friendly error page."""
     return f"""<!doctype html><html lang=en><head><meta charset=utf-8>

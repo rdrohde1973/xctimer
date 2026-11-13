@@ -8,6 +8,7 @@ Serve: waitress on XC_HOST:XC_PORT (defaults 127.0.0.1:5006), via the systemd un
 """
 import hmac
 import os
+import re
 import secrets
 from urllib.parse import quote
 
@@ -30,7 +31,7 @@ from .guest import bp as guest_bp
 from .billing import bp as billing_bp
 from .signup import bp as signup_bp
 
-APP_VERSION = "1.114.0-pricing-clicks"
+APP_VERSION = "1.115.0-sitemap-compare"
 
 LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width, initial-scale=1">
@@ -234,6 +235,18 @@ LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
   .price .tag{position:absolute;top:-.8rem;left:1.3rem;background:var(--orange);color:#fff;font-size:.7rem;
               font-weight:800;letter-spacing:.08em;text-transform:uppercase;padding:.2rem .7rem;border-radius:999px}
   .pricenote{margin:1.3rem 0 0;color:var(--gray);font-size:.92rem}
+  .compare{margin-top:1.4rem;background:var(--card);border:1px solid var(--line);border-radius:14px;overflow:hidden}
+  .crow{display:flex;justify-content:space-between;align-items:center;gap:1.2rem;padding:1.05rem 1.35rem;
+        border-top:1px solid var(--line)}
+  .crow:first-child{border-top:0}
+  .crow b{display:block;color:var(--ink);font-size:1.04rem}
+  .crow span{display:block;color:#4a5766;font-size:.92rem}
+  .crow .cprice{flex-shrink:0;text-align:right;font-weight:800;font-size:1.35rem;color:var(--ink);
+                font-variant-numeric:tabular-nums;white-space:nowrap}
+  .crow .cprice span{font-weight:600;font-size:.82rem;color:var(--gray)}
+  .crow.you{background:#fff6f0;box-shadow:inset 4px 0 0 var(--orange)}
+  .crow.you .cprice{color:var(--orange-d)}
+  @media(max-width:560px){.crow{flex-direction:column;align-items:flex-start;gap:.4rem}.crow .cprice{text-align:left}}
   @media(max-width:860px){
     .hero .wrap,.split{grid-template-columns:1fr;gap:1.8rem}
     section{padding:2.4rem 0}
@@ -776,7 +789,11 @@ LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
 # Public pricing page (1.112.0). Reuses the landing page's <head> and styles so the two never
 # drift apart. The $100 figures are the defaults of billing.MEET_FEE_CENTS and
 # road.HOST_FEE_CENTS; scripts/test_pay_per_meet.py fails if the page and the app disagree.
-PRICING = (LANDING.split("</style></head><body>", 1)[0]
+_PRICING_DESC = ("XCTimer pricing: $100 per meet you host, $100 per school per season for unlimited "
+                 "meets, or $100 per fun run. Build everything free and pay only when a meet goes live.")
+PRICING = (re.sub(r'<meta name="description" content="[^"]*">',
+                  lambda _m: f'<meta name="description" content="{_PRICING_DESC}">',
+                  LANDING.split("</style></head><body>", 1)[0], count=1)
            .replace("<title>XCTimer — the do-it-yourself meet manager for junior high &amp; middle school XC &amp; track</title>",
                     "<title>Pricing — XCTimer</title>")
            + """</style></head><body>
@@ -828,6 +845,22 @@ PRICING = (LANDING.split("</style></head><body>", 1)[0]
     </div>
   </div>
   <p class="pricenote">Have a promo code? Enter it on the meet page when you go live.</p>
+
+  <h2 style="margin-top:2.8rem">What the alternatives cost</h2>
+  <p class="lead">XCTimer replaces the whole setup, not one piece of it.</p>
+  <div class="compare">
+    <div class="crow"><div><b>Hiring a timing company</b>
+      <span>They bring the equipment and run the finish line for you.</span></div>
+      <div class="cprice">$500 to $1,000+<span>per event</span></div></div>
+    <div class="crow"><div><b>Desktop meet software</b>
+      <span>Entries, heats and scoring on one computer. Timing equipment and live results are extra.</span></div>
+      <div class="cprice">$265 to $685<span>up front, plus upgrades</span></div></div>
+    <div class="crow you"><div><b>XCTimer</b>
+      <span>Rosters, entries, heats, bibs, phone timing and live results. You bring phones and label sheets for bibs.</span></div>
+      <div class="cprice">$100<span>per meet</span></div></div>
+  </div>
+  <p class="pricenote">Comparison prices are rates that timing companies and software vendors publish,
+  checked November 2026. Quotes vary with the size of the event.</p>
 </div></section>
 
 <section class="final"><div class="wrap">
@@ -842,6 +875,15 @@ PRICING = (LANDING.split("</style></head><body>", 1)[0]
 <footer>© XCTimer · xctimer.com · the do-it-yourself meet manager for junior high cross country &amp; track
 <br><a href="/security">Security &amp; data privacy</a></footer>
 </body></html>""")
+
+
+SITEMAP_PATHS = ("/", "/pricing", "/start", "/host", "/security")
+
+
+def _canonical(html, path):
+    """Add the page's one true address to its <head> (see ui.seo_head)."""
+    from .ui import seo_head
+    return html.replace("</title>", "</title>\n" + seo_head(path), 1)
 
 
 SECURITY = """<!doctype html><html lang=en><head><meta charset=utf-8>
@@ -1043,13 +1085,33 @@ def create_app():
             from .ui import home_url
             return redirect(home_url(g.principal))
         from .road import capture_attribution
-        return capture_attribution(make_response(LANDING))
+        return capture_attribution(make_response(_canonical(LANDING, "/")))
 
     @app.get("/pricing")
     def pricing_page():
         from .road import capture_attribution
         audit.note_pricing_click()
-        return capture_attribution(make_response(PRICING))
+        return capture_attribution(make_response(_canonical(PRICING, "/pricing")))
+
+    @app.get("/sitemap.xml")
+    def sitemap_xml():
+        """The public pages worth finding in a search engine. Results pages are deliberately
+        not listed: they carry student names and are shared by link."""
+        from flask import Response
+        base = os.environ.get("XC_PUBLIC_URL", "https://xctimer.com").rstrip("/")
+        urls = "".join(f"<url><loc>{base}{p}</loc></url>" for p in SITEMAP_PATHS)
+        return Response('<?xml version="1.0" encoding="UTF-8"?>'
+                        f'<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">{urls}</urlset>',
+                        mimetype="application/xml")
+
+    @app.get("/robots.txt")
+    def robots_txt():
+        from flask import Response
+        base = os.environ.get("XC_PUBLIC_URL", "https://xctimer.com").rstrip("/")
+        return Response("User-agent: *\nAllow: /\n"
+                        "Disallow: /admin/\nDisallow: /api/\nDisallow: /phone\nDisallow: /t/\n"
+                        "Disallow: /setup\nDisallow: /host/go/\nDisallow: /guest\n"
+                        f"Sitemap: {base}/sitemap.xml\n", mimetype="text/plain")
 
     @app.get("/welcome")
     def welcome():
@@ -1057,11 +1119,11 @@ def create_app():
         # logged-in / phone-timer visitor to their home, so public "Powered by" links
         # (e.g. on results pages, seen by people who also carry a timer session) point here.
         from .road import capture_attribution
-        return capture_attribution(make_response(LANDING))
+        return capture_attribution(make_response(_canonical(LANDING, "/")))
 
     @app.get("/security")
     def security():
-        return SECURITY
+        return _canonical(SECURITY, "/security")
 
     @app.get("/healthz")
     def healthz():

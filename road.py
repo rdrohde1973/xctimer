@@ -1227,10 +1227,10 @@ def _owner_uid(row):
         return None
 
 
-def _host_page(title, inner):
+def _host_page(title, inner, head=""):
     return (f"""<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width, initial-scale=1">
-<title>{escape(title)} · XCTimer</title>{HEAD_EXTRA}<script>{CSRF_JS}</script>
+<title>{escape(title)} · XCTimer</title>{head}{HEAD_EXTRA}<script>{CSRF_JS}</script>
 <style>body{{font:16px/1.6 system-ui,-apple-system,Segoe UI,sans-serif;background:#f5f8fc;color:#20303f;margin:0}}
 .wrap{{max-width:560px;margin:0 auto;padding:1.4rem 1.1rem 3rem}}
 .card{{background:#fff;border:1px solid #e3e9f1;border-radius:12px;padding:1.1rem;margin:0 0 1rem}}
@@ -1298,7 +1298,11 @@ def host_start():
 <input name="email" type="email" placeholder="your email" required>
 <button class="btn" type="submit" style="white-space:nowrap;background:#3d6fa5">Email my link</button></form></div>
 <p style="font-size:.9rem;color:#6a7c8e">Running a school or team meet? <a href="/welcome">See XCTimer for schools</a>.</p>""")
-    return capture_attribution(make_response(_host_page("Time your own fun run", inner)))
+    from .ui import seo_head
+    head = seo_head("/host", f"Time your own fun run or community 5K with XCTimer: a public sign-up page, "
+                             f"printed bibs, phone or camera timing and live results. Build it free, then "
+                             f"{fee} per event.")
+    return capture_attribution(make_response(_host_page("Time your own fun run", inner, head=head)))
 
 
 def _send_host_link(email, token):
