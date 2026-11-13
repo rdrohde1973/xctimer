@@ -298,97 +298,127 @@ Build the event free. It is {fee} to open registration, and your first event is
 
 def _run_track():
     return f"""
-<p class="lede">A track meet is a dozen small competitions running at once. The meets that finish on
-time are the ones where the entries, heats and volunteers were settled before anyone arrived. Here
-is the whole job for a junior high or middle school meet: setup, timing, field events and scoring.</p>
+<p class="lede">This is how a junior high or middle school track meet runs in XCTimer, from setup
+to final team scores. Every step below is a screen in the app, so you can follow along with your
+meet open. Timing is done on phones: no stopwatches, no clipboards, and nobody copying times into
+a computer afterwards.</p>
 
-<h2>The week before</h2>
+<h2>Before the meet</h2>
 <ol>
-<li><b>Fix the event list and the order.</b> Most leagues publish an order of events. If yours does
-not, alternate sprints and distance races so athletes who double get a rest, and start the field
-events at the same time as the first race.</li>
-<li><b>Set an entry limit.</b> Four events per athlete is common, and many leagues do not count
-relays toward it. A limit keeps the meet moving and stops one athlete from being called to two
-places at once.</li>
-<li><b>Collect entries with a deadline.</b> Ask each coach for names by event two days ahead. Entries
-taken at the track are what make a meet start late.</li>
-<li><b>Draw heats and lanes.</b> Seed by best time when you have times: the fastest heat runs last,
-and the fastest runners in a heat get the middle lanes. A random draw is fine for an early-season
-meet.</li>
-<li><b>Print heat sheets.</b> One copy for the starter, one for the finish line, one for each
-coach, and one sheet for each field event.</li>
+<li><b>Create the meet.</b> On Meets, choose Track &amp; Field. On the meet's Setup tab, tick the
+schools that are coming, choose the points table, and set the event limit (4 by default; relays
+do not count toward it) and the number of lanes on your track.</li>
+<li><b>Add events.</b> Tick the events, Boys and Girls, and the grades. XCTimer creates one event
+for every combination, such as 100m Girls 7th. Drag the event types into the order they will run.</li>
+<li><b>Enter athletes.</b> Each coach opens <b>Assign athletes</b> and ticks events beside each
+athlete. XCTimer stops anyone going over the event limit. <b>Carry over last meet</b> copies the
+entries from your last meet. Visiting teams get one invite link and enter their own athletes.</li>
+<li><b>Lock bibs and print.</b> Bibs number from 1 at every meet. Lock them on the Setup tab, then
+print each school's stickers and bib list from Assign athletes.</li>
 </ol>
 
-<h2>The people you need</h2>
-<div class="tw"><table>
-<tr><th>Job</th><th>How many</th><th>What they do</th></tr>
-<tr><td>Starter</td><td class="n">1</td><td>Calls the heat to the line and starts every race</td></tr>
-<tr><td>Clerk</td><td class="n">1 or 2</td><td>Checks athletes in and lines up the next heat</td></tr>
-<tr><td>Lane timers</td><td class="n">1 per lane</td><td>Each times one lane in the sprints</td></tr>
-<tr><td>Finish judge</td><td class="n">1</td><td>Calls the order of finish when a race is close</td></tr>
-<tr><td>Field event crew</td><td class="n">2 or 3 per event</td><td>Measure, rake or reset the bar, and record</td></tr>
-<tr><td>Results</td><td class="n">1</td><td>Enters marks and posts scores</td></tr>
-</table></div>
-<p>Parents fill most of these jobs. Hand each one a one-line description, not a rule book.</p>
-
-<h2>Timing the races by hand</h2>
+<h2>Heats and lanes</h2>
 <ul>
-<li><b>Start on the smoke or the flash, not the sound.</b> Sound takes about a third of a second to
-travel 100 meters, and that is the difference between places in a sprint.</li>
-<li><b>Stop when the torso crosses the line,</b> not the head, hands or feet.</li>
-<li><b>Record hand times to the tenth, rounded up.</b> A watch that reads 13.42 is written 13.5.</li>
-<li><b>Sprints run in lanes,</b> so give each lane its own timer. Distance races do not, so one
-person calls the order while another records times.</li>
-<li><b>Place by the judge, time by the watch.</b> When the two disagree, the judged order of finish
-stands.</li>
+<li><b>Seed by season best</b> (Race day tab) uses each athlete's best time in that event from
+earlier meets in XCTimer; a relay uses the school's best. The fastest heat runs last, and within a
+heat the fastest runners get the middle lanes. Athletes with no earlier time go in after the seeded
+ones, in random order.</li>
+<li><b>Random draw</b> ignores times. Use it at the first meet of the season.</li>
+<li><b>Sprints</b> put one athlete in each lane. <b>Distance races</b> stay in one section until
+there are more than twice as many runners as lanes (17 or more on an 8-lane track), then split.</li>
+<li><b>Clear draw</b> if entries change on the day, then draw again.</li>
+<li><b>Combine races</b> to run two divisions together, such as 7th and 8th grade girls in one
+1600m. XCTimer still places and scores each division separately.</li>
+<li><b>Heat sheets</b> print as one meet packet or one event at a time. Each sheet has a code in the
+top right corner so a phone photo of it is matched to the right event.</li>
 </ul>
 
-<h2>Running the field events</h2>
-<ul>
-<li><b>Long jump and shot put:</b> three attempts each is usual at this level. Measure from the
-nearest mark the athlete left to the board or the ring, and round down, never up.</li>
-<li><b>High jump:</b> set a starting height and a fixed raise, such as two inches. An athlete is out
-after three misses in a row. A tie goes to the jumper with fewer misses at the last height
-cleared, then to fewer misses overall.</li>
-<li><b>Record every attempt,</b> including fouls and passes. The sheet is your only record if a
-result is questioned.</li>
-<li><b>Let athletes check out</b> to run a race and come back. Put a time limit on the return.</li>
-</ul>
+<h2>Phones on race day</h2>
+<p>The Race day tab shows a <b>Phone Timer App</b> QR code. Every helper scans it and lands in the
+Track Timer with no login and no app to install. It has three tabs: <b>Time</b> for races,
+<b>Scan</b> for photographed sheets, and <b>Pit</b> for field events. A coach who is already signed
+in keeps their own login.</p>
 
-<h2>Scoring the meet</h2>
-<p>Each place in each event earns points for the athlete's team. The table depends on the size of
-the meet, and your league sets it.</p>
+<h2>Sprints, hurdles and short relays</h2>
+<p>100m, 200m, 400m, hurdles, 4×100m and 4×200m are timed lane by lane.</p>
+<ol>
+<li><b>The starter</b> stands at the start line, opens the heat under <b>Sprints &amp; relays</b>,
+and taps <b>Start</b> at the gun. Or they tap <b>Auto-start: listen for the gun</b> and the phone
+starts the clock itself on the bang.</li>
+<li><b>Lane timers</b>, one per lane at the finish, open the same heat and pick their lane. The
+athlete's name shows beside each lane. Each timer taps once when their runner crosses the line.</li>
+<li>Each time appears beside its lane the moment it is tapped and goes straight into the results.</li>
+<li>After the heat, everyone taps <b>Next heat</b> together. A false start? The starter taps
+<b>Reset race</b> and starts again.</li>
+</ol>
+<p><b>Why the finish doesn't wait for the gun.</b> All the phones share one race clock, and the start
+is stamped by the starter's phone at the start line. The finish-line timers never have to see the
+smoke or hear the gun; they only tap when their runner crosses. XCTimer keeps the exact time each
+timer tapped and does not round it.</p>
+
+<h2>Distance races and long relays</h2>
+<p>800m, 1600m, 3200m, 4×400m, 4×800m and the medleys are timed by tapping each finisher.</p>
+<ol>
+<li>On the <b>Time</b> tab, pick the event and heat and open the race timer. Start it at the gun, or
+use listen for the gun.</li>
+<li>One helper taps <b>TAP finisher</b> once for every runner who crosses, in order, without stopping
+to read names. A second phone can open the same heat as a backup; both share the clock and the list.</li>
+<li>After the race, go down the list and choose who each time belongs to, or type a bib for anyone
+not in the list. For a relay, choose the team.</li>
+<li>Keep the printed heat sheet at the line and write bib numbers in the order runners finish. That
+is your record if a place is questioned.</li>
+</ol>
+
+<h2>Field events</h2>
+<p>Use whichever way suits each pit crew.</p>
+<ul>
+<li><b>Pit tab, by bib.</b> Whoever steps up, the crew types the bib (the name appears to confirm it)
+and enters the three attempts. Type feet and inches with a space: <b>10 6</b> is 10&prime;6&Prime;.
+Type <b>F</b> for a foul. The best legal attempt counts, and the mark files into that athlete's own
+grade and gender automatically, so one phone covers every division at that pit.</li>
+<li><b>Paper, then scan.</b> The crew writes marks on the printed sheet. On the <b>Scan</b> tab,
+photograph it with the code in the corner in view. XCTimer reads the handwriting and shows every row
+to check and correct before you post it.</li>
+<li><b>Typed in on a laptop</b> on the event's page.</li>
+</ul>
+<p><b>High jump and pole vault.</b> The Pit tab records the best height cleared. For bar-by-bar
+records, the event's page has a make/miss grid: the bar heights come from your meet setup (girls get
+the lowest ten bars, boys the top ten), and you enter O for a clear, X for a miss, P for a pass and
+XXX for out. XCTimer works out each jumper's best height. Jumpers who clear the same best height share
+the place and split the points; XCTimer does not use misses to break the tie.</p>
+
+<h2>Results and team scores</h2>
+<p>Each event ranks itself as marks come in, and disqualified athletes are left out. Places earn
+points from the table you chose on the Setup tab, and relays use the same table:</p>
 <div class="tw"><table>
-<tr><th>Meet</th><th>Points by place</th></tr>
+<tr><th>Points table</th><th>Points by place</th></tr>
 <tr><td>Dual meet</td><td>5, 3, 1</td></tr>
-<tr><td>Three or four teams</td><td>5, 3, 2, 1</td></tr>
+<tr><td>Dual or small meet</td><td>5, 3, 2, 1</td></tr>
 <tr><td>Invitational, six places</td><td>10, 8, 6, 4, 2, 1</td></tr>
 <tr><td>Invitational, eight places</td><td>10, 8, 6, 5, 4, 3, 2, 1</td></tr>
 </table></div>
 <p><b>Ties split the points.</b> Two athletes who tie for second in a six-place invitational share
-the points for second and third: 8 plus 6 is 14, so each gets 7. The next finisher is fourth and
-gets 4. Boys and girls are scored as separate meets.</p>
+the points for second and third: 8 plus 6 is 14, so each gets 7. The next athlete is fourth and gets
+4. Boys' and girls' team totals are kept separately.</p>
+<p>The Results tab has a live public page with a QR code for the scoreboard or the stands, and an
+Excel export when the meet is over.</p>
 
-<h2>Mistakes that make a meet run late</h2>
-<ul>
-<li><b>Entries at the track.</b> Close them two days before.</li>
-<li><b>No clerk.</b> Without one, every heat waits for a missing runner.</li>
-<li><b>Field events that start late.</b> They are the longest part of the meet. Start them first.</li>
-<li><b>One results person and a pile of paper.</b> Get marks into the results as each event ends,
-not after the last race.</li>
-</ul>
+<h2>Who you need</h2>
+<div class="tw"><table>
+<tr><th>Job</th><th>How many</th><th>What they do in XCTimer</th></tr>
+<tr><td>Starter</td><td class="n">1</td><td>Starts every race from their phone at the start line</td></tr>
+<tr><td>Lane timers</td><td class="n">1 per lane</td><td>Each taps their own lane in the sprints</td></tr>
+<tr><td>Distance timer</td><td class="n">1, plus a spare</td><td>Taps every finisher, then matches times to names</td></tr>
+<tr><td>Finish judge</td><td class="n">1</td><td>Writes the order of finish on the heat sheet</td></tr>
+<tr><td>Field crews</td><td class="n">2 per event</td><td>Measure, then enter marks on the Pit tab or the sheet</td></tr>
+<tr><td>Clerk</td><td class="n">1</td><td>Lines up the next heat from the heat sheet</td></tr>
+</table></div>
+<p>You do not need a results person: every time and mark posts itself.</p>
 
 <div class="box x">
-<h2>Running it with XCTimer</h2>
-<p>XCTimer handles the paperwork and the stopwatch. Add events by gender and grade, set the entry
-limit, and let each coach enter their own athletes. Draw heats and lanes by season best or at
-random, then print heat sheets for one event or the whole meet.</p>
-<p>On the day, each lane timer opens the meet on their own phone and picks a lane, and the
-starter's phone starts the clock for everyone. Distance races are timed by tapping each finisher.
-Field marks are entered at the pit by bib number, or you can photograph a marked-up sheet and the
-marks are read in. Team scores use the points table you choose, split ties, and update on the live
-results page as each event finishes.</p>
-<p>Setting up a meet is free. It is {_fee()} when the meet goes live.</p>
+<h2>Try it on your next meet</h2>
+<p>Setting up a meet is free: events, entries, heats, lanes and printing. It is {_fee()} when the
+meet goes live and timing turns on.</p>
 <a class="btn" href="/start">Set up your school</a><a class="btn g" href="/pricing">See pricing</a>
 </div>
 """
@@ -414,9 +444,9 @@ GUIDES = {
     "how-to-run-a-track-meet": {
         "title": "How to Run a Middle School Track Meet",
         "h1": "How to run a middle school track meet",
-        "blurb": "Entries, heats and lanes, volunteers, hand timing, field events and team scoring.",
-        "desc": "How to run a junior high or middle school track meet: entries, heats and lanes, the "
-                "volunteers you need, hand timing, field events and how team points are scored.",
+        "blurb": "Step by step in XCTimer: entries, heats and lanes, phone timing, field events and team points.",
+        "desc": "How to run a junior high or middle school track meet with phones: entries, heats and "
+                "lanes, lane timing for sprints, tap timing for distance, field events by bib, and team points.",
         "body": _run_track,
     },
     "how-to-organize-a-5k": {

@@ -107,7 +107,11 @@ assert "$500 to $1,000 or more" in fivek and "half price with code XCTIMERHALF" 
 assert "lap counters, not a race timer" in fivek                       # no false promise about jog-a-thons
 track_g = " ".join(page("/guides/how-to-run-a-track-meet").split())
 assert "<title>How to Run a Middle School Track Meet | XCTimer</title>" in track_g
-assert "8 plus 6 is 14, so each gets 7" in track_g and "picks a lane" in track_g and 'href="/start"' in track_g
+assert "8 plus 6 is 14, so each gets 7" in track_g and 'href="/start"' in track_g
+assert "listen for the gun" in track_g and "pick their lane" in track_g and "TAP finisher" in track_g
+assert "Pit tab" in track_g and "10 6" in track_g and "does not use misses to break the tie" in track_g
+for generic in ("Start on the smoke", "rounded up", "torso", "round down"):      # no officiating-manual advice
+    assert generic not in track_g, generic
 assert "/guides/how-to-run-a-track-meet" in page("/guides") and "/guides/how-to-run-a-track-meet" in w.get("/sitemap.xml").get_data(as_text=True)
 # the points tables in the guide are the ones the app ships with
 from xctimerpkg import db as _db                                        # noqa: E402
