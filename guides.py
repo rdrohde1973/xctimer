@@ -13,7 +13,7 @@ rule changes, change the guide's "Let the meet score itself" box with it); the f
 """
 from flask import Blueprint, abort, make_response
 
-from . import billing
+from . import billing, road
 from .ui import seo_head
 
 bp = Blueprint("guides", __name__)
@@ -289,9 +289,107 @@ laps for pledges instead of timing a distance, you need lap counters, not a race
 <h2>Running it with XCTimer</h2>
 <p>XCTimer gives you the public sign-up page with a QR code, printed bib stickers with your logo,
 phone timing, and live results by gender and age group, all from one link you manage yourself.
-Build the event free. It is {fee} to open registration, and your first event is free with code
-FIRSTRACE.</p>
+Build the event free. It is {fee} to open registration, and your first event is
+{road.FIRST_EVENT_OFFER}.</p>
 <a class="btn" href="/host">Set up a fun run</a><a class="btn g" href="/pricing">See pricing</a>
+</div>
+"""
+
+
+def _run_track():
+    return f"""
+<p class="lede">A track meet is a dozen small competitions running at once. The meets that finish on
+time are the ones where the entries, heats and volunteers were settled before anyone arrived. Here
+is the whole job for a junior high or middle school meet: setup, timing, field events and scoring.</p>
+
+<h2>The week before</h2>
+<ol>
+<li><b>Fix the event list and the order.</b> Most leagues publish an order of events. If yours does
+not, alternate sprints and distance races so athletes who double get a rest, and start the field
+events at the same time as the first race.</li>
+<li><b>Set an entry limit.</b> Four events per athlete is common, and many leagues do not count
+relays toward it. A limit keeps the meet moving and stops one athlete from being called to two
+places at once.</li>
+<li><b>Collect entries with a deadline.</b> Ask each coach for names by event two days ahead. Entries
+taken at the track are what make a meet start late.</li>
+<li><b>Draw heats and lanes.</b> Seed by best time when you have times: the fastest heat runs last,
+and the fastest runners in a heat get the middle lanes. A random draw is fine for an early-season
+meet.</li>
+<li><b>Print heat sheets.</b> One copy for the starter, one for the finish line, one for each
+coach, and one sheet for each field event.</li>
+</ol>
+
+<h2>The people you need</h2>
+<div class="tw"><table>
+<tr><th>Job</th><th>How many</th><th>What they do</th></tr>
+<tr><td>Starter</td><td class="n">1</td><td>Calls the heat to the line and starts every race</td></tr>
+<tr><td>Clerk</td><td class="n">1 or 2</td><td>Checks athletes in and lines up the next heat</td></tr>
+<tr><td>Lane timers</td><td class="n">1 per lane</td><td>Each times one lane in the sprints</td></tr>
+<tr><td>Finish judge</td><td class="n">1</td><td>Calls the order of finish when a race is close</td></tr>
+<tr><td>Field event crew</td><td class="n">2 or 3 per event</td><td>Measure, rake or reset the bar, and record</td></tr>
+<tr><td>Results</td><td class="n">1</td><td>Enters marks and posts scores</td></tr>
+</table></div>
+<p>Parents fill most of these jobs. Hand each one a one-line description, not a rule book.</p>
+
+<h2>Timing the races by hand</h2>
+<ul>
+<li><b>Start on the smoke or the flash, not the sound.</b> Sound takes about a third of a second to
+travel 100 meters, and that is the difference between places in a sprint.</li>
+<li><b>Stop when the torso crosses the line,</b> not the head, hands or feet.</li>
+<li><b>Record hand times to the tenth, rounded up.</b> A watch that reads 13.42 is written 13.5.</li>
+<li><b>Sprints run in lanes,</b> so give each lane its own timer. Distance races do not, so one
+person calls the order while another records times.</li>
+<li><b>Place by the judge, time by the watch.</b> When the two disagree, the judged order of finish
+stands.</li>
+</ul>
+
+<h2>Running the field events</h2>
+<ul>
+<li><b>Long jump and shot put:</b> three attempts each is usual at this level. Measure from the
+nearest mark the athlete left to the board or the ring, and round down, never up.</li>
+<li><b>High jump:</b> set a starting height and a fixed raise, such as two inches. An athlete is out
+after three misses in a row. A tie goes to the jumper with fewer misses at the last height
+cleared, then to fewer misses overall.</li>
+<li><b>Record every attempt,</b> including fouls and passes. The sheet is your only record if a
+result is questioned.</li>
+<li><b>Let athletes check out</b> to run a race and come back. Put a time limit on the return.</li>
+</ul>
+
+<h2>Scoring the meet</h2>
+<p>Each place in each event earns points for the athlete's team. The table depends on the size of
+the meet, and your league sets it.</p>
+<div class="tw"><table>
+<tr><th>Meet</th><th>Points by place</th></tr>
+<tr><td>Dual meet</td><td>5, 3, 1</td></tr>
+<tr><td>Three or four teams</td><td>5, 3, 2, 1</td></tr>
+<tr><td>Invitational, six places</td><td>10, 8, 6, 4, 2, 1</td></tr>
+<tr><td>Invitational, eight places</td><td>10, 8, 6, 5, 4, 3, 2, 1</td></tr>
+</table></div>
+<p><b>Ties split the points.</b> Two athletes who tie for second in a six-place invitational share
+the points for second and third: 8 plus 6 is 14, so each gets 7. The next finisher is fourth and
+gets 4. Boys and girls are scored as separate meets.</p>
+
+<h2>Mistakes that make a meet run late</h2>
+<ul>
+<li><b>Entries at the track.</b> Close them two days before.</li>
+<li><b>No clerk.</b> Without one, every heat waits for a missing runner.</li>
+<li><b>Field events that start late.</b> They are the longest part of the meet. Start them first.</li>
+<li><b>One results person and a pile of paper.</b> Get marks into the results as each event ends,
+not after the last race.</li>
+</ul>
+
+<div class="box x">
+<h2>Running it with XCTimer</h2>
+<p>XCTimer handles the paperwork and the stopwatch. Add events by gender and grade, set the entry
+limit, and let each coach enter their own athletes. Draw heats and lanes by season best or at
+random, then print heat sheets for one event or the whole meet.</p>
+<p>On the day, each lane timer opens the meet on their own phone and picks a lane, and the
+starter's phone starts the clock for everyone. Distance races are timed by tapping each finisher.
+Field marks are entered at the pit by bib number, or you can photograph a marked-up sheet and the
+marks are read in. Team scores use the points table you choose, split ties, and update on the live
+results page as each event finishes.</p>
+<p>Setting up a meet is free. It is {_fee()} when the meet goes live.</p>
+<a class="btn" href="/start">Set up your school</a><a class="btn g" href="/pricing">See pricing</a>
 </div>
 """
 
@@ -312,6 +410,14 @@ GUIDES = {
         "desc": "Time a cross country meet without chip timing: tap each finisher on a phone, keep runners "
                 "in chute order, and collect bibs on a poster board as the paper record.",
         "body": _time_xc,
+    },
+    "how-to-run-a-track-meet": {
+        "title": "How to Run a Middle School Track Meet",
+        "h1": "How to run a middle school track meet",
+        "blurb": "Entries, heats and lanes, volunteers, hand timing, field events and team scoring.",
+        "desc": "How to run a junior high or middle school track meet: entries, heats and lanes, the "
+                "volunteers you need, hand timing, field events and how team points are scored.",
+        "body": _run_track,
     },
     "how-to-organize-a-5k": {
         "title": "How to Organize a 5K or Fun Run",

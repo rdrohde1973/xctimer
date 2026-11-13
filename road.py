@@ -23,6 +23,11 @@ from .xc import _is_org, _match_event
 from .ui import shell, CSRF_JS, BRAND_HTML, POWERED_BY_HTML, HEAD_EXTRA, STICKER_TIP
 
 HOST_FEE_CENTS = int(os.environ.get("XC_HOST_FEE_CENTS", "10000"))  # self-serve event fee ($100, as of 1.112.0)
+# The ONE promo code the public pages mention (Rob, 2026-11-13): half off a first event. Free
+# codes still work but are handed out by hand and are never printed on a page, in an email or
+# in an assistant's guide. The code itself lives in promo_codes (50%, first event only).
+FIRST_EVENT_CODE = os.environ.get("XC_FIRST_EVENT_CODE", "XCTIMERHALF")
+FIRST_EVENT_OFFER = f"half price with code {FIRST_EVENT_CODE}"
 
 bp = Blueprint("road", __name__)
 
@@ -170,7 +175,7 @@ def _attribution_rows(days=90):
     rows = conn.execute(
         "SELECT COALESCE(NULLIF(a.utm_source,''),'(none)') AS src, COALESCE(NULLIF(a.utm_campaign,''),'(none)') AS camp, "
         "COUNT(*) AS signups, SUM(a.meet_token IS NOT NULL) AS created, SUM(a.published_at IS NOT NULL) AS published, "
-        "SUM(EXISTS(SELECT 1 FROM promo_redemptions p WHERE p.email=a.email AND UPPER(p.code)='FIRSTRACE')) AS promo "
+        "SUM(EXISTS(SELECT 1 FROM promo_redemptions p WHERE p.email=a.email)) AS promo "
         "FROM host_attribution a WHERE a.signed_up_at >= ? GROUP BY src, camp ORDER BY signups DESC, src, camp",
         (since,)).fetchall()
     conn.close()
@@ -188,7 +193,7 @@ def attribution_report():
     body = ('<h1>Host signup funnel</h1><p class="muted">Last 90 days, first touch, grouped by utm_source / '
             'utm_campaign. <a href="/organizers">← Organizers</a> · <a href="/organizers/attribution.csv">Download CSV</a></p>'
             '<div class="card"><table><tr><th>Source</th><th>Campaign</th><th>Signups</th><th>Events created</th>'
-            '<th>Events published</th><th>FIRSTRACE used</th></tr>' + trs +
+            '<th>Events published</th><th>Promo code used</th></tr>' + trs +
             '<tr><th colspan=2>Total</th>' + "".join("<th>%d</th>" % t for t in tot) + '</tr></table></div>')
     return shell(g.principal, body, active="organizers")
 
@@ -1271,14 +1276,14 @@ def host_start():
 <label>Your email</label><input name="email" type="email" required>
 <p style="font-size:.85rem;color:#6a7c8e">We'll email you a private link to build and manage your event.</p>
 {cta}
-<p style="font-size:.9rem;color:#6a7c8e;margin:.6rem 0 0">Build it free. Your first race is free with code FIRSTRACE.</p>
+<p style="font-size:.9rem;color:#6a7c8e;margin:.6rem 0 0">Build it free. Your first event is {FIRST_EVENT_OFFER}.</p>
 </form></div>
 <div class="card" style="display:flex;gap:.8rem;flex-wrap:wrap;justify-content:space-around;text-align:center;font-weight:600">
 <span>📝 Public sign-up page</span><span>🏷️ Printed bibs</span><span>📊 Live results</span></div>
 <div class="card"><h2 style="margin-top:0">How it works</h2><ol style="padding-left:1.2rem;margin:0">
 <li>Name your event and give us your email. We send you a private link.</li>
 <li>Build your races and age groups, and get a public sign-up page with a link and QR.</li>
-<li>Go live with FIRSTRACE and open registration.</li></ol></div>
+<li>Pay to go live and open registration. Your first event is {FIRST_EVENT_OFFER}.</li></ol></div>
 <div class="card"><h2 style="margin-top:0">What you get</h2><ul style="padding-left:1.2rem;margin:0">
 <li>Printed bib stickers with camera-readable tags and your event logo.</li>
 <li>Time it with a phone: one helper taps each finisher, then scans or types the bib.</li>
@@ -1286,7 +1291,7 @@ def host_start():
 <li>A course map with water stations for road events.</li>
 <li>A built-in setup assistant walks first-timers through it.</li></ul></div>
 <div class="card" style="border:2px solid #ea6a2d;text-align:center"><h2 style="margin-top:0">Simple pricing</h2>
-<p style="margin:.2rem 0"><b>First event free with code FIRSTRACE, then {fee} per event</b></p>
+<p style="margin:.2rem 0"><b>{fee} per event. First event {FIRST_EVENT_OFFER}.</b></p>
 <a class="btn" href="#create">Create my event →</a></div>
 <div class="card"><h2 style="margin-top:0">FAQ</h2>
 <p><b>What happens to my event after?</b><br>Your event and its owner login are removed 30 days after the event date, so download your results first.</p>

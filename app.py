@@ -32,7 +32,7 @@ from .billing import bp as billing_bp
 from .signup import bp as signup_bp
 from .guides import bp as guides_bp, PATHS as GUIDE_PATHS
 
-APP_VERSION = "1.118.0-join-district"
+APP_VERSION = "1.119.0-track-guide-halfprice"
 
 LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width, initial-scale=1">
@@ -841,7 +841,7 @@ PRICING = (re.sub(r'<meta name="description" content="[^"]*">',
       <ul>
         <li>Public sign-up page, printed bibs and live results</li>
         <li>Build it free, pay when you open registration</li>
-        <li>First event free with code FIRSTRACE</li>
+        <li>First event __FIRST_OFFER__</li>
       </ul>
       <a class="btn ghost2" href="/host">Set up a fun run</a>
     </div>
@@ -1102,7 +1102,9 @@ def create_app():
     def pricing_page():
         from .road import capture_attribution
         audit.note_pricing_click()
-        return capture_attribution(make_response(_canonical(PRICING, "/pricing")))
+        from .road import FIRST_EVENT_OFFER
+        html = PRICING.replace("__FIRST_OFFER__", FIRST_EVENT_OFFER)
+        return capture_attribution(make_response(_canonical(html, "/pricing")))
 
     @app.get("/sitemap.xml")
     def sitemap_xml():

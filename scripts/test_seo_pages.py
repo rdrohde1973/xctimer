@@ -2,7 +2,7 @@
 """Search-engine basics for the public pages (1.115.0): sitemap, robots.txt, one canonical
 address per page, a description of its own for each, and the price comparison on /pricing.
     python scripts/test_seo_pages.py"""
-import os, re, sys, tempfile
+import json, os, re, sys, tempfile
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 tmp = tempfile.mkdtemp()
@@ -41,7 +41,7 @@ r = w.get("/sitemap.xml")
 assert r.status_code == 200 and r.mimetype == "application/xml"
 locs = re.findall(r"<loc>([^<]+)</loc>", r.get_data(as_text=True))
 GUIDES = ["/guides", "/guides/how-to-score-a-cross-country-meet", "/guides/how-to-time-a-cross-country-meet",
-          "/guides/how-to-organize-a-5k"]
+          "/guides/how-to-run-a-track-meet", "/guides/how-to-organize-a-5k"]
 assert locs == [BASE + p for p in ["/", "/pricing", "/start", "/host", "/security"] + GUIDES], locs
 for loc in locs:
     page(loc[len(BASE):])                                  # every listed page really loads
@@ -103,8 +103,16 @@ assert "sixth" in score and 'href="/start"' in score and "$100 when the meet goe
 timing = page("/guides/how-to-time-a-cross-country-meet")
 assert "poster board" in timing and "only once" in timing and "top to bottom" in timing
 fivek = page("/guides/how-to-organize-a-5k")
-assert "$500 to $1,000 or more" in fivek and "FIRSTRACE" in fivek and 'href="/host"' in fivek
+assert "$500 to $1,000 or more" in fivek and "half price with code XCTIMERHALF" in fivek and "FIRSTRACE" not in fivek and 'href="/host"' in fivek
 assert "lap counters, not a race timer" in fivek                       # no false promise about jog-a-thons
+track_g = " ".join(page("/guides/how-to-run-a-track-meet").split())
+assert "<title>How to Run a Middle School Track Meet | XCTimer</title>" in track_g
+assert "8 plus 6 is 14, so each gets 7" in track_g and "picks a lane" in track_g and 'href="/start"' in track_g
+assert "/guides/how-to-run-a-track-meet" in page("/guides") and "/guides/how-to-run-a-track-meet" in w.get("/sitemap.xml").get_data(as_text=True)
+# the points tables in the guide are the ones the app ships with
+from xctimerpkg import db as _db                                        # noqa: E402
+for _name, _pts in _db.SEED_POINTS_TABLES:
+    assert ", ".join(str(x) for x in json.loads(_pts)) in track_g, _name
 assert w.get("/guides/no-such-guide").status_code == 404
 assert 'href="/guides"' in home and 'href="/guides"' in page("/pricing") and "/guides/how-to-organize-a-5k" in page("/host")
 # the worked example really is what the app computes
@@ -124,7 +132,7 @@ assert "eighth runner and beyond cannot push another team" in " ".join(score.spl
 t = {x["school"]: x for x in xc.team_scores(
     [{"school": s} for s in ["A"] * 9 + ["B"] * 3], fill_missing=True)}
 assert t["B"]["fill"] == 13 and t["B"]["places"] == [8, 9, 10, 13, 13], t["B"]
-print("PASS 7: three guides plus an index, and the scoring example matches what XCTimer computes")
+print("PASS 7: four guides plus an index, and the scoring example matches what XCTimer computes")
 
 # 8. www goes to the bare address; sign-in pages are kept out of search results
 r = w.get("/login?next=/meets", base_url="http://www.xctimer.com")

@@ -43,7 +43,8 @@ def banner_page(c, email, qs, name):
 
 # (a) copy + fee from HOST_FEE_CENTS
 r = client().get("/host"); h = r.get_data(as_text=True)
-assert "FIRSTRACE" in h and "$100" in h and "$50" not in h
+assert "half price with code XCTIMERHALF" in h and "$100" in h and "$50" not in h
+assert "FIRSTRACE" not in h and "free with code" not in h          # free codes are handed out, never posted
 for q in FAQ:
     assert q in h, q
 road.HOST_FEE_CENTS = 7500
