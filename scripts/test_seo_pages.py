@@ -115,7 +115,7 @@ assert "half price with code XCTIMERHALF" in fivek and "FIRSTRACE" not in fivek 
 # 1.124.0: the 5K guide walks XCTimer's own screens, and is honest that sign-up has no waiver.
 for want in ("Registration open", "Venmo", "Phone Timer App", "listen for the gun", "FINISHER", "📷",
              "Scan all races, one camera", "does not collect one", "30 days after the event date",
-             "The course fly-over", "💧 Add water station", "🗺 Course map"):
+             "The course fly-over", "💧 Add water station", "🗺 Fly the course"):
     assert want in fivek, want
 for guide in (timing, fivek):                     # 1.124.1: how many phones, scanning on its own phone
     assert "Three phones" in guide and "Two phones" in guide and "keep the scanning phone separate" in guide

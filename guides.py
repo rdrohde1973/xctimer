@@ -234,8 +234,8 @@ the route on the satellite map. Use <b>+ Add course</b> for a second route, such
 <h3>The course fly-over</h3>
 <p>Once a course is drawn, anyone can watch a 3D fly-over of it. The camera follows the route over
 the real hills, mile marks light up as it passes, each loop has its own colour and the water stations
-pop up along the way. It opens from the <b>🗺 Course map</b> button on your public results page, with
-no app and no account, so share that link with runners before race day.</p>
+pop up along the way. Runners get a <b>🗺 Fly the course</b> button on your sign-up page, and the
+<b>🗺 Course map</b> button on the public results page opens it too. No app and no account.</p>
 <p>Building is free. It is {fee} to go live and open registration, paid by card, and your first event
 is {road.FIRST_EVENT_OFFER}.</p>
 

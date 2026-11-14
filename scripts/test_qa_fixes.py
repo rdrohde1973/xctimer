@@ -279,4 +279,13 @@ assert bibs() == [1, 2, 3, 4, 6, 7], bibs()                          # a blank b
 wa1.get(f"/meets/{A1}/participants/stickers.pdf?spares=2")          # 4 is taken: keep 5, add 8
 assert settings(A1)["spare_bibs"] == [4, 5, 8]
 print("PASS 10: printed spare bibs are reserved, reused on reprint, and never given to a later sign-up")
+# 11. the sign-up page offers the course fly-over once a course is drawn (1.129.0)
+reg = client().get("/register/A1").get_data(as_text=True)
+assert "Register" in reg and "Fly the course" not in reg                       # no course yet
+ex("UPDATE meets SET course_json=? WHERE id=?",
+   json.dumps({"courses": [{"name": "5K", "points": [[-111.9, 40.4], [-111.8, 40.5]]}]}), A1)
+reg = client().get("/register/A1").get_data(as_text=True)
+assert "🗺 Fly the course" in reg and 'href="/r/A1/course"' in reg
+assert client().get("/r/A1/course").status_code == 200
+print("PASS 11: runners can open the course fly-over from the sign-up page")
 print("ALL PASS")

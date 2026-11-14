@@ -1050,8 +1050,16 @@ def register(token):
             '<div class="row"><div><label>City</label><input name="rcity"></div>'
             '<div><label>Club / Team</label><input name="rclub"></div></div></div>')
 
+    # The 3D course fly-over, once the organizer has drawn a course (coursemap.py), so runners
+    # can preview the route while they sign up (1.129.0).
+    from .coursemap import has_course
+    course_card = (f'<div class="card" style="text-align:center"><a href="/r/{escape(m["public_token"])}/course" '
+                   f'style="display:inline-block;background:#e8622a;color:#fff;font-weight:700;padding:.6rem 1.2rem;'
+                   f'border-radius:10px;text-decoration:none">🗺 Fly the course</a>'
+                   f'<div style="font-size:.85rem;color:#5b6b7c;margin-top:.35rem">A 3D fly-over of the route, '
+                   f'with mile marks and water stations.</div></div>' if has_course(m) else "")
     inner = (
-        blurb_card + fee_card +
+        blurb_card + fee_card + course_card +
         f'<form method="post" action="/register/{escape(token)}">'
         '<input type="text" name="website" class="hp" tabindex="-1" autocomplete="off" aria-hidden="true">'
         f'<div id="runners">{block(1, False)}</div>'
