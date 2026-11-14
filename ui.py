@@ -139,6 +139,169 @@ border-radius:16px;padding:2rem}
 # mutating request must echo it back. We wrap fetch to add the X-CSRF-Token header on
 # all non-GET requests (covers jpost + raw fetch uploads) and auto-inject a hidden
 # _csrf field into POST forms — so nothing downstream needs to know about CSRF.
+# The animated "LIVE" results card on the marketing pages (/welcome and /start, 1.130.0).
+# Any element with data-livedemo that holds a .clk and a <table> becomes a race: the clock
+# runs and made-up runners come in at their times, about 14 seconds a loop, then it starts
+# over. Names are invented. With "reduce motion" on, it shows the finished list and stays still.
+LIVE_DEMO_JS = r"""
+(function(){
+  var R=[["Ava Ramirez","Maple",331.4],["Sofia Chen","Ridgeline",333.9],["Harper Diaz","Maple",336.1],
+         ["Mia Johnson","Cedar",338.7],["Lily Nguyen","Ridgeline",340.2],["Emma Brooks","Summit",342.8]];
+  var T0=330.0, T1=344.5, SPEED=1.4, HOLD=2600;   // ~13 s a loop; first runner in after ~1 s
+  var st=document.createElement('style');
+  st.textContent='[data-livedemo] tr.ld-new td{animation:ldin .9s ease-out}'+
+    '@keyframes ldin{0%{background:rgba(240,100,30,.22);transform:translateY(-6px);opacity:0}'+
+    '25%{opacity:1;transform:none}100%{background:transparent}}'+
+    '[data-livedemo] .ld-cross{color:#8a96a3;font-style:italic}';
+  document.head.appendChild(st);
+  function esc(t){return String(t).replace(/[&<>]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;'}[c];});}
+  function fmt(t){var m=Math.floor(t/60),s=t-m*60;return m+':'+(s<10?'0':'')+s.toFixed(1);}
+  var still=window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  [].forEach.call(document.querySelectorAll('[data-livedemo]'),function(box){
+    var clk=box.querySelector('.clk'), tbl=box.querySelector('table');
+    if(!clk||!tbl) return;
+    var rows=R.map(function(){var tr=document.createElement('tr');
+      tr.innerHTML='<td class="pl">&nbsp;</td><td>&nbsp;</td><td class="tm"></td>';return tr;});
+    tbl.innerHTML=''; var tb=document.createElement('tbody'); tbl.appendChild(tb);
+    rows.forEach(function(tr){tb.appendChild(tr);});
+    var shown=-1;
+    function draw(t){
+      clk.textContent=fmt(t);
+      var n=0; while(n<R.length && t>=R[n][2]) n++;          // runners in so far
+      if(n===shown) return;
+      rows.forEach(function(tr,i){
+        var c=tr.children;
+        if(i<n){
+          if(i>=shown || shown<0){                            // just crossed (or first draw)
+            c[0].textContent=i+1;
+            c[1].innerHTML=esc(R[i][0])+' <span class="mut">· '+esc(R[i][1])+'</span>';
+            c[2].textContent=fmt(R[i][2]);
+            if(!still && shown>=0){tr.classList.remove('ld-new');void tr.offsetWidth;tr.classList.add('ld-new');}
+          }
+        }else if(i===n){
+          c[0].textContent=i+1; c[1].innerHTML='<span class="ld-cross">… crossing</span>'; c[2].textContent='';
+          tr.classList.remove('ld-new');
+        }else{
+          c[0].innerHTML='&nbsp;'; c[1].innerHTML='&nbsp;'; c[2].textContent=''; tr.classList.remove('ld-new');
+        }
+      });
+      shown=n;
+    }
+    if(still){ shown=-1; draw(R[R.length-1][2]); return; }
+    var start=null;
+    function tick(now){
+      if(start===null) start=now;
+      var el=now-start, run=(T1-T0)/SPEED*1000;
+      if(el<run){ draw(T0+el/1000*SPEED); }
+      else if(el<run+HOLD){ draw(T1); }
+      else { start=now; shown=-1; draw(T0); }
+      requestAnimationFrame(tick);
+    }
+    shown=-1; draw(T0); requestAnimationFrame(tick);
+  });
+})();
+"""
+
+# The animated track card on /welcome (1.130.0): two events run back to back, about 14 s a
+# loop. The clock runs, finishers pop in, the event turns green on the timeline, the timeline
+# moves on to the next event, and team points count up (with a lead change). Made-up schools.
+# With "reduce motion" on, the card stays as printed.
+TRACK_DEMO_JS = r"""
+(function(){
+  var box=document.querySelector('[data-trackdemo]');
+  if(!box || (window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches)) return;
+  var EV=["1600 Boys 9th","100 Girls 7th","100 Girls 8th","400 Girls 8th","400 Girls 9th","400 Boys 7th",
+          "4x100 Girls 7th","4x100 Boys 9th"];
+  var RACES=[
+    {ev:4,label:"400m Girls 9th Grade · Heat 1",t0:56,t1:64.0,
+     fin:[["Oakmont","Lane 5",62.4],["Riverside","Lane 4",63.1],["Summit Ridge","Lane 3",64.0]]},
+    {ev:5,label:"400m Boys 7th Grade · Heat 1",t0:58,t1:66.8,
+     fin:[["Oakmont","Lane 4",65.2],["Summit Ridge","Lane 6",65.9],["Riverside","Lane 3",66.8]]}];
+  var PTS=[10,8,6], BASE={"Riverside":154,"Oakmont":150,"Summit Ridge":121};
+  var SPEED=1.6, SCORE=[1600,2600], COUNT=800;
+  var st=document.createElement('style');
+  st.textContent='[data-trackdemo] .td-fin{display:flex;justify-content:space-between;gap:.5rem;color:#dce7f2;'+
+    'font-size:.86rem;padding:.12rem .1rem;animation:tdin .7s ease-out}'+
+    '[data-trackdemo] .td-fin b{color:var(--orange);margin-right:.35rem}'+
+    '[data-trackdemo] .td-fin .t{font-variant-numeric:tabular-nums;color:#fff;font-weight:700}'+
+    '[data-trackdemo] .td-final{color:var(--green);font-weight:700}'+
+    '[data-trackdemo] tr.td-up td{animation:tdflash 1.1s ease-out}'+
+    '@keyframes tdin{0%{opacity:0;transform:translateY(-5px);background:rgba(240,100,30,.25)}100%{opacity:1;transform:none;background:transparent}}'+
+    '@keyframes tdflash{0%{background:rgba(46,158,91,.35)}100%{background:transparent}}';
+  document.head.appendChild(st);
+  var hd=box.querySelector('.trk-live'), clk=box.querySelector('.trk-clk'), wait=box.querySelector('.trk-wait'),
+      strip=box.querySelector('.trk-strip'), tbl=box.querySelector('.trk-tbl');
+  wait.style.minHeight='5.2rem'; wait.style.textAlign='left';
+  strip.style.position='relative';                   // so each event's offsetLeft is measured inside the strip
+  strip.innerHTML=EV.map(function(e){return '<div class="trk-ev"><i></i><span>'+e+'</span></div>';}).join('');
+  var evs=strip.children;
+  function f2(n){return (n<10?'0':'')+n;}
+  function fmtClk(t){var m=Math.floor(t/60),s=t-m*60;return '0:'+f2(m)+':'+(s<10?'0':'')+s.toFixed(1);}
+  function fmtT(t){var m=Math.floor(t/60),s=t-m*60;return m+':'+(s<10?'0':'')+s.toFixed(1);}
+  // the phase plan, in ms from the start of a loop; t1 is the last finisher, because the
+  // real lane timer stops itself when every lane is tapped
+  var plan=[], at=0;
+  RACES.forEach(function(r,k){
+    var run=(r.t1-r.t0)/SPEED*1000;
+    plan.push({k:k,kind:'run',a:at,b:at+run}); at+=run;
+    plan.push({k:k,kind:'score',a:at,b:at+SCORE[k]}); at+=SCORE[k];
+  });
+  var LOOP=at, start=null, last={};
+  function totals(k,frac){                       // team points with races < k done, race k at frac
+    var t={}; for(var n in BASE) t[n]=BASE[n];
+    RACES.forEach(function(r,i){ if(i<k||(i===k&&frac>0)) r.fin.forEach(function(f,j){
+      t[f[0]]+=Math.round(PTS[j]*(i<k?1:frac)); }); });
+    return t;
+  }
+  function setStrip(cur,doneCur){
+    if(last.strip===cur+'/'+doneCur) return; last.strip=cur+'/'+doneCur;
+    for(var i=0;i<evs.length;i++) evs[i].className='trk-ev'+(i<cur||(i===cur&&doneCur)?' done':i===cur?' run':'');
+    var el=evs[cur]; strip.scrollTo({left:el.offsetLeft-strip.clientWidth/2+el.offsetWidth/2,behavior:'smooth'});
+  }
+  function setFin(r,clock,final){
+    var n=0; while(n<r.fin.length && clock>=r.fin[n][2]) n++;
+    var key=r.ev+'/'+n+'/'+final; if(last.fin===key) return; last.fin=key;
+    var h=''; for(var i=0;i<n;i++) h+='<div class="td-fin"><span><b>'+(i+1)+'</b>'+r.fin[i][0]+
+      ' <span style="color:#7f93a8">· '+r.fin[i][1]+'</span></span><span class="t">'+fmtT(r.fin[i][2])+'</span></div>';
+    if(!n) h='<div style="text-align:center">Waiting for the first finisher…</div>';
+    if(final) h+='<div class="td-final" style="text-align:center;margin-top:.2rem">✓ Final · points added</div>';
+    wait.innerHTML=h;
+  }
+  var prevOrder='';
+  function setTable(t){
+    var names=Object.keys(t).sort(function(a,b){return t[b]-t[a];});
+    var order=names.join('|'), rows='<tr><th class="rk">#</th><th>School</th><th class="pts">Points</th></tr>';
+    names.forEach(function(n,i){ rows+='<tr data-n="'+n+'"><td class="rk">'+(i+1)+'</td><td>'+n+
+      '</td><td class="pts">'+t[n]+'</td></tr>'; });
+    var key=order+JSON.stringify(t); if(last.tbl===key) return; last.tbl=key;
+    tbl.innerHTML=rows;
+    if(prevOrder && order!==prevOrder){                    // someone moved up: flash the new leader row
+      var up=tbl.querySelector('tr[data-n="'+names[0]+'"]'); if(up && prevOrder.split('|')[0]!==names[0]) up.className='td-up';
+    }
+    prevOrder=order;
+  }
+  function frame(now){
+    if(start===null) start=now;
+    var el=(now-start)%LOOP, ph=plan[0];
+    for(var i=0;i<plan.length;i++) if(el>=plan[i].a && el<plan[i].b){ph=plan[i];break;}
+    var r=RACES[ph.k];
+    if(ph.kind==='run'){
+      var clock=r.t0+(el-ph.a)/1000*SPEED;
+      hd.innerHTML='<span class="dot"></span> LIVE · '+r.label;
+      clk.textContent=fmtClk(clock);
+      setStrip(r.ev,false); setFin(r,clock,false); setTable(totals(ph.k,0));
+    }else{
+      hd.innerHTML='<span class="dot"></span> LIVE · '+r.label+' · Final';
+      clk.textContent=fmtClk(r.fin[r.fin.length-1][2]);
+      setStrip(r.ev,true); setFin(r,r.t1,true);
+      setTable(totals(ph.k,Math.min(1,(el-ph.a)/COUNT)));
+    }
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+})();
+"""
+
 CSRF_JS = """
 (function(){
   function csrf(){ var v=('; '+document.cookie).split('; csrftoken=');

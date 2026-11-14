@@ -46,7 +46,7 @@ from flask import Blueprint, g, make_response, redirect, request
 
 from . import db, billing
 from .auth import create_user, find_user_by_email, issue_reset_token, send_email, _public_url, _iso, _now
-from .ui import HEAD_EXTRA, CSRF_JS, seo_head
+from .ui import HEAD_EXTRA, CSRF_JS, LIVE_DEMO_JS, seo_head
 
 bp = Blueprint("signup", __name__)
 log = logging.getLogger("xctimer.signup")
@@ -250,7 +250,7 @@ def _form(err="", v=None):
 <h1>Run your own cross country and track meets from a phone.</h1>
 <p class="sub">Rosters, bibs, heats, phone timing and live results. No timing company and no chip mats.</p>
 </div>
-<div class="live" aria-label="Example of a live results page">
+<div class="live" data-livedemo aria-label="Example of a live results page">
   <div class="hd"><span class="dot"></span> LIVE · Girls 7th Grade 1600m</div>
   <div class="clk">5:38.2</div>
   <table>
@@ -261,6 +261,7 @@ def _form(err="", v=None):
   </table>
   <p class="cap">Example of the live results page families follow from the stands.</p>
 </div>
+<script>{LIVE_DEMO_JS}</script>
 <ul class="pts">
 <li><span class="ck">✓</span><span><b>Time it on phones.</b> One helper taps each finisher; the phone camera reads the bibs.</span></li>
 <li><span class="ck">✓</span><span><b>Results post themselves,</b> with team scores, on a live page anyone can open.</span></li>

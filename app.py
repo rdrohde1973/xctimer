@@ -32,7 +32,7 @@ from .billing import bp as billing_bp
 from .signup import bp as signup_bp
 from .guides import bp as guides_bp, PATHS as GUIDE_PATHS
 
-APP_VERSION = "1.129.0-register-flyover"
+APP_VERSION = "1.130.0-animated-live-demo"
 
 LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width, initial-scale=1">
@@ -278,7 +278,7 @@ LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
     </div>
   </div>
   <div>
-    <div class="livedemo">
+    <div class="livedemo" data-livedemo>
       <div class="hd"><span class="dot"></span> LIVE · Girls 7th Grade 1600m</div>
       <div class="clk">5:38.2</div>
       <table>
@@ -289,6 +289,7 @@ LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
       </table>
       <p class="cap">The live results page every family watches — from the stands or three states away.</p>
     </div>
+    <script>__LIVE_DEMO_JS__</script>
   </div>
 </div></header>
 
@@ -349,7 +350,7 @@ LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
     feature I always wished I had."</p>
   </div>
   <div>
-    <div class="trkwrap">
+    <div class="trkwrap" data-trackdemo>
       <div class="trk-live"><span class="dot"></span> LIVE · 400m Girls 9th Grade · Heat 1</div>
       <div class="trk-clk">0:04:12.8</div>
       <div class="trk-wait">Waiting for the first finisher…</div>
@@ -371,6 +372,7 @@ LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
         <tr><td class="rk">3</td><td>Summit Ridge</td><td class="pts">121</td></tr>
       </table>
     </div>
+    <script>__TRACK_DEMO_JS__</script>
   </div>
 </div></section>
 
@@ -790,6 +792,9 @@ LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
 <footer>© XCTimer · xctimer.com · the do-it-yourself meet manager for school cross country &amp; track
 <br><a href="/guides">Guides</a> · <a href="/pricing">Pricing</a> · <a href="/security">Security &amp; data privacy</a></footer>
 </body></html>"""
+from .ui import LIVE_DEMO_JS as _LIVE_DEMO_JS                       # noqa: E402
+from .ui import TRACK_DEMO_JS as _TRACK_DEMO_JS                     # noqa: E402
+LANDING = LANDING.replace("__LIVE_DEMO_JS__", _LIVE_DEMO_JS).replace("__TRACK_DEMO_JS__", _TRACK_DEMO_JS)
 
 
 # Public pricing page (1.112.0). Reuses the landing page's <head> and styles so the two never

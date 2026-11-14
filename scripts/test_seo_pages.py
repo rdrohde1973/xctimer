@@ -159,6 +159,11 @@ assert "eighth runner and beyond holds no team place" in " ".join(timing.split()
 t = {x["school"]: x for x in xc.team_scores(
     [{"school": s} for s in ["A"] * 9 + ["B"] * 3], fill_missing=True)}
 assert t["B"]["fill"] == 13 and t["B"]["places"] == [8, 9, 10, 13, 13], t["B"]
+# 1.130.0: the home page's live cards are animated (made-up names), and so is the /start card
+_home = page("/welcome")
+assert "data-livedemo" in _home and "data-trackdemo" in _home and "Ava Ramirez" in _home
+assert "prefers-reduced-motion" in _home and "__LIVE_DEMO_JS__" not in _home and "__TRACK_DEMO_JS__" not in _home
+assert "data-livedemo" in page("/start") and "Emma Brooks" in page("/start")
 print("PASS 7: three XCTimer guides plus an index, and the guide states the scoring XCTimer computes")
 
 # 8. www goes to the bare address; sign-in pages are kept out of search results
