@@ -310,7 +310,7 @@ print("PASS 10: an exact email-domain match joins the existing district; a look-
 # rest is asked on the password page the emailed link opens
 page = anon("10.0.2.1").get("/start").get_data(as_text=True)
 assert page.index('class="live"') < page.index('id="create"')                 # preview above the form
-assert "Ava Ramirez" in page and "Example of the live results page" in page   # made-up names, labelled
+assert "Ava Ramirez" in page and "Example of the live results page" in page   # made-up names, labeled
 assert 'name="who"' not in page and 'name="level"' not in page and 'name="state"' not in page
 assert 'name="school"' in page and 'name="email"' in page and "/start/step" in page
 MAIL.clear()

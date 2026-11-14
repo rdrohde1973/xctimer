@@ -1,6 +1,6 @@
 /* XCTimer course map for spectators: a fly-over along the course (25 s a mile) over 3D
  * terrain under a hazy sky, a glowing comet trail behind the dot, mile marks (and road
- * water stations) lighting up as it passes, each repeat loop fading to its own colour, an
+ * water stations) lighting up as it passes, each repeat loop fading to its own color, an
  * elevation profile tracking along the bottom, then a zoom out and confetti. */
 (function () {
   "use strict";
@@ -17,7 +17,7 @@
   var cur = 0, A = null, raf = 0, timer = 0, running = false;
   var deco = [], mileEls = [], head = null, lastData = 0, shownLap = 1, hitMile = 0, brg = 0;
   // The comet tail: short and thin, so it sparkles behind the dot without washing the
-  // loop colour out to white (140 m did).
+  // loop color out to white (140 m did).
   var waters = [], waterEls = [], hitWater = 0, TRAIL = 45;
 
   function fc(f) { return { type: "FeatureCollection", features: f }; }
@@ -43,7 +43,7 @@
           { id: "sat", type: "raster", source: "sat" },
           { id: "ghost", type: "line", source: "ghost", layout: lineLayout,
             paint: { "line-color": "#ffffff", "line-width": 2, "line-opacity": 0.5, "line-dasharray": [1.5, 1.5] } },
-          // A soft glow in each loop's colour under the line.
+          // A soft glow in each loop's color under the line.
           { id: "route-glow", type: "line", source: "route", layout: lineLayout,
             paint: { "line-color": ["get", "color"], "line-width": ["+", ["get", "width"], 14],
                      "line-blur": 9, "line-opacity": 0.5 } },
@@ -63,7 +63,7 @@
                                        0, "rgba(255,255,255,0)", 0.6, "rgba(255,255,255,0.2)",
                                        1, "rgba(255,255,255,0.9)"] } }
         ],
-        terrain: { source: "dem", exaggeration: 1.35 },  // real hills, gently emphasised
+        terrain: { source: "dem", exaggeration: 1.35 },  // real hills, gently emphasized
         // Tilted, the map used to stop at a hard edge; now it fades into haze and sky.
         sky: { "sky-color": "#3f86d4", "horizon-color": "#d6e8f5", "fog-color": "#e2edf6",
                "sky-horizon-blend": 0.55, "horizon-fog-blend": 0.6, "fog-ground-blend": 0.82 }
@@ -374,7 +374,7 @@
           hitWater++;
         }
         var lap = A.loop[p.i] || 1;
-        if (lap > shownLap) {                               // a new loop begins: fade to its colour
+        if (lap > shownLap) {                               // a new loop begins: fade to its color
           shownLap = lap;
           el.style.background = G.lapColor(lap);
           el.style.boxShadow = "0 0 0 6px " + G.lapColor(lap) + "55, 0 2px 6px rgba(0,0,0,.5)";

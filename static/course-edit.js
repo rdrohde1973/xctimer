@@ -94,7 +94,7 @@
     return best;
   }
   // Where the next click would put you. Uses the distance from the last redraw rather than
-  // re-analysing the whole course on every mouse movement, which lagged on long courses.
+  // re-analyzing the whole course on every mouse movement, which lagged on long courses.
   map.on("mousemove", function (e) {
     var pts = course().points;
     if (!pts.length || placingWater) return;
@@ -219,7 +219,7 @@
     var c = course(), a = G.analyse(c.points, c.smooth);
     var runs = G.runs(a.samples, a.laps, null, a.loop);
     map.getSource("route").setData(fc(runs.map(function (r) {
-      // Repeat loops sit on the first loop's line, a narrower stripe in their own colour.
+      // Repeat loops sit on the first loop's line, a narrower stripe in their own color.
       return line(r.coords, { color: G.lapColor(r.loop), width: G.lapWidth(r.pass, 7) });
     })));
     map.getSource("raw").setData(fc(c.smooth && c.points.length > 1 ? [line(c.points)] : []));
@@ -304,7 +304,7 @@
     snapshot(); course().points.splice(sel, 1); sel = -1; changed();
   };
   // A course that runs the same loop again: draw it once, tap the point where the loop
-  // starts, Repeat. The copy lands exactly on the first lap, so its colour is always
+  // starts, Repeat. The copy lands exactly on the first lap, so its color is always
   // detected -- and nobody has to click on top of their own points to redraw it.
   $("cm-repeat").onclick = function () {
     var pts = course().points;

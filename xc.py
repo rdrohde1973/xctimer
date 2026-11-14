@@ -3240,7 +3240,7 @@ function loop(){
   if(VID && VID.videoWidth>0){
     const w=DW, h=Math.round(VID.videoHeight*w/VID.videoWidth)||Math.round(w*0.75);
     if(CAN.width!==w||CAN.height!==h){ CAN.width=w; CAN.height=h; DCAN.width=w; DCAN.height=h; }
-    // Digital zoom: sample the centre 1/ZOOM of the frame so tags fill more of the
+    // Digital zoom: sample the center 1/ZOOM of the frame so tags fill more of the
     // detector (bigger = more reliable reads). The visible <video> is CSS-scaled to match.
     const zf=ZOOM||1, vw=VID.videoWidth, vh=VID.videoHeight,
           sw=vw/zf, sh=vh/zf, sx=(vw-sw)/2, sy=(vh-sh)/2;

@@ -825,7 +825,7 @@ def participant_race(pid):
 
 # ------------------------------- event branding + registration settings -------------------------------
 def _logo_bg(url):
-    """Sample a logo's background colour (corner/edge pixels) -> '#rrggbb', or None
+    """Sample a logo's background color (corner/edge pixels) -> '#rrggbb', or None
     when the logo is transparent (so the page keeps its default background)."""
     if not url:
         return None
@@ -846,7 +846,7 @@ def _logo_bg(url):
             return None
         r, g, b = Counter(cols).most_common(1)[0][0]
         return f"#{r:02x}{g:02x}{b:02x}"
-    except Exception:  # noqa: BLE001 — never block a logo upload on colour sampling
+    except Exception:  # noqa: BLE001 — never block a logo upload on color sampling
         return None
 
 

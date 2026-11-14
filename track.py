@@ -2677,7 +2677,7 @@ function assign(tid,v){{
   PICKING=false;
   if(v==='__bib__'){{
     const b=prompt('Runner not in the list — enter their bib number:');
-    if(!b||!b.trim()){{ load(); return; }}   // cancelled -> restore the row
+    if(!b||!b.trim()){{ load(); return; }}   // canceled -> restore the row
     act('/track-taps/'+tid+'/assign-bib', {{bib:b.trim()}});
     return;
   }}

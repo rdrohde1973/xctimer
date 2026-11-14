@@ -1,13 +1,13 @@
 """Course maps: plot a meet's course on satellite imagery; spectators get a fly-over.
 
 The host drops points along the course on a satellite map (/meets/<id>/course). Only
-those clicked points are stored -- smoothing, distance, loop colouring and mile marks
+those clicked points are stored -- smoothing, distance, loop coloring and mile marks
 are all worked out in the browser by static/course.js, the same code on both pages, so
 the editor and the results-page viewer can never disagree about a course.
 
 Spectators open /r/<token>/course from the public results page: a fly-over (25 s a mile)
 along the route over 3D terrain, mile marks lighting up as it passes, each repeat loop
-in its own colour, then a zoom out to the whole course and confetti.
+in its own color, then a zoom out to the whole course and confetti.
 
 Imagery: Esri World Imagery with a free ArcGIS developer key (XC_ESRI_KEY in env; no
 card on file means going over the free tier BLOCKS tiles, never bills). Without a key
@@ -271,7 +271,7 @@ def course_editor(mid):
   finish — the running distance shows in the corner of the map, and <b>⌫ Delete last point</b> (or
   Backspace) takes back a click. <b>3.</b> Press <b>✅ Finish course</b>: it smooths the route and saves it.
   Drag a point to move it. <b>Going round again?</b> Click the dots from the last loop — the new
-  point lands right on them and that loop draws on the same line in a new colour. To break away
+  point lands right on them and that loop draws on the same line in a new color. To break away
   (say, off the last lap to the finish), just click off the old line — more than 2 m away, a point
   goes exactly where you click. Or draw a loop once, <b>right-click</b> (or Shift-click) the point where it starts, and press
   <b>Repeat loop</b>. Right-click a point and press <b>Delete point</b> to remove it. Tick

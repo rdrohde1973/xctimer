@@ -13,7 +13,7 @@ RACE, not each meet, so a meet where boys and girls ran different distances is f
 
 Races are only compared when they share at least MIN_SHARED runners, directly or
 through a chain -- a race nothing ties to the others (a 1-mile time trial for a team
-that has not raced yet) would otherwise be centred on its own average and a 1-mile
+that has not raced yet) would otherwise be centered on its own average and a 1-mile
 time would beat real 2-mile runners. Ratings come from REAL races; a time trial's time
 only counts for a runner with nothing else, and is flagged. Finishing ORDER in a time
 trial is another matter: everyone ran the same distance, so it counts fully as
@@ -259,7 +259,7 @@ def suggest(school_id, use_llm=True):
                     p["rating"]))
                 chosen, left = order[:slots], order[slots:]
                 # Settled when every pick beat every runner left out the LAST time they
-                # raced each other. No judgement needed, so it never goes to the LLM, which
+                # raced each other. No judgment needed, so it never goes to the LLM, which
                 # only sees real close calls: runners who never met, or whose latest
                 # meeting points the other way.
                 settled = all(last(a, b) is True for a in chosen for b in left)

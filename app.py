@@ -32,7 +32,7 @@ from .billing import bp as billing_bp
 from .signup import bp as signup_bp
 from .guides import bp as guides_bp, PATHS as GUIDE_PATHS
 
-APP_VERSION = "1.130.1-live-demo-plays-once"
+APP_VERSION = "1.130.2-us-spelling"
 
 LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width, initial-scale=1">
@@ -404,11 +404,11 @@ LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
     <span class="kicker">🗺 New — course maps</span>
     <h2>Fly the course before the gun goes off.</h2>
     <p class="lead">The host traces the course on satellite imagery in a few minutes. Families
-    open a 3D fly-over from the results page — over the real hills, every loop in its own colour,
+    open a 3D fly-over from the results page — over the real hills, every loop in its own color,
     mile marks lighting up as it passes, and confetti bursting from the finish line.</p>
     <ul class="livelist">
       <li><span class="ck">✓</span> 3D satellite fly-over with real terrain — no app, no account</li>
-      <li><span class="ck">✓</span> Each loop in its own colour, mile marks, and a live distance counter</li>
+      <li><span class="ck">✓</span> Each loop in its own color, mile marks, and a live distance counter</li>
       <li><span class="ck">✓</span> Elevation profile with total climb and the biggest hill called out</li>
       <li><span class="ck">✓</span> Water stations for road races and fun runs</li>
       <li><span class="ck">✓</span> Race-day email to every coach: heat start times, their bib list, and directions to the start line</li>
@@ -430,8 +430,8 @@ LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
   box.classList.add("anim");
   function $(id) { return document.getElementById(id); }
 
-  // ------------------------------------------------------------------ the scene (metres)
-  var patches = [   // [x0, z0, x1, z1, colour]: roads, the school and its lot, a soccer field
+  // ------------------------------------------------------------------ the scene (meters)
+  var patches = [   // [x0, z0, x1, z1, color]: roads, the school and its lot, a soccer field
     [-160, -14, 160, -9, "#b9b2a4"], [-112, -200, -107, 400, "#b9b2a4"], [-160, 214, 160, 221, "#b9b2a4"],
     [-104, 0, -66, 58, "#9b958a"], [-100, 64, -64, 94, "#d3cdc0"], [-92, 94, -74, 106, "#c6c0b3"],
     [58, 26, 106, 90, "#7fae5e"], [62, 30, 102, 86, "#8bbb69"], [81.5, 30, 82.5, 86, "#e8f0dd"],
@@ -457,7 +457,7 @@ LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
     return out;
   }
   var PER = 8, R = ring(cps, PER), lap = R.slice(1).concat([R[0]]);
-  // pass = times this ground is covered (stripe width); loop = loop the runner is on (colour)
+  // pass = times this ground is covered (stripe width); loop = loop the runner is on (color)
   var way = [[0, 196]], info = [];
   function add(pts, pass, lp) { pts.forEach(function (p) { info.push([pass, lp]); way.push(p); }); }
   add([R[0]], 1, 1);

@@ -6,7 +6,7 @@
  */
 (function (root) {
   "use strict";
-  var R = 6371008.8;               // mean Earth radius, metres
+  var R = 6371008.8;               // mean Earth radius, meters
   var MILE = 1609.344;
   var RAD = Math.PI / 180;
 
@@ -23,7 +23,7 @@
     return d;
   }
 
-  // Local flat projection around a point: metres east/north. Good to well under 1% over
+  // Local flat projection around a point: meters east/north. Good to well under 1% over
   // a cross-country course, and it lets corner rounding work in real distances.
   function projector(origin) {
     var kx = Math.cos(origin[1] * RAD) * R * RAD, ky = R * RAD;
@@ -44,9 +44,9 @@
   }
 
   /* "Smooth" = keep the host's straight lines and just round off each corner. Each corner
-   * gets a small curve (at most ROUND metres back along either leg, never more than half a
+   * gets a small curve (at most ROUND meters back along either leg, never more than half a
    * leg) that stays inside the corner, so the line can't swing out across a street the way
-   * a spline fitted through the points did -- it never strays more than a few metres. */
+   * a spline fitted through the points did -- it never strays more than a few meters. */
   var ROUND = 10;
   function smooth(pts, spacing) {
     pts = dedupe(pts);
@@ -72,7 +72,7 @@
     return dedupe(out);
   }
 
-  /* Evenly spaced samples along a path: [{p:[lng,lat], d:metres from start}]. */
+  /* Evenly spaced samples along a path: [{p:[lng,lat], d:meters from start}]. */
   function resample(path, step) {
     step = step || 5;
     if (!path || path.length < 2) return path && path.length ? [{ p: path[0], d: 0 }] : [];
@@ -91,7 +91,7 @@
     return out;
   }
 
-  // Closest point to p on the segment a-b (flat x/y metres), and the distance to it.
+  // Closest point to p on the segment a-b (flat x/y meters), and the distance to it.
   function nearestOnSeg(p, a, b) {
     var ux = b[0] - a[0], uy = b[1] - a[1], L = ux * ux + uy * uy;
     var t = L ? Math.max(0, Math.min(1, ((p[0] - a[0]) * ux + (p[1] - a[1]) * uy) / L)) : 0;
@@ -101,7 +101,7 @@
 
   /* Which lap of the ground under each sample is this? 1 = first time over it, 2 = the
    * second time (a repeat loop), and so on. A sample counts the separate earlier visits
-   * of the route within RADIUS metres of it, ignoring the stretch just behind it. Short brushes -- crossing
+   * of the route within RADIUS meters of it, ignoring the stretch just behind it. Short brushes -- crossing
    * an earlier path, a start line near the finish chute -- are shorter than MIN_RUN and
    * don't count as a new loop. */
   function passes(samples, radius, minRun) {
@@ -124,7 +124,7 @@
       }
       raw[i] = visits + 1;
     }
-    // Hysteresis: a change of lap must last MIN_RUN metres, or it was just a brush.
+    // Hysteresis: a change of lap must last MIN_RUN meters, or it was just a brush.
     var out = raw.slice(), start = 0;
     for (var k = 1; k <= n; k++) {
       if (k === n || raw[k] !== raw[start]) {
@@ -199,8 +199,8 @@
    * [{pass:2, loop:2, coords:[[lng,lat],...], d0, d1}, ...].
    *   pass -- how many times this ground has been covered (sets the stripe width: a repeat
    *           loop is a narrower stripe down the middle of the one under it)
-   *   loop -- which loop the runner is on (sets the colour; never goes back down, so the
-   *           run to the finish after loop 2 stays loop 2's colour even on new ground)
+   *   loop -- which loop the runner is on (sets the color; never goes back down, so the
+   *           run to the finish after loop 2 stays loop 2's color even on new ground)
    * Runs share their joining point so the drawn line has no gaps. Optional `upto` cuts
    * the route at that distance (the fly-over draws it progressively). */
   function runs(samples, laps, upto, loop) {
@@ -242,8 +242,8 @@
   }
 
   // ---------------------------------------------------------------- elevation
-  /* Terrarium elevation tiles (the same ones the 3D terrain uses) store metres in the
-   * pixel colour: (R * 256 + G + B / 256) - 32768. */
+  /* Terrarium elevation tiles (the same ones the 3D terrain uses) store meters in the
+   * pixel color: (R * 256 + G + B / 256) - 32768. */
   function terrarium(r, g, b) { return r * 256 + g + b / 256 - 32768; }
 
   /* Web-Mercator position of [lng, lat] in whole-world pixels at zoom z (256 px tiles). */
@@ -252,9 +252,9 @@
     return [(p[0] + 180) / 360 * n, (1 - Math.log(Math.tan(lat) + 1 / Math.cos(lat)) / Math.PI) / 2 * n];
   }
 
-  /* The hills of a course from elevations (metres) at each sample:
-   *   gain  -- total climbing, ignoring wobbles under a metre (tile noise)
-   *   climb -- the biggest single climb {rise, from, to (metres along), grade}; a dip of
+  /* The hills of a course from elevations (meters) at each sample:
+   *   gain  -- total climbing, ignoring wobbles under a meter (tile noise)
+   *   climb -- the biggest single climb {rise, from, to (meters along), grade}; a dip of
    *            under 3 m on the way up doesn't end it
    *   lo/hi -- lowest and highest points. */
   function hills(elev, samples) {
@@ -288,7 +288,7 @@
     return out;
   }
 
-  /* How far along the route (metres) a spot is: the nearest sample's distance. */
+  /* How far along the route (meters) a spot is: the nearest sample's distance. */
   function along(samples, p) {
     var best = Infinity, d = 0;
     for (var i = 0; i < samples.length; i++) {
@@ -303,7 +303,7 @@
   var LAP_COLORS = ["#38bdf8", "#ff6a00", "#a855f7", "#2563eb", "#c2410c", "#e879f9"];
   function lapColor(n) { return LAP_COLORS[(Math.max(1, n) - 1) % LAP_COLORS.length]; }
   // Repeat loops ride on the same line, each a narrower stripe down the middle of the one
-  // before, so every loop's colour still shows without drawing a second trail beside it.
+  // before, so every loop's color still shows without drawing a second trail beside it.
   // Each loop is half the width of the one under it, so a good edge of the loop below
   // shows on both sides (at 0.55 it was hard to see).
   function lapWidth(n, base) { return Math.max(1.5, base * Math.pow(0.5, Math.max(1, n) - 1)); }
