@@ -227,7 +227,15 @@ Kids Fun Run beside it. Each race has its own start, its own clock and its own r
 <li><b>Set age groups</b> on each race, for example <b>10 &amp; Under, 11-14, 15-19, 20-29, 30+</b>.
 Copy and paste the same line into the next race to reuse it.</li>
 <li><b>Upload your logo.</b> It goes on the sign-up page and on every bib.</li>
+<li><b>Map the course</b> on the Course tab. Search for the park or address, then click points along
+the route on the satellite map. Use <b>+ Add course</b> for a second route, such as the 10K, and
+<b>💧 Add water station</b> to mark each water stop.</li>
 </ol>
+<h3>The course fly-over</h3>
+<p>Once a course is drawn, anyone can watch a 3D fly-over of it. The camera follows the route over
+the real hills, mile marks light up as it passes, each loop has its own colour and the water stations
+pop up along the way. It opens from the <b>🗺 Course map</b> button on your public results page, with
+no app and no account, so share that link with runners before race day.</p>
 <p>Building is free. It is {fee} to go live and open registration, paid by card, and your first event
 is {road.FIRST_EVENT_OFFER}.</p>
 
