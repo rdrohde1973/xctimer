@@ -607,6 +607,11 @@ def migrate(conn):
     conn.execute("CREATE TABLE IF NOT EXISTS pricing_clicks ("
                  "id INTEGER PRIMARY KEY, ts TEXT NOT NULL, visitor TEXT NOT NULL, src TEXT)")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_pricing_clicks_ts ON pricing_clicks(ts)")
+    # How far visitors get on /start (1.126.0, audit.note_start_step): view, form, typing,
+    # submit, more. Same privacy rule as pricing_clicks: a hash of the browser's token only.
+    conn.execute("CREATE TABLE IF NOT EXISTS start_steps ("
+                 "id INTEGER PRIMARY KEY, ts TEXT NOT NULL, visitor TEXT NOT NULL, step TEXT NOT NULL)")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_start_steps_ts ON start_steps(ts)")
 
     ptcols = _column_names(conn, "points_tables")
     if "relay_multiplier" not in ptcols:

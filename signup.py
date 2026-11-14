@@ -196,30 +196,89 @@ h1{{color:#164271;margin-top:0}} a{{color:#164271}}</style></head><body><div cla
 <p><a href="/welcome">← XCTimer</a> · <a href="/pricing">Pricing</a></p>{inner}</div></body></html>""")
 
 
+_PREVIEW_CSS = """<style>
+.hero h1{font-size:1.75rem;line-height:1.2;margin:.2rem 0 .5rem}
+.hero .sub{font-size:1.05rem;color:#43586c;margin:0 0 1rem}
+.live{background:#fff;border:2px solid #ea6a2d;border-radius:14px;padding:.9rem 1rem;margin:0 0 1rem;
+      box-shadow:0 8px 24px rgba(22,66,113,.10)}
+.live .hd{display:flex;align-items:center;gap:.45rem;font-weight:800;color:#ea6a2d;font-size:.9rem}
+.live .dot{width:.6rem;height:.6rem;border-radius:50%;background:#2e9e5b;animation:pulse 1.4s infinite}
+@keyframes pulse{50%{opacity:.35}}
+.live .clk{font-size:2.3rem;font-weight:800;text-align:center;color:#164271;font-variant-numeric:tabular-nums;margin:.2rem 0}
+.live table{width:100%;border-collapse:collapse;font-size:.95rem}
+.live td{padding:.3rem .2rem;border-top:1px solid #edf1f6}
+.live .pl{color:#ea6a2d;font-weight:800;width:1.4rem} .live .tm{text-align:right;font-variant-numeric:tabular-nums}
+.live .mut{color:#6a7c8e} .live .cap{font-size:.85rem;color:#6a7c8e;margin:.5rem 0 0}
+.pts{list-style:none;padding:0;margin:0 0 1rem}
+.pts li{display:flex;gap:.6rem;margin:.55rem 0;font-size:1rem}
+.pts li b{color:#164271} .pts .ck{color:#2e9e5b;font-weight:800}
+.season{background:#eef5ff;border-radius:10px;padding:.7rem .9rem;margin:0 0 1rem;font-size:.97rem}
+</style>"""
+
+# The /start funnel (1.126.0): which steps a visitor reaches, recorded once per browser per step
+# by POST /start/step (audit.note_start_step). It answers "do people leave before or after they
+# start the form?" -- nothing typed into the form is ever sent.
+_FUNNEL_JS = """<script>
+(function(){
+  var sent={};
+  function step(s){ if(sent[s]) return; sent[s]=1;
+    try{ fetch('/start/step',{method:'POST',keepalive:true,
+      headers:{'Content-Type':'application/json'},body:JSON.stringify({step:s})}); }catch(e){} }
+  step('view');
+  var card=document.getElementById('create');
+  if(card && 'IntersectionObserver' in window){
+    new IntersectionObserver(function(es,o){ es.forEach(function(e){
+      if(e.isIntersecting){ step('form'); o.disconnect(); } }); },{threshold:.5}).observe(card);
+  }
+  if(card){
+    card.addEventListener('focusin',function(){ step('typing'); });
+    var f=card.querySelector('form'); if(f) f.addEventListener('submit',function(){ step('submit'); });
+  }
+  var more=document.getElementById('more'); if(more) more.addEventListener('click',function(){ step('more'); });
+})();
+</script>"""
+
+
 def _form(err="", v=None):
     v = v or {}
     val = lambda k: escape(v.get(k, ""))                                   # noqa: E731
-    opts = "".join(f'<option value="{k}"{" selected" if v.get("level") == k else ""}>{lbl}</option>'
-                   for k, (lbl, _g) in LEVELS.items())
     fee = billing.fee_str()
     errp = f'<p class="err">{escape(err)}</p>' if err else ""
-    return _page("Cross country and track meet timing for your school", f"""<h1>Set up your school on XCTimer.</h1>
-<p>Rosters, bibs, heats, phone timing and live results for your cross country and track meets.
-Build everything free. It is {fee} only when a meet goes live.</p>
-<div class="card" id="create">{errp}<form method="post" action="/start">
+    # Short form (1.126.0): school and email only. Name, level, state and district are asked
+    # on the password page the emailed link opens (setup_extra below), once they are invested.
+    return _page("Cross country and track meet timing for your school", f"""<div class="hero">
+<h1>Run your own cross country and track meets from a phone.</h1>
+<p class="sub">Rosters, bibs, heats, phone timing and live results. No timing company and no chip mats.</p>
+</div>
+<div class="live" aria-label="Example of a live results page">
+  <div class="hd"><span class="dot"></span> LIVE · Girls 7th Grade 1600m</div>
+  <div class="clk">5:38.2</div>
+  <table>
+    <tr><td class="pl">1</td><td>Ava Ramirez <span class="mut">· Maple</span></td><td class="tm">5:31.4</td></tr>
+    <tr><td class="pl">2</td><td>Sofia Chen <span class="mut">· Ridgeline</span></td><td class="tm">5:33.9</td></tr>
+    <tr><td class="pl">3</td><td>Harper Diaz <span class="mut">· Maple</span></td><td class="tm">5:36.1</td></tr>
+    <tr><td class="pl">4</td><td class="mut">… crossing</td><td class="tm"></td></tr>
+  </table>
+  <p class="cap">Example of the live results page families follow from the stands.</p>
+</div>
+<ul class="pts">
+<li><span class="ck">✓</span><span><b>Time it on phones.</b> One helper taps each finisher; the phone camera reads the bibs.</span></li>
+<li><span class="ck">✓</span><span><b>Results post themselves,</b> with team scores, on a live page anyone can open.</span></li>
+<li><span class="ck">✓</span><span><b>Build everything free.</b> It is {fee} only when a meet goes live.</span></li>
+</ul>
+<p class="season">Getting ready for next season? Set your school up free now, and your roster and meets
+are ready when you are.</p>
+<div class="card" id="create">{errp}<h2 style="margin:0 0 .2rem;color:#164271">Set up your school</h2>
+<form method="post" action="/start">
 <label>School name</label><input name="school" required maxlength="80" value="{val('school')}" placeholder="e.g. Maple Grove Middle School">
-<label>District <span class="opt">(optional)</span></label><input name="district" maxlength="80" value="{val('district')}" placeholder="e.g. Maple Grove School District">
-<div style="display:flex;gap:.7rem;flex-wrap:wrap">
-<div style="flex:2;min-width:12rem"><label>Level</label><select name="level">{opts}</select></div>
-<div style="flex:1;min-width:6rem"><label>State</label><input name="state" maxlength="30" value="{val('state')}" placeholder="e.g. Utah"></div></div>
-<label>Your name</label><input name="who" required maxlength="80" value="{val('who')}">
-<label>Your email</label><input name="email" type="email" required maxlength="120" value="{val('email')}">
+<label>Your email</label><input name="email" type="email" required maxlength="120" value="{val('email')}" autocomplete="email">
 <div class="hp" aria-hidden="true"><label>Website</label><input name="website" tabindex="-1" autocomplete="off"></div>
 <p class="fine">We email you a private link to finish setting up. Use your school email if you have one.</p>
 <button class="btn" type="submit">Create my school →</button>
 <p class="fine" style="margin:.7rem 0 0">By signing up you confirm your school lets you manage its team roster.
 See <a href="/security">Security &amp; data privacy</a>.</p>
 </form></div>
+<p style="margin:0 0 1rem"><a id="more" href="/welcome#features">See everything XCTimer does →</a></p>
 <div class="card"><h2 style="margin-top:0">How it works</h2><ol style="padding-left:1.2rem;margin:0">
 <li>Tell us your school and email. We send you a private link.</li>
 <li>Import your roster, then build a meet: events, entries, heats, bibs and heat sheets.</li>
@@ -230,10 +289,10 @@ season with unlimited meets, shared rosters, AI Insights and priority support.
 <a href="mailto:rob@xctimer.com?subject=XCTimer%20for%20our%20district">Get in touch</a> or
 <a href="/pricing">see pricing</a>.</div>
 <p class="fine">Hosting a fun run or community 5K instead? <a href="/host">Set that up here</a>.
-Already have an account? <a href="/login">Sign in</a>.</p>""",
+Already have an account? <a href="/login">Sign in</a>.</p>{_FUNNEL_JS}""",
                  head=seo_head("/start", f"Set up your school on XCTimer: rosters, bibs, heats, phone timing "
                                          f"and live results for cross country and track meets. Free to "
-                                         f"build, {fee} when a meet goes live."))
+                                         f"build, {fee} when a meet goes live.") + _PREVIEW_CSS)
 
 
 def _sent(email):
@@ -272,6 +331,14 @@ def start():
     return capture_attribution(make_response(_form()))
 
 
+@bp.post("/start/step")
+def start_step():
+    """The /start funnel beacon (see _FUNNEL_JS). Always 204: it must never show an error."""
+    from . import audit
+    audit.note_start_step(str((request.get_json(silent=True) or {}).get("step", ""))[:12])
+    return "", 204
+
+
 @bp.post("/start")
 def create():
     f = {k: _clean(request.form.get(k)) for k in ("school", "district", "state", "who")}
@@ -279,8 +346,8 @@ def create():
     f["level"] = request.form.get("level") if request.form.get("level") in LEVELS else "ms"
     if request.form.get("website"):                  # honeypot: a person never sees this field
         return _sent(f["email"] or "you")
-    if not f["school"] or not f["who"] or not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", f["email"]):
-        return _form("Please enter your school, your name and a valid email.", f), 400
+    if not f["school"] or not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", f["email"]):
+        return _form("Please enter your school and a valid email.", f), 400
     too_many = (_form("Too many sign-ups from this network. Please try again in an hour, "
                       "or email rob@xctimer.com.", f), 429)
 
@@ -330,7 +397,7 @@ def create():
             conn.commit()
             conn.close()
             school, kind = f["school"], "school"
-        _uid, token = create_user(f["email"], "coach", district_id=did, name=f["who"], school_ids=[sid])
+        _uid, token = create_user(f["email"], "coach", district_id=did, name=f["who"] or None, school_ids=[sid])
         log.info("self-serve sign-up joined district %s by email domain: %s %s", did, kind, sid)
         _send_welcome(f["email"], f["who"], school, token, joined=home["name"], kind=kind,
                       subscribed=billing.plan_of(home["settings_json"]) == billing.PLAN_SUB)
@@ -346,7 +413,9 @@ def create():
         "SELECT name FROM districts WHERE lower(name)=lower(?)", (dname,)).fetchall()]
     settings = {"plan": billing.PLAN_MEET,
                 "self_serve": {"at": _iso(_now()), "by": f["email"], "state": f["state"],
-                               "level": f["level"], "attribution": attr}}
+                               "level": f["level"], "attribution": attr,
+                               # short form: level, state and district come on the setup page
+                               "details_pending": not f["who"]}}
     if domain not in PUBLIC_DOMAINS and parse_domains(domain) and not districts_claiming(conn, domain):
         settings["email_domains"] = [domain]         # the next coach at this domain joins this district
     if LEVELS[f["level"]][1]:
@@ -356,7 +425,7 @@ def create():
     sid = conn.execute("INSERT INTO schools (district_id, name) VALUES (?,?)", (did, f["school"])).lastrowid
     conn.commit()
     conn.close()
-    _uid, token = create_user(f["email"], "coach", district_id=did, name=f["who"], school_ids=[sid])
+    _uid, token = create_user(f["email"], "coach", district_id=did, name=f["who"] or None, school_ids=[sid])
     log.info("self-serve school sign-up: district %s school %s", did, sid)
     _send_welcome(f["email"], f["who"], f["school"], token)
     try:
@@ -389,7 +458,7 @@ def _send_welcome(email, who, school, token, joined=None, kind=None, subscribed=
     money = ("</p>" if joined and subscribed else
              f"Setting everything up is free. It is {fee} when a meet goes live, and visiting teams never pay.</p>")
     send_email(email, subject,
-               f"<p>Hi {escape(who)},</p>{intro}"
+               f"<p>Hi{(' ' + escape(who)) if who else ''},</p>{intro}"
                f'<p><a href="{link}">{link}</a></p>'
                f"{nxt}{money}"
                f"<p>The link works for 7 days. If you didn't ask for this, ignore this email.</p>"
@@ -414,9 +483,10 @@ def _notify_operator(f, did, similar, attr, joined=None, kind=None, school=None)
     to = os.environ.get("XC_REG_NOTIFY", "rob@xctimer.com")
     if joined:
         return _notify_join(to, f, joined, kind, school, attr)
-    rows = [("School", f["school"]), ("District", f["district"] or "(none given)"),
-            ("Level", LEVELS[f["level"]][0]), ("State", f["state"] or "-"),
-            ("Contact", f"{f['who']} <{f['email']}>"),
+    later = "(asked after the email link)" if not f["who"] else None
+    rows = [("School", f["school"]), ("District", later or f["district"] or "(none given)"),
+            ("Level", later or LEVELS[f["level"]][0]), ("State", later or f["state"] or "-"),
+            ("Contact", f"{f['who']} <{f['email']}>" if f["who"] else f["email"]),
             ("Came from", ", ".join(f"{k}={v}" for k, v in attr.items()) or "direct")]
     if similar:
         rows.append(("Heads up", "a district with this name already exists: " + ", ".join(similar)))
@@ -445,8 +515,7 @@ def _notify_join(to, f, district, kind, school, attr):
         typed = []
     rows = [("District", f"{district['name']} (id {district['id']}, {plan})"),
             ("Matched on", f"email domain {domain}"), ("School", school)] + typed + [
-            ("Level", LEVELS[f["level"]][0]), ("State", f["state"] or "-"),
-            ("Contact", f"{f['who']} <{f['email']}>"),
+            ("Contact", f"{f['who']} <{f['email']}>" if f["who"] else f["email"]),
             ("Came from", ", ".join(f"{k}={v}" for k, v in attr.items()) or "direct")]
     trs = "".join(f"<tr><td><b>{escape(k)}</b></td><td>{escape(str(v))}</td></tr>" for k, v in rows)
     send_email(to, subject,
@@ -454,6 +523,88 @@ def _notify_join(to, f, district, kind, school, attr):
                f"<p>They get in only from the link emailed to that address. If this person should not "
                f"be there, remove them on the Users page.</p>"
                f'<p><a href="{_public_url()}/districts">Open Districts</a></p>')
+
+
+# ------------------------------- details asked after the email link (1.126.0) -------------------------------
+def _pending_district(conn, u):
+    """The self-serve district this user created from the short form and has not described yet."""
+    if not u["district_id"]:
+        return None
+    d = conn.execute("SELECT id, name, settings_json FROM districts WHERE id=?", (u["district_id"],)).fetchone()
+    if not d:
+        return None
+    try:
+        st = json.loads(d["settings_json"] or "{}")
+    except (ValueError, TypeError):
+        return None
+    ss = st.get("self_serve")
+    if not isinstance(ss, dict) or not ss.get("details_pending") or ss.get("by") != u["email"]:
+        return None
+    return {"id": d["id"], "name": d["name"], "settings": st}
+
+
+def setup_extra(u, v=None):
+    """Extra fields for the /setup password page: the user's name if we do not have it, and the
+    school's level, state and district if they signed up with the short /start form."""
+    v = v or {}
+    out = ""
+    if not (u["name"] or "").strip():
+        out += (f'<label>Your name</label><input name="who" required maxlength="80" '
+                f'value="{escape(v.get("who", ""))}" autocomplete="name">')
+    conn = db.connect()
+    d = _pending_district(conn, u)
+    conn.close()
+    if d:
+        opts = "".join(f'<option value="{k}"{" selected" if v.get("level") == k else ""}>{lbl}</option>'
+                       for k, (lbl, _g) in LEVELS.items())
+        out += (f'<label>Level</label><select name="level">{opts}</select>'
+                f'<label>State</label><input name="state" maxlength="30" value="{escape(v.get("state", ""))}" '
+                f'placeholder="e.g. Utah">'
+                f'<label>District <span class="muted">(optional)</span></label><input name="district" '
+                f'maxlength="80" value="{escape(v.get("district", ""))}" placeholder="e.g. Maple Grove School District">')
+    if out:
+        out = ('<p class="muted" style="margin:.2rem 0 .4rem">A few details about you and your school, '
+               'then choose a password.</p>' + out)
+    return out
+
+
+def save_setup_extra(u, form):
+    """Store what setup_extra asked for. Returns an error message, or None when all is well."""
+    who = _clean(form.get("who"))
+    need_name = not (u["name"] or "").strip()
+    if need_name and not who:
+        return "Please enter your name."
+    conn = db.connect()
+    d = _pending_district(conn, u)
+    if need_name:
+        conn.execute("UPDATE users SET name=? WHERE id=?", (who, u["id"]))
+    rows = []
+    if d:
+        level = form.get("level") if form.get("level") in LEVELS else "ms"
+        state, dname = _clean(form.get("state"), 30), _clean(form.get("district"))
+        st = d["settings"]
+        st["self_serve"].update({"level": level, "state": state, "details_pending": False})
+        if LEVELS[level][1]:
+            st["grades"] = LEVELS[level][1]
+        new_name = dname or d["name"]
+        conn.execute("UPDATE districts SET name=?, settings_json=? WHERE id=?", (new_name, json.dumps(st), d["id"]))
+        school = conn.execute("SELECT name FROM schools WHERE district_id=? ORDER BY id", (d["id"],)).fetchone()
+        rows = [("School", school["name"] if school else "-"), ("District", dname or "(none given)"),
+                ("Level", LEVELS[level][0]), ("State", state or "-")]
+    conn.commit()
+    conn.close()
+    if rows or need_name:
+        rows = [("Contact", f"{who or u['name']} <{u['email']}>")] + rows
+        trs = "".join(f"<tr><td><b>{escape(k)}</b></td><td>{escape(str(val))}</td></tr>" for k, val in rows)
+        try:
+            send_email(os.environ.get("XC_REG_NOTIFY", "rob@xctimer.com"),
+                       f"Sign-up details: {u['email']}",
+                       f"<p>A coach who signed up with the short form opened their link and filled in "
+                       f"the rest.</p><table cellpadding=4>{trs}</table>"
+                       f'<p><a href="{_public_url()}/districts">Open Districts</a></p>')
+        except Exception:                             # the password page must not fail on the email
+            log.exception("sign-up details email failed for user %s", u["id"])
+    return None
 
 
 # ------------------------------- first-run help -------------------------------

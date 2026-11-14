@@ -1193,6 +1193,14 @@ def console():
               + tile("PRICING BUTTON · UNIQUE PEOPLE", f'{pc_recent}<div class="muted" '
                      f'style="font-size:.78rem;font-weight:400">in the last {label} · {pc_total} all time</div>')
               + '</div>')
+    # How far /start visitors get (audit.note_start_step), unique browsers in the same window.
+    sf = audit.start_step_counts({"1h": 1, "24h": 24, "7d": 168}.get(rng, 1))
+    tiles += ('<div style="display:flex;gap:.6rem;flex-wrap:wrap;margin:0 0 .6rem">'
+              + tile("SCHOOL SIGN-UP PAGE · HOW FAR PEOPLE GET",
+                     f'<span style="font-size:1.1rem">{sf["view"]} opened → {sf["form"]} saw the form → '
+                     f'{sf["typing"]} started typing → {sf["submit"]} sent it</span><div class="muted" style="font-size:.78rem;font-weight:400">'
+                     f'/start, unique people, last {label} · {sf["more"]} tapped "See everything"</div>')
+              + '</div>')
 
     top_ips = sorted(ips.items(), key=lambda kv: -kv[1]["n"])[:12]
     ip_rows = "".join(

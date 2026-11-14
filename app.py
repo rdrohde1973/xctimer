@@ -32,7 +32,7 @@ from .billing import bp as billing_bp
 from .signup import bp as signup_bp
 from .guides import bp as guides_bp, PATHS as GUIDE_PATHS
 
-APP_VERSION = "1.125.0-reserved-spare-bibs"
+APP_VERSION = "1.126.0-start-page-preview"
 
 LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width, initial-scale=1">
@@ -98,6 +98,7 @@ LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
   h2{font-size:clamp(1.4rem,3.2vw,1.9rem);color:var(--ink);letter-spacing:-.01em;margin:.2em 0 .45em}
   .lead{font-size:1.1rem;color:#4a5766;max-width:62ch}
   .split{display:grid;grid-template-columns:1fr 1fr;gap:2.6rem;align-items:center}
+  .split>*{min-width:0}   /* a wide child (the track lane strip) scrolls inside its box, never widens the page */
   /* already in your pocket */
   .pocket{background:var(--bg);border:1px solid var(--line);border-radius:16px;padding:1.4rem 1.6rem}
   .pocket h3{margin:0 0 .5rem;color:var(--ink);font-size:1.08rem}
@@ -219,6 +220,10 @@ LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
   /* pricing */
   nav a.navlink{color:#c9d5e2;font-weight:700;margin-right:1.1rem}
   nav a.navlink:hover{color:#fff}
+  /* phones: keep the menu on one line (Sign in used to wrap under the wordmark) */
+  nav a.signin,nav a.navlink{white-space:nowrap}
+  @media(max-width:420px){.wordmark{font-size:1.05rem}.wordmark .bd{display:none}
+    nav a.navlink{margin-right:.7rem;font-size:.92rem} nav a.signin{padding:.35rem .75rem;font-size:.92rem}}
   #pricing{background:var(--bg);border-bottom:1px solid var(--line);padding-top:2.6rem;min-height:70vh}
   #pricing h1{font-size:clamp(1.7rem,4.2vw,2.4rem);color:var(--ink);letter-spacing:-.015em;line-height:1.15;margin:.1em 0 .4em}
   .prices{grid-template-columns:repeat(auto-fit,minmax(260px,1fr));align-items:stretch;margin-top:1.9rem}

@@ -164,6 +164,65 @@ def note_pricing_click():
                 pass
 
 
+# ------------------------------- /start funnel (1.126.0) -------------------------------
+START_STEPS = ("view", "form", "typing", "submit", "more")
+
+
+def note_start_step(step):
+    """Record that a browser on /start reached `step` (see signup._FUNNEL_JS): the page ran
+    ("view"), the sign-up form scrolled into sight ("form"), a field got focus ("typing"), the
+    form was sent ("submit"), or "See everything XCTimer does" was tapped ("more"). Once per
+    browser per step per day. Same privacy rule as pricing clicks: a short hash of the
+    browser's own token, no IP address, nothing typed. Bots and the Super Admin are skipped.
+    Never raises."""
+    if step not in START_STEPS:
+        return
+    conn = None
+    try:
+        import hashlib
+        ua = (request.headers.get("User-Agent") or "").lower()
+        if not ua or any(b in ua for b in _BOT_UA):
+            return
+        p = getattr(g, "principal", None)
+        if p is not None and getattr(p, "is_super", False):
+            return
+        tok = request.cookies.get("csrftoken")
+        if not tok:
+            return
+        visitor = hashlib.sha256(("start:" + tok).encode()).hexdigest()[:16]
+        now = datetime.now(timezone.utc)
+        conn = db.connect()
+        if conn.execute("SELECT 1 FROM start_steps WHERE visitor=? AND step=? AND ts>=?",
+                        (visitor, step, now.strftime("%Y-%m-%d"))).fetchone():
+            return
+        conn.execute("INSERT INTO start_steps (ts, visitor, step) VALUES (?,?,?)",
+                     (now.isoformat(), visitor, step))
+        conn.commit()
+    except Exception:  # noqa: BLE001
+        pass
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:  # noqa: BLE001
+                pass
+
+
+def start_step_counts(hours):
+    """{step: unique browsers} on /start in the last `hours`."""
+    out = {k: 0 for k in START_STEPS}
+    try:
+        since = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()
+        conn = db.connect()
+        for step, n in conn.execute("SELECT step, COUNT(DISTINCT visitor) FROM start_steps WHERE ts>=? "
+                                    "GROUP BY step", (since,)).fetchall():
+            out[step] = n
+        conn.close()
+    except Exception:  # noqa: BLE001
+        pass
+    return out
+
+
 def pricing_click_counts(hours):
     """(unique people in the last `hours`, unique people all time) for the Console."""
     cutoff = (datetime.now(timezone.utc) - timedelta(hours=hours)).isoformat()

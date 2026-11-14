@@ -712,15 +712,22 @@ def setup_form():
     from .road import is_web_host
     if is_web_host(u):                 # that token IS their magic link; no password to set
         return redirect(f"/host/go/{token}")
-    body = f"""
+    return auth_page("Set your password", "Welcome to XCTimer", _setup_body(token, u))
+
+
+def _setup_body(token, u, v=None):
+    """The password form, plus any details a short-form sign-up still owes us (signup.setup_extra)."""
+    from .signup import setup_extra
+    extra = setup_extra(u, v)
+    return f"""
 <form method="post" action="/setup">
   <input type="hidden" name="token" value="{escape(token)}">
   <p class="muted center">Setting password for <b>{escape(u['email'])}</b></p>
-  <label>New password</label><input name="password" type="password" minlength="8" autofocus required>
+  {extra}
+  <label>New password</label><input name="password" type="password" minlength="8" {"" if extra else "autofocus "}required>
   <label>Confirm password</label><input name="confirm" type="password" minlength="8" required>
   <button type="submit">Set password &amp; sign in</button>
 </form>"""
-    return auth_page("Set your password", "Welcome to XCTimer", body)
 
 
 @bp.post("/setup")
@@ -739,17 +746,16 @@ def setup_submit():
     if is_web_host(u):
         conn.close()
         return redirect(f"/host/go/{token}")
+    keep = {k: request.form.get(k, "") for k in ("who", "level", "state", "district")}
     if len(pw) < 8 or pw != confirm:
         conn.close()
-        body = f"""
-<form method="post" action="/setup">
-  <input type="hidden" name="token" value="{token}">
-  <label>New password</label><input name="password" type="password" minlength="8" autofocus required>
-  <label>Confirm password</label><input name="confirm" type="password" minlength="8" required>
-  <button type="submit">Set password &amp; sign in</button>
-</form>"""
         err = "Passwords must match and be at least 8 characters."
-        return auth_page("Set your password", "Welcome to XCTimer", body, err=err), 400
+        return auth_page("Set your password", "Welcome to XCTimer", _setup_body(token, u, keep), err=err), 400
+    from .signup import save_setup_extra
+    bad = save_setup_extra(u, request.form)
+    if bad:
+        conn.close()
+        return auth_page("Set your password", "Welcome to XCTimer", _setup_body(token, u, keep), err=bad), 400
     conn.execute(
         "UPDATE users SET password_hash=?, setup_token=NULL, token_expires=NULL, last_login=? WHERE id=?",
         (hash_password(pw), _iso(_now()), u["id"]),

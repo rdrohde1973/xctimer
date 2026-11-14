@@ -306,4 +306,53 @@ assert amb["district_id"] not in (big, lp["id"])
 root.post(f"/districts/{lp['id']}/email-domains", data={"domains": ""}, headers=H)             # cleared
 assert "email_domains" not in json.loads(q("SELECT settings_json FROM districts WHERE id=?", lp["id"])[0][0])
 print("PASS 10: an exact email-domain match joins the existing district; a look-alike school is confirmed first")
+# 11. /start (1.126.0): the product shows first, the form asks only school + email, and the
+# rest is asked on the password page the emailed link opens
+page = anon("10.0.2.1").get("/start").get_data(as_text=True)
+assert page.index('class="live"') < page.index('id="create"')                 # preview above the form
+assert "Ava Ramirez" in page and "Example of the live results page" in page   # made-up names, labelled
+assert 'name="who"' not in page and 'name="level"' not in page and 'name="state"' not in page
+assert 'name="school"' in page and 'name="email"' in page and "/start/step" in page
+MAIL.clear()
+r = anon("10.0.2.1").post("/start", data=dict(school="Short Form Middle", email="sf@shortform.example"), headers=H)
+assert r.status_code == 200 and b"Check your email" in r.data
+sf = users_of("sf@shortform.example")[0]
+assert not sf["name"] and MAIL[0][2].startswith("<p>Hi,</p>")
+assert "asked after the email link" in MAIL[1][2]
+st = json.loads(q("SELECT settings_json FROM districts WHERE id=?", sf["district_id"])[0][0])
+assert st["self_serve"]["details_pending"] and "grades" not in st
+tok = q("SELECT setup_token FROM users WHERE id=?", sf["id"])[0][0]
+form = anon("10.0.2.1").get(f"/setup?token={tok}").get_data(as_text=True)
+assert all(f'name="{k}"' in form for k in ("who", "level", "state", "district", "password"))
+r = anon("10.0.2.1").post("/setup", data=dict(token=tok, password="longenough1", confirm="longenough1",
+                                              level="hs", state="Iowa"), headers=H)
+assert r.status_code == 400 and b"Please enter your name" in r.data and b'value="Iowa"' in r.data
+assert q("SELECT password_hash FROM users WHERE id=?", sf["id"])[0][0] is None    # nothing saved yet
+MAIL.clear()
+r = anon("10.0.2.1").post("/setup", data=dict(token=tok, password="longenough1", confirm="longenough1", who="Sam Short",
+                                              level="hs", state="Iowa", district="Short Form CSD"), headers=H)
+assert r.status_code == 302
+assert q("SELECT name FROM users WHERE id=?", sf["id"])[0][0] == "Sam Short"
+d = q("SELECT name, settings_json FROM districts WHERE id=?", sf["district_id"])[0]
+st = json.loads(d["settings_json"])
+assert d["name"] == "Short Form CSD" and st["grades"] == [9, 10, 11, 12] and not st["self_serve"]["details_pending"]
+assert st["self_serve"]["state"] == "Iowa" and any("Sign-up details" in m[1] and "Sam Short" in m[2] for m in MAIL)
+# a coach invited the normal way, or a password reset, sees only the password fields
+tok2 = q("SELECT setup_token FROM users WHERE email='invited@maplegrove.example'")
+if tok2 and tok2[0][0]:
+    f2 = anon("10.0.2.1").get(f"/setup?token={tok2[0][0]}").get_data(as_text=True)
+    assert 'name="level"' not in f2
+# the funnel beacon: one row per browser per step, bots ignored, unknown steps ignored
+UA = {"User-Agent": "Mozilla/5.0 (iPhone)"}
+b = anon("10.0.2.2")
+for step in ("view", "view", "form", "typing", "nonsense"):
+    assert b.post("/start/step", json={"step": step}, headers=dict(H, **UA)).status_code == 204
+anon("10.0.2.3").post("/start/step", json={"step": "view"}, headers=dict(H, **{"User-Agent": "Googlebot/2.1"}))
+steps = [r[0] for r in q("SELECT step FROM start_steps ORDER BY id")]
+assert steps == ["view", "form", "typing"], steps
+from xctimerpkg import audit                                                          # noqa: E402
+assert audit.start_step_counts(24)["typing"] == 1
+con = root.get("/admin/console?range=24h").get_data(as_text=True)
+assert "SCHOOL SIGN-UP PAGE" in con and "1 opened → 1 saw the form → 1 started typing → 0 sent it" in con
+print("PASS 11: /start shows the product first, asks only school + email, and the rest comes on the setup page")
 print("ALL PASS")
