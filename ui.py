@@ -141,13 +141,18 @@ border-radius:16px;padding:2rem}
 # _csrf field into POST forms — so nothing downstream needs to know about CSRF.
 # The animated "LIVE" results card on the marketing pages (/welcome and /start, 1.130.0).
 # Any element with data-livedemo that holds a .clk and a <table> becomes a race: the clock
-# runs and made-up runners come in at their times, about 14 seconds a loop, then it starts
-# over. Names are invented. With "reduce motion" on, it shows the finished list and stays still.
+# runs and made-up runners come in at their times, about 10 seconds, once, starting when the
+# card scrolls into view, then it rests on the results. Names are invented. With "reduce motion" on, it shows the finished list and stays still.
 LIVE_DEMO_JS = r"""
 (function(){
   var R=[["Ava Ramirez","Maple",331.4],["Sofia Chen","Ridgeline",333.9],["Harper Diaz","Maple",336.1],
          ["Mia Johnson","Cedar",338.7],["Lily Nguyen","Ridgeline",340.2],["Emma Brooks","Summit",342.8]];
-  var T0=330.0, T1=344.5, SPEED=1.4, HOLD=2600;   // ~13 s a loop; first runner in after ~1 s
+  var T0=330.0, T1=344.5, SPEED=1.4;   // ~10 s; first runner in after ~1 s
+  function whenSeen(el,fn){                              // start when the card is on screen
+    if(!('IntersectionObserver' in window)) return fn();
+    var io=new IntersectionObserver(function(es){ if(es[0].isIntersecting){ io.disconnect(); fn(); } },{threshold:.4});
+    io.observe(el);
+  }
   var st=document.createElement('style');
   st.textContent='[data-livedemo] tr.ld-new td{animation:ldin .9s ease-out}'+
     '@keyframes ldin{0%{background:rgba(240,100,30,.22);transform:translateY(-6px);opacity:0}'+
@@ -189,21 +194,20 @@ LIVE_DEMO_JS = r"""
     }
     if(still){ shown=-1; draw(R[R.length-1][2]); return; }
     var start=null;
-    function tick(now){
+    function tick(now){                                  // plays once, then rests on the results
       if(start===null) start=now;
       var el=now-start, run=(T1-T0)/SPEED*1000;
-      if(el<run){ draw(T0+el/1000*SPEED); }
-      else if(el<run+HOLD){ draw(T1); }
-      else { start=now; shown=-1; draw(T0); }
-      requestAnimationFrame(tick);
+      if(el<run){ draw(T0+el/1000*SPEED); requestAnimationFrame(tick); }
+      else draw(T1);
     }
-    shown=-1; draw(T0); requestAnimationFrame(tick);
+    shown=-1; draw(T0);
+    whenSeen(box,function(){ requestAnimationFrame(tick); });
   });
 })();
 """
 
-# The animated track card on /welcome (1.130.0): two events run back to back, about 14 s a
-# loop. The clock runs, finishers pop in, the event turns green on the timeline, the timeline
+# The animated track card on /welcome (1.130.0): two events run back to back, about 15 s,
+# once, starting when the card scrolls into view. The clock runs, finishers pop in, the event turns green on the timeline, the timeline
 # moves on to the next event, and team points count up (with a lead change). Made-up schools.
 # With "reduce motion" on, the card stays as printed.
 TRACK_DEMO_JS = r"""
@@ -280,9 +284,15 @@ TRACK_DEMO_JS = r"""
     }
     prevOrder=order;
   }
-  function frame(now){
+  function frame(now){                                   // plays once, then rests on the final scores
     if(start===null) start=now;
-    var el=(now-start)%LOOP, ph=plan[0];
+    var el=now-start, done=el>=LOOP;
+    if(done) el=LOOP-1;
+    render(el);
+    if(!done) requestAnimationFrame(frame);
+  }
+  function render(el){
+    var ph=plan[0];
     for(var i=0;i<plan.length;i++) if(el>=plan[i].a && el<plan[i].b){ph=plan[i];break;}
     var r=RACES[ph.k];
     if(ph.kind==='run'){
@@ -296,9 +306,10 @@ TRACK_DEMO_JS = r"""
       setStrip(r.ev,true); setFin(r,r.t1,true);
       setTable(totals(ph.k,Math.min(1,(el-ph.a)/COUNT)));
     }
-    requestAnimationFrame(frame);
   }
-  requestAnimationFrame(frame);
+  render(0);
+  if(!('IntersectionObserver' in window)) requestAnimationFrame(frame);
+  else { var io=new IntersectionObserver(function(es){ if(es[0].isIntersecting){ io.disconnect(); requestAnimationFrame(frame); } },{threshold:.4}); io.observe(box); }
 })();
 """
 
