@@ -40,7 +40,7 @@ def desc(html):
 r = w.get("/sitemap.xml")
 assert r.status_code == 200 and r.mimetype == "application/xml"
 locs = re.findall(r"<loc>([^<]+)</loc>", r.get_data(as_text=True))
-GUIDES = ["/guides", "/guides/how-to-score-a-cross-country-meet", "/guides/how-to-time-a-cross-country-meet",
+GUIDES = ["/guides", "/guides/how-to-time-a-cross-country-meet",
           "/guides/how-to-run-a-track-meet", "/guides/how-to-organize-a-5k"]
 assert locs == [BASE + p for p in ["/", "/pricing", "/start", "/host", "/security"] + GUIDES], locs
 for loc in locs:
@@ -96,16 +96,18 @@ for path in GUIDES:
     assert canon(g) == BASE + path and desc(g) not in seen and g.count("<h1>") == 1, path
     seen.add(desc(g))
     assert 'href="/pricing"' in g and 'href="/guides"' in g
-score = page("/guides/how-to-score-a-cross-country-meet")
-assert "<title>How to Score a Cross Country Meet | XCTimer</title>" in score
-assert "1 + 3 + 6 + 7 + 9 = <b>26</b>" in score and "2 + 4 + 5 + 8 + 10 =" in score and "<b>29</b>" in score
-assert "sixth" in score and 'href="/start"' in score and "$100 when the meet goes live" in score
+# 1.127.0: the general scoring explainer is gone; its address sends people to XCTimer's own rules
+r = w.get("/guides/how-to-score-a-cross-country-meet")
+assert r.status_code == 301 and r.headers["Location"].endswith("/guides/how-to-time-a-cross-country-meet#results")
 timing = page("/guides/how-to-time-a-cross-country-meet")
 assert "poster board" in timing and "only once" in timing and "top to bottom" in timing
 # 1.123.0: the XC timing guide walks XCTimer's own screens, not generic hand-timing advice.
 for want in ("Phone Timer App", "listen for the gun", "FINISHER", "Lock bibs &amp; enable printing",
-             "📷", "Walk-ups", "Lock results", "first seven", "Time Trial"):
+             "📷", "Walk-ups", "Lock results", "Time Trial", 'id="results"',
+             "eighth runner and beyond holds no team place", "sixth runner finished first",
+             "<title>How to Time a Cross Country Meet with XCTimer</title>"):
     assert want in timing, want
+assert "how-to-score-a-cross-country-meet" not in timing
 for gone in ("Start the clock with the gun", "One person starts the timer"):
     assert gone not in timing, gone
 fivek = page("/guides/how-to-organize-a-5k")
@@ -121,7 +123,7 @@ for gone in ("$500 to $1,000 or more", "Include a waiver", "Three months out"):
     assert gone not in fivek, gone
 assert "lap counters, not a race timer" in fivek                       # no false promise about jog-a-thons
 track_g = " ".join(page("/guides/how-to-run-a-track-meet").split())
-assert "<title>How to Run a Middle School Track Meet | XCTimer</title>" in track_g
+assert "<title>How to Run a Middle School Track Meet with XCTimer</title>" in track_g
 assert "8 plus 6 is 14, so each gets 7" in track_g and 'href="/start"' in track_g
 assert "listen for the gun" in track_g and "pick their lane" in track_g and "TAP finisher" in track_g
 assert "Pit tab" in track_g and "10 6" in track_g and "does not use misses to break the tie" in track_g
@@ -146,12 +148,12 @@ big = ["A"] * 7 + ["B"] + ["A", "A"] + ["B"] * 4
 got = {t["school"]: t["score"] for t in xc.team_scores(
     [{"school": s, "place": i + 1, "elapsed_seconds": 600 + i, "bib": i + 1, "name": f"r{i}"} for i, s in enumerate(big)])}
 assert got == {"A": 15, "B": 50}, got          # 50, not 58: A's 8th and 9th runners hold no team place
-assert "eighth runner and beyond cannot push another team" in " ".join(score.split())
+assert "eighth runner and beyond holds no team place" in " ".join(timing.split())   # the guide says what the engine does
 # the District Championship fill value still counts every team finisher (finishers + 1)
 t = {x["school"]: x for x in xc.team_scores(
     [{"school": s} for s in ["A"] * 9 + ["B"] * 3], fill_missing=True)}
 assert t["B"]["fill"] == 13 and t["B"]["places"] == [8, 9, 10, 13, 13], t["B"]
-print("PASS 7: four guides plus an index, and the scoring example matches what XCTimer computes")
+print("PASS 7: three XCTimer guides plus an index, and the guide states the scoring XCTimer computes")
 
 # 8. www goes to the bare address; sign-in pages are kept out of search results
 r = w.get("/login?next=/meets", base_url="http://www.xctimer.com")
@@ -160,6 +162,6 @@ assert w.get("/pricing", base_url="https://xctimer.com").status_code == 200
 assert w.post("/login", data={}, base_url="http://www.xctimer.com").status_code != 301       # only page loads move
 login = page("/login")
 assert '<meta name="robots" content="noindex">' in login
-assert "noindex" not in home and "noindex" not in page("/pricing") and "noindex" not in score
+assert "noindex" not in home and "noindex" not in page("/pricing") and "noindex" not in timing
 print("PASS 8: www redirects to the bare address and the sign-in page is marked noindex")
 print("ALL PASS")

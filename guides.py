@@ -1,19 +1,15 @@
 """Public how-to guides (1.116.0): xctimer.com/guides.
 
-Plain, useful answers to the questions coaches and race directors actually type into a search
-box ("how to score a cross country meet", "how to organize a 5k"), each with a short, honest
-note on how XCTimer does that job. They exist to be found: the marketing page describes the
-product, these pages answer the question.
+Every guide is how to do the job in XCTimer, step by step, screen by screen, with the app's own
+button labels (Rob, 2026-11-13/14: "the process XCTimer uses ... not the normal way"; anyone
+reading already knows the traditional way). No general officiating or race-planning advice.
 
-Facts about XCTimer in here must stay true to the app: cross country team scoring is
-xc.team_scores (drop teams under five, keep each team's first seven, re-rank, top five score,
-ties on the 6th then 7th runner; an 8th runner and beyond hold no team place -- if that engine
-rule changes, change the guide's "Let the meet score itself" box and the XC timing guide's
-"Results and team scores" with it). The timing and track guides describe XCTimer's own screens and
-button labels, step by step (Rob, 2026-11-13: "the process XCTimer uses ... not the normal way");
-keep them in step with the app and with the assistants (insights._PLATFORM_HELP, BIB BOARD).
+Facts in here must stay true to the app. Cross country team scoring is xc.team_scores (drop teams
+under five, keep each team's first seven, re-rank, top five score, ties on the 6th then 7th runner,
+an 8th runner and beyond holds no team place): if that changes, change the XC guide's "Results and
+team scores". Keep the guides in step with the assistants too (insights._PLATFORM_HELP, BIB BOARD).
 """
-from flask import Blueprint, abort, make_response
+from flask import Blueprint, abort, make_response, redirect
 
 from . import billing, road
 from .ui import seo_head
@@ -64,91 +60,6 @@ def _fee():
 
 
 # ------------------------------------------------------------------ the guides
-def _score_xc():
-    return f"""
-<p class="lede">Cross country is scored by place, not by time. Each team adds up the finishing
-places of its first five runners, and the lowest total wins. Here is the whole method, with a
-worked example you can check your own results against.</p>
-
-<h2>The five steps</h2>
-<ol>
-<li><b>Write down the finish order.</b> Every runner gets a place: 1st, 2nd, 3rd and so on. Times
-are nice to have, but only the order matters for the team score.</li>
-<li><b>Take out runners who do not count for a team.</b> A team needs five finishers to score. Runners
-from a team with fewer than five, and runners with no team, are removed, and everyone behind them
-moves up a place.</li>
-<li><b>Decide what happens after a team's seventh runner.</b> In a varsity race each team enters at
-most seven, so this never comes up. In open, junior varsity and many middle school races with big
-squads, the usual rule is that a team's eighth runner and beyond are also removed from the team
-count. Some leagues let every finisher keep a place instead. Agree on it before the race.</li>
-<li><b>Add each team's first five places.</b> That total is the team score.</li>
-<li><b>Lowest score wins.</b> The best possible score is 15, which is 1 + 2 + 3 + 4 + 5.</li>
-</ol>
-
-<h2>What the sixth and seventh runners do</h2>
-<p>A team's sixth and seventh runners do not add to their own team's score. They still hold a
-place in the finish order, so they push the other teams' scorers back. Coaches call them
-displacers. A strong sixth runner who beats another team's fifth can decide a close meet.</p>
-
-<h2>A worked example</h2>
-<p>Sixteen runners finish. Cedar Ridge and Maple Valley each have six. Summit View has only four,
-so its runners come out and everyone else moves up.</p>
-<div class="tw"><table>
-<tr><th>Finish</th><th>Team</th><th>Team place</th><th>Counts as</th></tr>
-<tr><td class="n">1</td><td>Cedar Ridge</td><td class="n">1</td><td>Scorer</td></tr>
-<tr><td class="n">2</td><td>Maple Valley</td><td class="n">2</td><td>Scorer</td></tr>
-<tr><td class="n">3</td><td>Summit View</td><td class="n">–</td><td>Removed (team of four)</td></tr>
-<tr><td class="n">4</td><td>Cedar Ridge</td><td class="n">3</td><td>Scorer</td></tr>
-<tr><td class="n">5</td><td>Maple Valley</td><td class="n">4</td><td>Scorer</td></tr>
-<tr><td class="n">6</td><td>Maple Valley</td><td class="n">5</td><td>Scorer</td></tr>
-<tr><td class="n">7</td><td>Summit View</td><td class="n">–</td><td>Removed</td></tr>
-<tr><td class="n">8</td><td>Cedar Ridge</td><td class="n">6</td><td>Scorer</td></tr>
-<tr><td class="n">9</td><td>Cedar Ridge</td><td class="n">7</td><td>Scorer</td></tr>
-<tr><td class="n">10</td><td>Maple Valley</td><td class="n">8</td><td>Scorer</td></tr>
-<tr><td class="n">11</td><td>Summit View</td><td class="n">–</td><td>Removed</td></tr>
-<tr><td class="n">12</td><td>Cedar Ridge</td><td class="n">9</td><td>Scorer</td></tr>
-<tr><td class="n">13</td><td>Maple Valley</td><td class="n">10</td><td>Scorer</td></tr>
-<tr><td class="n">14</td><td>Summit View</td><td class="n">–</td><td>Removed</td></tr>
-<tr><td class="n">15</td><td>Cedar Ridge</td><td class="n">11</td><td>Sixth runner</td></tr>
-<tr><td class="n">16</td><td>Maple Valley</td><td class="n">12</td><td>Sixth runner</td></tr>
-</table></div>
-<p><b>Cedar Ridge:</b> 1 + 3 + 6 + 7 + 9 = <b>26</b>. <b>Maple Valley:</b> 2 + 4 + 5 + 8 + 10 =
-<b>29</b>. Cedar Ridge wins, 26 to 29. Summit View has no team score, though its runners keep
-their individual places and times.</p>
-
-<h2>Breaking a tie</h2>
-<p>Under high school rules in the United States, a tied team score goes to the team whose sixth
-runner finished ahead. If only one of the tied teams has a sixth runner, that team wins. Middle
-school and junior high leagues usually follow the same rule, but some break ties another way, so
-check your league's handbook before the season.</p>
-
-<h2>Mistakes that change the result</h2>
-<ul>
-<li><b>Scoring before removing incomplete teams.</b> Leave the four-runner team in and every score
-behind it is wrong.</li>
-<li><b>Not agreeing on big squads.</b> Whether an eighth runner holds a team place changes the
-score, so settle it with the other coaches first.</li>
-<li><b>Mixing races.</b> Boys and girls, and each grade or division, are scored separately.</li>
-<li><b>Adding times.</b> Team time is a different statistic. The team score is places.</li>
-<li><b>A wrong finish order.</b> One swapped pair of runners can flip a close meet, which is why a
-paper record of the order matters. See <a href="/guides/how-to-time-a-cross-country-meet">how to
-time a cross country meet</a>.</li>
-</ul>
-
-<div class="box x">
-<h2>Let the meet score itself</h2>
-<p>XCTimer scores the meet as the race finishes. It drops teams with fewer than five, takes out
-each team's eighth runner and beyond, moves everyone up, adds each school's first five, and breaks ties on the sixth runner, then the seventh.
-Only a team's first seven finishers hold a team place, so a big squad's eighth runner and beyond
-cannot push another team's scorers back. Scores are
-kept separately for each race, and by grade and gender, and they update on the live results page
-while runners are still coming in.</p>
-<p>Setting up a meet is free. It is {_fee()} when the meet goes live.</p>
-<a class="btn" href="/start">Set up your school</a><a class="btn g" href="/pricing">See pricing</a>
-</div>
-"""
-
-
 def _time_xc():
     return f"""
 <p class="lede">This is how a cross country meet runs in XCTimer, from setup to team scores. Every
@@ -252,15 +163,23 @@ number, then scan or type it.</li>
 </ul>
 <p>When the heat is right, tap <b>Lock results</b> so nobody changes it by accident.</p>
 
-<h2>Results and team scores</h2>
+<h2 id="results">Results and team scores</h2>
 <p>Results build themselves as names go on the times. The Results tab has a live public page with a QR
-code for the stands, and an Excel export.</p>
-<p>Team scores follow the standard rule: each school's first five finishers score, lowest total wins,
-and a school needs five finishers to score. Only a team's first seven hold a team place, and a tie
-goes to the team whose sixth runner finished first, then the seventh. Each heat is scored on its own,
-and the Results tab also scores by grade and gender. See <a
-href="/guides/how-to-score-a-cross-country-meet">how cross country scoring works</a> for a worked
-example.</p>
+code for the stands, and an Excel export. Team scores update on that page while runners are still
+coming in.</p>
+<p>How XCTimer scores each heat:</p>
+<ul>
+<li>A school needs five finishers for a team score. A school with fewer keeps its individual places
+and times, but its runners are taken out of the team places.</li>
+<li>Each school's first five finishers score. Lowest total wins.</li>
+<li>A school's sixth and seventh runners hold team places, so they can push other teams' scorers back.
+An eighth runner and beyond holds no team place.</li>
+<li>A tie goes to the team whose sixth runner finished first, then the seventh.</li>
+<li>Each heat is scored on its own, and the Results tab also shows team scores by grade and
+gender.</li>
+<li>Don't want team scores? Untick <b>Team scoring</b> on the Setup tab. Time trials never have
+them.</li>
+</ul>
 
 <h2>Practice time trials</h2>
 <p>A coach can run a time trial for their own team. It has one heat called Time Trial, times exactly
@@ -284,8 +203,7 @@ and girls, or each grade, as separate heats.</p>
 <h2>Try it on your next meet</h2>
 <p>Setting up a meet is free: schools, heats, bibs and printing. It is {_fee()} when the meet goes live
 and timing turns on.</p>
-<a class="btn" href="/start">Set up your school</a>
-<a class="btn g" href="/guides/how-to-score-a-cross-country-meet">How scoring works</a>
+<a class="btn" href="/start">Set up your school</a><a class="btn g" href="/pricing">See pricing</a>
 </div>
 """
 
@@ -590,34 +508,26 @@ meet goes live and timing turns on.</p>
 
 
 GUIDES = {
-    "how-to-score-a-cross-country-meet": {
-        "title": "How to Score a Cross Country Meet",
-        "h1": "How to score a cross country meet",
-        "blurb": "Places, not times: the five steps, displacers, tie-breaks and a worked example.",
-        "desc": "How cross country scoring works: add each team's first five places, lowest score wins. "
-                "Displacers, incomplete teams, tie-breaks and a worked example.",
-        "body": _score_xc,
-    },
     "how-to-time-a-cross-country-meet": {
-        "title": "How to Time a Cross Country Meet With a Phone",
-        "h1": "How to time a cross country meet with a phone",
-        "blurb": "Step by step in XCTimer: bibs, the phone start, tapping finishers, the bib board and camera scan.",
+        "title": "How to Time a Cross Country Meet with XCTimer",
+        "h1": "How to time a cross country meet with XCTimer",
+        "blurb": "Bibs, the phone start, tapping finishers, the bib board, camera scanning and team scores.",
         "desc": "How to time a cross country meet with phones in XCTimer: printed bib stickers, a phone "
-                "start, tapping each finisher, a poster-board bib record and camera scanning for names.",
+                "start, tapping each finisher, a poster-board bib record, camera scanning and team scores.",
         "body": _time_xc,
     },
     "how-to-run-a-track-meet": {
-        "title": "How to Run a Middle School Track Meet",
-        "h1": "How to run a middle school track meet",
-        "blurb": "Step by step in XCTimer: entries, heats and lanes, phone timing, field events and team points.",
-        "desc": "How to run a junior high or middle school track meet with phones: entries, heats and "
+        "title": "How to Run a Middle School Track Meet with XCTimer",
+        "h1": "How to run a middle school track meet with XCTimer",
+        "blurb": "Entries, heats and lanes, phone timing, field events and team points.",
+        "desc": "How to run a junior high or middle school track meet with phones in XCTimer: entries, heats and "
                 "lanes, lane timing for sprints, tap timing for distance, field events by bib, and team points.",
         "body": _run_track,
     },
     "how-to-organize-a-5k": {
-        "title": "How to Organize a 5K or Fun Run",
-        "h1": "How to organize a 5K or fun run",
-        "blurb": "Step by step in XCTimer: sign-up page, bib stickers, phone timing, the bib board and results.",
+        "title": "How to Run a 5K or Fun Run with XCTimer",
+        "h1": "How to run a 5K or fun run with XCTimer",
+        "blurb": "Sign-up page, bib stickers, phone timing, the bib board and results.",
         "desc": "How to run a 5K or fun run in XCTimer: an online sign-up page with a QR code, printed bib "
                 "stickers, phone timing at the finish, camera scanning for names and live results by age group.",
         "body": _organize_5k,
@@ -625,11 +535,17 @@ GUIDES = {
 }
 PATHS = ("/guides",) + tuple(f"/guides/{slug}" for slug in GUIDES)
 
+# Guides that were taken down, and where their address now goes (a permanent redirect, so a
+# search result or an old link still lands somewhere useful). Rob, 2026-11-14: every guide is
+# how to do it in XCTimer; the general scoring explainer went, and XCTimer's own scoring rules
+# live in the cross country guide's "Results and team scores".
+RETIRED = {"how-to-score-a-cross-country-meet": "/guides/how-to-time-a-cross-country-meet#results"}
+
 
 def _page(title, path, desc, inner):
     return f"""<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width, initial-scale=1">
-<title>{title} | XCTimer</title>
+<title>{title if "XCTimer" in title else title + " | XCTimer"}</title>
 {seo_head(path, desc)}
 <style>{CSS}</style></head><body>
 <nav><div class="in">
@@ -647,15 +563,17 @@ def index():
     cards = "".join(f'<a href="/guides/{slug}"><b>{g["h1"]}</b><span>{g["blurb"]}</span></a>'
                     for slug, g in GUIDES.items())
     inner = (f'<h1>Guides for coaches and race directors</h1>'
-             f'<p class="lede">Short, practical answers to the questions that come up when you run your own '
-             f'cross country meet, track meet or fun run.</p><div class="cards">{cards}</div>')
+             f'<p class="lede">Step by step: how to run your own cross country meet, track meet or fun run '
+             f'in XCTimer, screen by screen.</p><div class="cards">{cards}</div>')
     return make_response(_page("Guides for Coaches and Race Directors", "/guides",
-                               "How-to guides for running your own cross country meet, track meet or fun "
-                               "run: scoring, timing with a phone, and organizing a 5K.", inner))
+                               "Step-by-step guides to running a cross country meet, track meet or fun run "
+                               "in XCTimer: setup, phone timing, results and team scores.", inner))
 
 
 @bp.get("/guides/<slug>")
 def guide(slug):
+    if slug in RETIRED:
+        return redirect(RETIRED[slug], code=301)
     g = GUIDES.get(slug)
     if not g:
         abort(404)
