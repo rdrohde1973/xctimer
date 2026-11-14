@@ -1348,8 +1348,8 @@ th{background:#f1f4f8;color:#33475b;font-size:.78rem;text-transform:uppercase;le
 <div class="conf">CONFIDENTIAL — PREPARED FOR DISTRICT SECURITY REVIEW</div>
 <h1>XCTimer — Security &amp; Data Protection Overview</h1>
 <p class="meta">Generated {today} · Platform version {escape(str(_v))} · xctimer.com · Contact: admin@xctimer.com</p>
-<p>XCTimer is a cross-country and track &amp; field meet-management platform for junior-high and
-middle-school programs. It stores information about student athletes, so this document describes,
+<p>XCTimer is a cross-country and track &amp; field meet-management platform for school
+programs. It stores information about student athletes, so this document describes,
 in detail and candidly, how that data is protected — including controls that are fully implemented
 and those still on our roadmap.</p>
 

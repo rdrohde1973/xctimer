@@ -123,7 +123,12 @@ for gone in ("$500 to $1,000 or more", "Include a waiver", "Three months out"):
     assert gone not in fivek, gone
 assert "lap counters, not a race timer" in fivek                       # no false promise about jog-a-thons
 track_g = " ".join(page("/guides/how-to-run-a-track-meet").split())
-assert "<title>How to Run a Middle School Track Meet with XCTimer</title>" in track_g
+assert "<title>How to Run a School Track Meet with XCTimer</title>" in track_g
+# 1.128.0: XCTimer serves high schools too, so public pages no longer say "middle school" / "junior high"
+import re as _re
+for _p in ["/", "/welcome", "/pricing", "/start", "/host", "/security", "/guides"] + [g for g in GUIDES if g != "/guides"]:
+    _t = page(_p)
+    assert not _re.search(r"(?i)junior[- ]high|middle[- ]school(?! / junior high)", _t.replace("Middle school / junior high", "")), _p
 assert "8 plus 6 is 14, so each gets 7" in track_g and 'href="/start"' in track_g
 assert "listen for the gun" in track_g and "pick their lane" in track_g and "TAP finisher" in track_g
 assert "Pit tab" in track_g and "10 6" in track_g and "does not use misses to break the tie" in track_g

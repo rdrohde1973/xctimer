@@ -270,7 +270,7 @@ def _form(err="", v=None):
 are ready when you are.</p>
 <div class="card" id="create">{errp}<h2 style="margin:0 0 .2rem;color:#164271">Set up your school</h2>
 <form method="post" action="/start">
-<label>School name</label><input name="school" required maxlength="80" value="{val('school')}" placeholder="e.g. Maple Grove Middle School">
+<label>School name</label><input name="school" required maxlength="80" value="{val('school')}" placeholder="e.g. Maple Grove High School">
 <label>Your email</label><input name="email" type="email" required maxlength="120" value="{val('email')}" autocomplete="email">
 <div class="hp" aria-hidden="true"><label>Website</label><input name="website" tabindex="-1" autocomplete="off"></div>
 <p class="fine">We email you a private link to finish setting up. Use your school email if you have one.</p>

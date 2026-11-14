@@ -294,7 +294,7 @@ def suggest(school_id, use_llm=True):
 
 # ------------------------------------------------------------------ LLM toss-ups
 _SYS = (
-    "You help a junior-high cross country coach choose runners for a championship race. "
+    "You help a school cross country coach choose runners for a championship race. "
     "For each group below, the clear picks are already made. You are deciding only the "
     "remaining slots among runners whose course-adjusted times are within about 2% of "
     "each other, which is too close for the times alone to settle.\n\n"

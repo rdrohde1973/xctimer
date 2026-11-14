@@ -381,7 +381,7 @@ registration, and your first event is {road.FIRST_EVENT_OFFER}.</p>
 
 def _run_track():
     return f"""
-<p class="lede">This is how a junior high or middle school track meet runs in XCTimer, from setup
+<p class="lede">This is how a school track meet runs in XCTimer, from setup
 to final team scores. Every step below is a screen in the app, so you can follow along with your
 meet open. Timing is done on phones: no stopwatches, no clipboards, and nobody copying times into
 a computer afterwards.</p>
@@ -517,10 +517,10 @@ GUIDES = {
         "body": _time_xc,
     },
     "how-to-run-a-track-meet": {
-        "title": "How to Run a Middle School Track Meet with XCTimer",
-        "h1": "How to run a middle school track meet with XCTimer",
+        "title": "How to Run a School Track Meet with XCTimer",
+        "h1": "How to run a school track meet with XCTimer",
         "blurb": "Entries, heats and lanes, phone timing, field events and team points.",
-        "desc": "How to run a junior high or middle school track meet with phones in XCTimer: entries, heats and "
+        "desc": "How to run a school track meet with phones in XCTimer: entries, heats and "
                 "lanes, lane timing for sprints, tap timing for distance, field events by bib, and team points.",
         "body": _run_track,
     },

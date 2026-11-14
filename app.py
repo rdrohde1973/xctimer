@@ -32,12 +32,12 @@ from .billing import bp as billing_bp
 from .signup import bp as signup_bp
 from .guides import bp as guides_bp, PATHS as GUIDE_PATHS
 
-APP_VERSION = "1.127.0-guides-xctimer-only"
+APP_VERSION = "1.128.0-all-school-levels-wording"
 
 LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width, initial-scale=1">
 <title>Cross Country &amp; Track Meet Timing and Scoring from a Phone | XCTimer</title>
-<meta name="description" content="Cross country and track meet timing, scoring and live results from your phone. XCTimer is the do-it-yourself meet manager for middle school and junior high. No timing company needed.">
+<meta name="description" content="Cross country and track meet timing, scoring and live results from your phone. XCTimer is the do-it-yourself meet manager for school cross country and track. No timing company needed.">
 <style>
   :root{--ink:#0c1929;--ink2:#13283f;--orange:#f0641e;--orange-d:#d4530f;--gray:#6b7684;
         --body:#212b36;--bg:#f6f7f9;--card:#ffffff;--line:#e6e9ee;--green:#2e9e5b}
@@ -270,8 +270,8 @@ LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
     <span class="kicker">Cross country &amp; track meet timing</span>
     <h1>Run the whole meet yourself.</h1>
     <p class="sub">The do-it-yourself meet manager: rosters, bibs, phone timing, field events,
-       cross country scoring and live results. A junior high or middle school cross country or
-       track meet, start to finish, from a phone. No timing company. No big invoice.</p>
+       cross country scoring and live results. A school cross country or track meet, start to
+       finish, from a phone. No timing company. No big invoice.</p>
     <div class="cta">
       <a class="btn" href="#features">See what it does</a>
       <a class="btn ghost" href="mailto:rob@xctimer.com?subject=XCTimer%20for%20our%20district">Get in touch</a>
@@ -711,7 +711,7 @@ LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
 
 <section class="band"><div class="wrap">
   <h2>Built by a coach — and an XC &amp; track parent.</h2>
-  <p class="lead">Eight years timing junior-high meets as a coach, and just as many seasons in
+  <p class="lead">Eight years timing school meets as a coach, and just as many seasons in
   the stands as a parent of three runners. Every feature comes from one of those two seats.</p>
   <div class="quote">"As a coach, I wanted a tool any coach could run. As a parent, I wanted to
   see my kid's race the moment it happened."</div>
@@ -787,7 +787,7 @@ LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
   </div>
 </div></section>
 
-<footer>© XCTimer · xctimer.com · the do-it-yourself meet manager for junior high cross country &amp; track
+<footer>© XCTimer · xctimer.com · the do-it-yourself meet manager for school cross country &amp; track
 <br><a href="/guides">Guides</a> · <a href="/pricing">Pricing</a> · <a href="/security">Security &amp; data privacy</a></footer>
 </body></html>"""
 
@@ -879,7 +879,7 @@ PRICING = (re.sub(r'<meta name="description" content="[^"]*">',
   </div>
 </div></section>
 
-<footer>© XCTimer · xctimer.com · the do-it-yourself meet manager for junior high cross country &amp; track
+<footer>© XCTimer · xctimer.com · the do-it-yourself meet manager for school cross country &amp; track
 <br><a href="/guides">Guides</a> · <a href="/pricing">Pricing</a> · <a href="/security">Security &amp; data privacy</a></footer>
 </body></html>""")
 
@@ -967,7 +967,7 @@ SECURITY = """<!doctype html><html lang=en><head><meta charset=utf-8>
       <li><span class="x">✕</span> We never sell or share your data — with anyone.</li>
     </ul>
     <h3><span class="em">Only what a meet needs.</span></h3>
-    <p class="sub">Because these are junior-high athletes, we keep the footprint small on purpose. A field exists because a real meet or a real waiver uses it — and it's built with student-privacy expectations (FERPA / COPPA) in mind.</p>
+    <p class="sub">Because these are student athletes, we keep the footprint small on purpose. A field exists because a real meet or a real waiver uses it — and it's built with student-privacy expectations (FERPA / COPPA) in mind.</p>
     <h3><span class="em">Your data on the way out.</span></h3>
     <p class="sub">Export full results to Excel anytime. Want a student's — or your whole district's — data removed? Ask us and we'll delete it.</p>
   </section>
