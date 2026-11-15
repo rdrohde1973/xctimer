@@ -204,6 +204,7 @@ inner = root.get("/r/tokbars/results-inner").get_data(as_text=True)
 card = inner.split('id="barnowcard"', 1)[1].split("</div>", 1)[0]
 assert "High Jump<b" in card and ">4-10</b>" in card and "Pole Vault<b" in card and ">9-06</b>" in card, card
 assert "Bar now 4-10" in inner and "Bar now 4-08" not in inner
+assert 0 <= inner.index('id="barnowcard"') < inner.index('id="rsearch"'), "bar height belongs above the search box"
 assert "Bar height now" in root.get("/r/tokbars").get_data(as_text=True)
 page = root.get(f"/meets/{mid}/pit").get_data(as_text=True)
 now = json.loads(page.split("PIT_NOW=", 1)[1].split(";\n", 1)[0])

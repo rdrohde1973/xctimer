@@ -3733,14 +3733,9 @@ def results_inner(mid, name_mode=None):
     data = build_results(mid)
     if not data["events"]:
         return '<div class="card muted">No events yet.</div>'
-    html = ['<div class="card">'
-            '<input id="rsearch" placeholder="Search athlete / school / event…" oninput="rfilter()" '
-            'style="max-width:320px"> '
-            '<select id="rgender" onchange="rfilter()" style="max-width:120px;margin-left:.4rem">'
-            '<option value="">All</option><option value="M">Boys</option>'
-            '<option value="F">Girls</option></select></div>']
+    html = []
     # The bar the pit is jumping at right now (set on the open pit; gone 90 min after it was
-    # last touched). It leads the page so it shows before any jumper has a mark.
+    # last touched). It leads the page, above the search box, so it shows before any jumper has a mark.
     if data.get("bar_now"):
         chips = "".join(
             f'<span style="display:inline-flex;align-items:baseline;gap:.5rem;border:1px solid var(--line);'
@@ -3749,6 +3744,12 @@ def results_inner(mid, name_mode=None):
             for en, h in data["bar_now"].items())
         html.append('<div class="card" id="barnowcard" style="display:flex;gap:.7rem;align-items:center;flex-wrap:wrap">'
                     f'<b>Bar height now</b>{chips}</div>')
+    html.append('<div class="card">'
+            '<input id="rsearch" placeholder="Search athlete / school / event…" oninput="rfilter()" '
+            'style="max-width:320px"> '
+            '<select id="rgender" onchange="rfilter()" style="max-width:120px;margin-left:.4rem">'
+            '<option value="">All</option><option value="M">Boys</option>'
+            '<option value="F">Girls</option></select></div>')
     # Combined whole-meet team score first (announced at duals) when >1 division scored.
     if data.get("overall") and len(data["totals"]) > 1:
         ranked = sorted(data["overall"].items(), key=lambda x: -x[1])
