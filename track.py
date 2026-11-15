@@ -18,11 +18,11 @@ from datetime import datetime, timezone
 from markupsafe import escape
 from flask import Blueprint, request, redirect, g, abort, jsonify, Response
 
-from . import db, ai, pdfs, demo
+from . import db, ai, pdfs, demo, clocktime
 from .auth import login_required
 from .tenancy import (active_district_id, all_districts, district_grades, custom_grades,
                       grades_span, is_hs_district)
-from .ui import shell, GUN_CONTROLS_HTML, GUN_JS, STICKER_TIP
+from .ui import shell, GUN_CONTROLS_HTML, GUN_JS, STICKER_TIP, SENDQ_JS
 from .meets import load_meet, can_view_meet, can_setup_meet, can_record_meet
 
 bp = Blueprint("track", __name__)
@@ -52,17 +52,10 @@ def _t_ms(dt):
     return int(dt.timestamp() * 1000)
 
 
-def _event_dt(at_ms, now=None):
-    """A client-supplied event time (epoch ms, already in server-clock terms via the phone's
-    measured offset) -> datetime. Falls back to server now() when absent, unparseable, or more
-    than 15 s off (an unsynced/bad device clock). Records the instant the gun fired / a runner
-    crossed the line, NOT when the POST reached the server — so cellular lag can't skew times."""
-    now = now or _t_now()
-    try:
-        dt = datetime.fromtimestamp(float(at_ms) / 1000.0, tz=timezone.utc)
-    except (TypeError, ValueError, OverflowError, OSError):
-        return now
-    return now if abs((dt - now).total_seconds()) > 15 else dt
+def _event_dt(at_ms, now=None, age_ms=None):
+    """When the gun fired or a runner crossed, from the phone's own stamp, so a slow server
+    or a weak signal can't move a time. See clocktime.event_dt."""
+    return clocktime.event_dt(at_ms, age_ms, now or _t_now())
 
 
 def _heat_key(heat):
@@ -2652,6 +2645,7 @@ async function load(){{
     if(rtt<BEST_RTT){{ BEST_RTT=rtt; OFFSET=Math.round(s.server_ms+rtt/2-t1); }}  // keep the lowest-latency sample
     START=s.start_ms; STOPMS=s.stop_ms;
     STARTED=s.started; STOPPED=s.stopped; TAPS=s.taps; ENTS=s.entries;
+    held();
     syncUI(); if(!PICKING) render();
   }}catch(e){{}}
 }}
@@ -2662,17 +2656,25 @@ async function act(url, body){{
   finally{{ BUSY=false; }}
   await load();
 }}
+// 1.131.0: a start, stop or tap is saved on this phone and sent until the server has it.
+const QSTART='/meet-events/'+RID+'/time/start?heat='+HEAT, QSTOP='/meet-events/'+RID+'/time/stop?heat='+HEAT;
+function held(){{
+  const q=SENDQ.pending(), st=q.find(x=>x.url===QSTART), sp=q.find(x=>x.url===QSTOP);
+  if(st && !STARTED){{ STARTED=true; STOPPED=false; START=st.body.at; STOPMS=null; }}
+  if(sp && STARTED && !STOPPED){{ STOPPED=true; STOPMS=sp.body.at; }}
+}}
 async function startRace(){{
   if(STARTED&&!STOPPED)return;
   const body={{at:nowms()}};     // stamp the gun instant on THIS phone, immune to POST lag
-  if(STOPPED&&TAPS.length){{ if(!confirm('This heat already has an ended race with '+TAPS.length+' tap(s). Start over and CLEAR them?'))return; body.clear=true; }}
-  act('/meet-events/'+RID+'/time/start?heat='+HEAT, body);
+  if(STOPPED&&TAPS.length){{ if(!confirm('This heat already has an ended race with '+TAPS.length+' tap(s). Start over and CLEAR them?'))return; body.clear=true;
+    act(QSTART, body); return; }}
+  SENDQ.add(QSTART, body); held(); syncUI(); render();
 }}
-function stopRace(){{ if(STARTED&&!STOPPED) act('/meet-events/'+RID+'/time/stop?heat='+HEAT); }}
+function stopRace(){{ if(STARTED&&!STOPPED){{ SENDQ.add(QSTOP,{{at:nowms()}}); held(); syncUI(); render(); }} }}
 function resetRace(){{ if(confirm('Reset clears the clock, all taps, and any results for this heat. Continue?'))
   act('/meet-events/'+RID+'/time/reset?heat='+HEAT); }}
 function buzz(){{ try{{ navigator.vibrate && navigator.vibrate(35); }}catch(e){{}} }}
-function tap(){{ if(!STARTED||STOPPED)return; const at=nowms(); buzz(); act('/meet-events/'+RID+'/time/tap?heat='+HEAT, {{at:at}}); }}
+function tap(){{ if(!STARTED||STOPPED)return; buzz(); SENDQ.add('/meet-events/'+RID+'/time/tap?heat='+HEAT, {{at:nowms()}}); }}
 function assign(tid,v){{
   PICKING=false;
   if(v==='__bib__'){{
@@ -2686,12 +2688,14 @@ function assign(tid,v){{
 function delTap(tid){{ if(confirm('Remove this finish?')) act('/track-taps/'+tid+'/delete'); }}
 async function doneRace(){{
   if(STARTED&&!STOPPED){{ if(!confirm('The clock is still running. Stop the race and return to the heats menu?'))return;
-    try{{ await jpost('/meet-events/'+RID+'/time/stop?heat='+HEAT, {{}}); }}catch(e){{}} }}
+    SENDQ.add(QSTOP,{{at:nowms()}}); }}
   location.href='/phone/meet/{me['meet_id']}';
 }}
 let WL=null; async function wlock(){{ try{{ WL=await navigator.wakeLock.request('screen'); }}catch(e){{}} }}
 document.addEventListener('visibilitychange',()=>{{ if(document.visibilityState==='visible'){{ wlock(); load(); }} }});
 wlock();
+{SENDQ_JS}
+SENDQ.on(function(){{ load(); }});
 setInterval(tick,75);
 setInterval(()=>{{ if(!document.hidden) load(); }},2000);
 load();
@@ -2737,7 +2741,7 @@ def time_start(meid):
     hk = _heat_key(request.args.get("heat", ""))
     body = request.get_json(silent=True) or {}
     clear = bool(body.get("clear"))
-    start_iso = _t_iso(_event_dt(body.get("at")))   # gun instant from the starter's phone
+    start_iso = _t_iso(_event_dt(body.get("at"), age_ms=body.get("age")))   # gun instant from the starter's phone
     conn = db.connect()
     clk = conn.execute("SELECT * FROM track_clocks WHERE meet_event_id=? AND heat=?", (meid, hk)).fetchone()
     n = conn.execute("SELECT COUNT(*) FROM track_taps WHERE meet_event_id=? AND heat=?", (meid, hk)).fetchone()[0]
@@ -2779,9 +2783,15 @@ def time_stop(meid):
     if not can_record_meet(m):
         abort(403)
     hk = _heat_key(request.args.get("heat", ""))
+    body = request.get_json(silent=True) or {}
+    stop = _event_dt(body.get("at"), age_ms=body.get("age")) if body.get("at") is not None else _t_now()
     conn = db.connect()
+    clk = conn.execute("SELECT start_time FROM track_clocks WHERE meet_event_id=? AND heat=?", (meid, hk)).fetchone()
+    start = _t_parse(clk["start_time"]) if clk else None
+    if start and stop < start:
+        stop = start
     conn.execute("UPDATE track_clocks SET stop_time=? WHERE meet_event_id=? AND heat=? AND stop_time IS NULL",
-                 (_t_iso(_t_now()), meid, hk))
+                 (_t_iso(stop), meid, hk))
     conn.commit()
     conn.close()
     return jsonify(ok=True)
@@ -2825,17 +2835,35 @@ def time_tap(meid):
     if not can_record_meet(m):
         abort(403)
     hk = _heat_key(request.args.get("heat", ""))
+    body = request.get_json(silent=True) or {}
+    cid = str(body.get("cid") or "")[:48] or None
+    at = _event_dt(body.get("at"), age_ms=body.get("age"))
     conn = db.connect()
-    at = (request.get_json(silent=True) or {}).get("at")
+    conn.execute("BEGIN IMMEDIATE")          # one tap at a time, so places can't collide
+    if cid and conn.execute("SELECT 1 FROM track_taps WHERE meet_event_id=? AND heat=? AND client_id=?",
+                            (meid, hk, cid)).fetchone():
+        conn.rollback()
+        conn.close()
+        return jsonify(ok=True, duplicate=True)          # a re-send of a tap already recorded
     clk = conn.execute("SELECT * FROM track_clocks WHERE meet_event_id=? AND heat=?", (meid, hk)).fetchone()
-    if not clk or not clk["start_time"] or clk["stop_time"]:
+    start = _t_parse(clk["start_time"]) if clk else None
+    stop = _t_parse(clk["stop_time"]) if clk else None
+    # 1.131.0: a tap the phone held through a dead spot still counts if it was before Stop
+    if not start or (stop and (not cid or clocktime.after_stop(at, stop))):
+        conn.rollback()
         conn.close()
         return jsonify(error="Race is not running."), 409
-    elapsed = max(0.0, (_event_dt(at) - _t_parse(clk["start_time"])).total_seconds())
-    seq = (conn.execute("SELECT COALESCE(MAX(seq),0) FROM track_taps WHERE meet_event_id=? AND heat=?",
-                        (meid, hk)).fetchone()[0]) + 1
-    conn.execute("INSERT INTO track_taps (meet_event_id, heat, seq, elapsed_seconds) VALUES (?,?,?,?)",
-                 (meid, hk, seq, elapsed))
+    if clocktime.stale_before(at, start):
+        conn.rollback()
+        conn.close()
+        return jsonify(error="That tap is from before this race started, so it was not added."), 409
+    elapsed = max(0.0, (at - start).total_seconds())
+    # a late tap takes its place in time order; taps after it move down one
+    seq = conn.execute("SELECT COALESCE(MAX(seq),0)+1 FROM track_taps WHERE meet_event_id=? AND heat=? "
+                       "AND (elapsed_seconds IS NULL OR elapsed_seconds<=?)", (meid, hk, elapsed)).fetchone()[0]
+    conn.execute("UPDATE track_taps SET seq=seq+1 WHERE meet_event_id=? AND heat=? AND seq>=?", (meid, hk, seq))
+    conn.execute("INSERT INTO track_taps (meet_event_id, heat, seq, elapsed_seconds, client_id) VALUES (?,?,?,?,?)",
+                 (meid, hk, seq, elapsed, cid))
     conn.commit()
     conn.close()
     return jsonify(ok=True)
@@ -3475,8 +3503,12 @@ def lane_finish(meid):
     if not start:
         conn.close()
         return jsonify(error="Race hasn't started — the starter taps Start at the gun."), 400
-    at = (request.get_json(silent=True) or {}).get("at")
-    elapsed = max(0.0, (_event_dt(at) - start).total_seconds())
+    body = request.get_json(silent=True) or {}
+    at = _event_dt(body.get("at"), age_ms=body.get("age"))
+    if clocktime.stale_before(at, start):         # a held tap from a heat that was reset
+        conn.close()
+        return jsonify(error="That tap is from before this race started, so it was not added."), 409
+    elapsed = max(0.0, (at - start).total_seconds())
     name, bib, school = _entry_label(conn, e)
     conn.execute("DELETE FROM results WHERE entry_id=?", (e["id"],))
     conn.execute("INSERT INTO results (entry_id, mark_seconds, dq, snap_name, snap_bib, snap_school) "
@@ -3567,7 +3599,8 @@ def lane_timer(meid):
     ev = me["ename"] if "ename" in me.keys() else "Race"
     title = f'{ev} · {_div_grade(me["gender"], me["grade"])}' + (f" · Heat {hk}" if hk else "")
     body = (_LANE_PAGE.replace("__MEID__", str(meid)).replace("__HEAT__", str(hk))
-            .replace("__MID__", str(m["id"])).replace("__TITLE__", escape(title)))
+            .replace("__MID__", str(m["id"])).replace("__TITLE__", escape(title))
+            .replace("__SENDQ_JS__", SENDQ_JS))
     return shell(g.principal, body, active="phone", bare=True)
 
 
@@ -3675,21 +3708,27 @@ async function moveFO(eid,dir){
 }
 async function setStatus(eid,st){await jp('/meet-events/'+MEID+'/finish-status',{entry:eid,status:st});poll();}
 function pick(n){MYLANE=n;render();}
-async function laneStart(){await jp('/meet-events/'+MEID+'/time/start?heat='+HEAT,{at:serverNow()});poll();}
-async function stopRace(){if(STOP||STOPPING)return;STOPPING=true;
-  try{await jp('/meet-events/'+MEID+'/time/stop?heat='+HEAT);}finally{STOPPING=false;}poll();}
+// 1.131.0: the start, stop and each lane's tap are saved on this phone and sent until the server has them.
+var LSTART='/meet-events/'+MEID+'/time/start?heat='+HEAT, LSTOP='/meet-events/'+MEID+'/time/stop?heat='+HEAT;
+function held(){var q=SENDQ.pending(),st=q.find(function(x){return x.url===LSTART;}),sp=q.find(function(x){return x.url===LSTOP;});
+  if(st&&!START){START=st.body.at;STOP=null;}
+  if(sp&&START&&!STOP){STOP=sp.body.at;}}
+async function laneStart(){SENDQ.add(LSTART,{at:serverNow()});held();render();}
+async function stopRace(){if(STOP||STOPPING)return;
+  SENDQ.add(LSTOP,{at:serverNow()});held();render();}
 function confirmStop(){if(!START||STOP)return;
   if(confirm('End the race now? Times already tapped are kept.'))stopRace();}
 async function resetRace(){await jp('/meet-events/'+MEID+'/time/reset?heat='+HEAT);MYLANE=null;poll();}
 function confirmReset(){if(!START)return;
   if(confirm('Reset this heat? Clears the clock AND all recorded lane times — rerun from the gun.'))resetRace();}
 async function laneTap(){if(MYLANE==null||!START)return;var at=serverNow();if(navigator.vibrate)navigator.vibrate(40);
-  var j=await jp('/meet-events/'+MEID+'/lane-finish?heat='+HEAT+'&lane='+MYLANE,{at:at});
-  if(j.ok){document.getElementById('rec').textContent='✓ Lane '+MYLANE+' — '+fmt(j.secs);poll();}
-  else{document.getElementById('rec').textContent='⚠ '+(j.error||'error');}}
+  SENDQ.add('/meet-events/'+MEID+'/lane-finish?heat='+HEAT+'&lane='+MYLANE,{at:at});
+  document.getElementById('rec').textContent='⏳ Lane '+MYLANE+' — '+fmt((at-START)/1000)+' · sending…';}
+function laneDone(it,res){if(it.url.indexOf('/lane-finish?')<0)return;var j=res.json||{};
+  document.getElementById('rec').textContent=res.ok?('✓ Lane '+j.lane+' — '+fmt(j.secs)):('⚠ '+(j.error||'error'));}
 async function poll(){try{var t0=Date.now();var s=await (await fetch('/meet-events/'+MEID+'/lane-state?heat='+HEAT)).json();var t1=Date.now(),rtt=t1-t0;
   if(rtt<BEST_RTT){BEST_RTT=rtt;OFFSET=Math.round(s.server_ms+rtt/2-t1);}
-  START=s.start_ms;STOP=s.stop_ms;LANES=s.lanes||[];render();
+  START=s.start_ms;STOP=s.stop_ms;LANES=s.lanes||[];held();render();
   if(START&&!STOP&&!STOPPING&&LANES.length&&LANES.every(function(l){return l.secs!=null;}))stopRace();
   }catch(e){}
   setTimeout(poll,2000);}
@@ -3718,5 +3757,7 @@ function disarmGun(msg){GUNON=false;if(GUNRAF)cancelAnimationFrame(GUNRAF);try{i
   var b=document.getElementById('gunbtn');if(b)b.textContent='🎧 Auto-start: listen for the gun';
   if(msg)document.getElementById('gunstatus').textContent=msg;}
 setInterval(tick,100);poll();
+__SENDQ_JS__
+SENDQ.on(laneDone);
 </script>
 """

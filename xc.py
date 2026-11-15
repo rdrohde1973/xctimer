@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 from markupsafe import escape
 from flask import Blueprint, request, redirect, g, abort, jsonify, Response
 
-from . import db, demo
+from . import db, demo, clocktime
 from .auth import login_required
 from .tenancy import active_district_id, all_districts
 from .ui import shell, BRAND_HTML, POWERED_BY_HTML, CSS, HEAD_EXTRA, STICKER_TIP
@@ -40,17 +40,11 @@ def _parse(s):
     return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
 
 
-def _event_dt(at_ms, now=None):
-    """A client-supplied event time (epoch ms, already in server-clock terms via the phone's
-    measured offset) -> datetime. Falls back to server now() when absent, unparseable, or more
-    than 15 s off (an unsynced/bad device clock). Records the instant the gun fired / a runner
-    crossed the line, NOT when the POST reached the server — so cellular lag can't skew times."""
-    now = now or _now()
-    try:
-        dt = datetime.fromtimestamp(float(at_ms) / 1000.0, tz=timezone.utc)
-    except (TypeError, ValueError, OverflowError, OSError):
-        return now
-    return now if abs((dt - now).total_seconds()) > 15 else dt
+def _event_dt(at_ms, now=None, age_ms=None):
+    """When the gun fired or a runner crossed, from the phone's own stamp, so a slow server
+    or a weak signal can't move a time. `age_ms` is how long the phone held a re-sent tap.
+    See clocktime.event_dt."""
+    return clocktime.event_dt(at_ms, age_ms, now or _now())
 
 
 def _ms(dt):
@@ -1304,7 +1298,7 @@ def race_start(rid):
     conn = db.connect()
     body = request.get_json(silent=True) or {}
     clear = bool(body.get("clear"))
-    start_iso = _iso(_event_dt(body.get("at")))   # gun instant from the starter's phone
+    start_iso = _iso(_event_dt(body.get("at"), age_ms=body.get("age")))   # gun instant from the starter's phone
     # Already running: a road race can have ~3 timing phones (and other helpers), any of
     # which may have armed the gun. A second START — a late gun-detect on another phone,
     # or a stray tap — must NOT shift the shared clock out from under the finishers.
@@ -1345,8 +1339,14 @@ def race_start(rid):
 @login_required
 def race_stop(rid):
     r, m = _race_or_403(rid, can_record_meet)
+    body = request.get_json(silent=True) or {}
+    stop = _event_dt(body.get("at"), age_ms=body.get("age")) if body.get("at") is not None else _now()
+    start = _parse(r["start_time"])
+    if start and stop < start:
+        stop = start
     conn = db.connect()
-    conn.execute("UPDATE races SET stop_time=? WHERE id=?", (_iso(_now()), rid))
+    # First stop wins (1.131.0): a re-sent stop, or a second phone's stop, can't move it.
+    conn.execute("UPDATE races SET stop_time=? WHERE id=? AND stop_time IS NULL", (_iso(stop), rid))
     conn.commit()
     conn.close()
     return jsonify(ok=True)
@@ -1460,17 +1460,20 @@ def race_finish(rid):
                        note=_unknown_bib_note(m, bib, snap, warn))
     # No open slot: record a new finisher at the current race time (scan-at-finish).
     # Requires the race to be running.
-    start = _parse(r["start_time"])
-    if not start or r["stop_time"]:
+    start, stop = _parse(r["start_time"]), _parse(r["stop_time"])
+    body = request.get_json(silent=True) or {}
+    at = _event_dt(body.get("at"), age_ms=body.get("age")) if body.get("at") is not None else _now()
+    if (not start or (stop and (body.get("at") is None or clocktime.after_stop(at, stop)))
+            or clocktime.stale_before(at, start)):
         conn.close()
         return jsonify(error="Race not running"), 400
-    elapsed = (_now() - start).total_seconds()
+    elapsed = max(0.0, (at - start).total_seconds())
     # seq computed in-statement so concurrent inserts can't collide on the same number.
     conn.execute(
         "INSERT INTO finishers (race_id, seq, finish_time, elapsed_seconds, bib, "
         "snap_name, snap_grade, snap_gender, snap_school, snap_age) "
         "VALUES (?, (SELECT COALESCE(MAX(seq),0)+1 FROM finishers WHERE race_id=?), ?,?,?,?,?,?,?,?)",
-        (rid, rid, _iso(_now()), elapsed, bib, *snap))
+        (rid, rid, _iso(at), elapsed, bib, *snap))
     warn = _road_unassigned_warn(conn, m, rid, bib)
     conn.commit()
     conn.close()
@@ -1481,22 +1484,61 @@ def race_finish(rid):
 @bp.post("/races/<int:rid>/tap")
 @login_required
 def race_tap(rid):
+    """A runner crossed the line. The time is the phone's stamp of the tap (1.131.0).
+
+    The phone keeps the tap saved and re-sends it until it gets an answer, so the same tap
+    can arrive twice (its `cid` makes the second a no-op), late (it still keeps its own
+    time, even if the race was stopped after it), or after a later tap. A late tap's time
+    takes its place in time order. Runners already scanned keep their finishing order, so
+    from that place down to the next open slot each one moves onto the time before the one
+    they held (the tap that was really theirs), and the open place lands after them."""
     r, m = _race_or_403(rid, can_record_meet)
+    body = request.get_json(silent=True) or {}
+    cid = str(body.get("cid") or "")[:48] or None
     start = _parse(r["start_time"])
     if not start:
         return jsonify(error="Race not started"), 400
-    if r["stop_time"]:
+    at = _event_dt(body.get("at"), age_ms=body.get("age"))
+    stop = _parse(r["stop_time"])
+    if stop and (not cid or clocktime.after_stop(at, stop)):
         return jsonify(error="Race has ended — Reset to run again"), 400
-    at = (request.get_json(silent=True) or {}).get("at")
-    elapsed = max(0.0, (_event_dt(at) - start).total_seconds())
+    if clocktime.stale_before(at, start):
+        return jsonify(error="That tap is from before this race started, so it was not added."), 409
+    elapsed = max(0.0, (at - start).total_seconds())
     conn = db.connect()
-    # seq computed in-statement so two near-simultaneous taps can't get the same number.
-    cur = conn.execute(
-        "INSERT INTO finishers (race_id, seq, finish_time, elapsed_seconds) "
-        "VALUES (?, (SELECT COALESCE(MAX(seq),0)+1 FROM finishers WHERE race_id=?), ?, ?)",
-        (rid, rid, _iso(_now()), elapsed))
-    fid = cur.lastrowid
-    seq = conn.execute("SELECT seq FROM finishers WHERE id=?", (fid,)).fetchone()[0]
+    conn.execute("BEGIN IMMEDIATE")          # one tap at a time, so places can't collide
+    if cid:
+        prev = conn.execute("SELECT * FROM finishers WHERE race_id=? AND client_id=?", (rid, cid)).fetchone()
+        if prev:
+            conn.rollback()
+            conn.close()
+            return jsonify(id=prev["id"], seq=prev["seq"], bib=prev["bib"], elapsed=prev["elapsed_seconds"],
+                           dq=bool(prev["dq"]), name=prev["snap_name"], school=prev["snap_school"], duplicate=True)
+    rows = conn.execute("SELECT * FROM finishers WHERE race_id=? ORDER BY seq", (rid,)).fetchall()
+    # where this time belongs: after every slot timed at or before it
+    k = len(rows)
+    while k > 0 and rows[k - 1]["elapsed_seconds"] is not None and rows[k - 1]["elapsed_seconds"] > elapsed:
+        k -= 1
+    top = (rows[-1]["seq"] if rows else 0) + 1
+    fid = conn.execute(
+        "INSERT INTO finishers (race_id, seq, finish_time, elapsed_seconds, client_id) VALUES (?,?,?,?,?)",
+        (rid, top, _iso(at), elapsed, cid)).lastrowid
+    seq = top
+    if k < len(rows):
+        # A late tap. Slots (seq, time) stay in time order with the new one at k; runners
+        # from k slide one slot later, stopping at the next open slot, which they fill.
+        slots = [(f["seq"], f["elapsed_seconds"], f["finish_time"]) for f in rows]
+        new_slot = (None, elapsed, _iso(at))
+        times = slots[:k] + [new_slot] + slots[k:]
+        seqs = [s[0] for s in slots] + [top]
+        ids = [f["id"] for f in rows]
+        j = next((i for i in range(k, len(rows)) if rows[i]["bib"] is None), len(rows))
+        order = ids[:j] + [fid] + ids[j:]
+        for i, row_id in enumerate(order):
+            conn.execute("UPDATE finishers SET seq=?, elapsed_seconds=?, finish_time=? WHERE id=?",
+                         (seqs[i], times[i][1], times[i][2], row_id))
+            if row_id == fid:
+                seq = seqs[i]
     conn.commit()
     conn.close()
     return jsonify(id=fid, seq=seq, bib=None, elapsed=elapsed, dq=False, name=None, school=None)
@@ -3152,8 +3194,12 @@ function renderRaces(s){
       +'font-weight:700;font-size:.9rem">'+esc(r.name)+' · '+badge+' · '+r.count+'</span>';
   }).join('');
 }
+let COFF=0, CRTT=1e9;     // this camera's offset from the server clock (1.131.0)
+const AT={};              // bib -> when this camera first read it, kept until the server has it
+function readAt(id){ return AT[id]||(AT[id]={at:Date.now()+COFF, t:Date.now()}); }
 async function poll(){
-  try{ const s=await jget(STATEURL);
+  try{ const t0=Date.now(); const s=await jget(STATEURL); const t1=Date.now();
+    if(s&&s.server_ms&&t1-t0<CRTT){ CRTT=t1-t0; COFF=Math.round(s.server_ms+(t1-t0)/2-t1); }
     if(MEET){
       RUNNING=!!s.any_running;
       document.getElementById('cstatus').textContent = s.any_running
@@ -3288,7 +3334,9 @@ async function hit(id){
   if(!RUNNING || SEEN.has(id)) return;
   SEEN.add(id);
   try{
-    const j=await jpost(RECURL,{bib:id,mode:MODE});
+    const a=readAt(id);
+    const j=await jpost(RECURL,{bib:id,mode:MODE,at:a.at,age:Date.now()-a.t});
+    delete AT[id];
     if(j&&j.duplicate){ log('#'+id+' — already recorded'); return; }
     if(j&&j.ok===false){                       // whole-event mode: not registered / race not running
       SEEN.delete(id);                          // let it retry when the race is started
@@ -3300,12 +3348,20 @@ async function hit(id){
         +' ✓'+(j.remaining!=null&&MODE==='chute'?(' · '+j.remaining+' left'):'')+(j.warn?(' ⚠ '+esc(j.warn)):''));
     beep();                                        // audible confirm — first read only
     try{ navigator.vibrate&&navigator.vibrate(35); }catch(e){}
-  }catch(e){ SEEN.delete(id); log('#'+id+' ✕ '+e.message); }
+  }catch(e){
+    SEEN.delete(id);
+    // No answer from the server (no signal, or it is busy): keep this read's time and keep
+    // trying, even after the runner has walked out of the picture (1.131.0).
+    if(e instanceof TypeError || /^HTTP 5/.test(e.message||'')){
+      log('#'+id+' ⏳ no connection — saved, trying again');
+      setTimeout(function(){ hit(id); }, 1500);
+    } else { delete AT[id]; log('#'+id+' ✕ '+e.message); }
+  }
 }
 async function manual(){
   const el=document.getElementById('mbib'); const v=el.value.trim(); if(!v)return;
   try{
-    const j=await jpost(RECURL,{bib:v,mode:MODE}); el.value=''; el.focus();
+    const j=await jpost(RECURL,{bib:v,mode:MODE,at:Date.now()+COFF}); el.value=''; el.focus();
     if(j&&j.duplicate){ log('#'+v+' — already recorded'); return; }
     if(j&&j.ok===false){ log('⚠ #'+v+' — '+(j.reason||'skipped')); toast('⚠ '+(j.reason||'skipped')); return; }
     log('⌨️ <b>#'+v+'</b>'+(j.name?(' '+esc(j.name)):'')+(j.race?(' → '+esc(j.race)):'')
@@ -3423,11 +3479,13 @@ def camera_record(mid):
         abort(403)
     if not _is_org(m):                  # school meets: each heat's own camera only
         abort(404)
-    raw = (request.get_json(silent=True) or {}).get("bib")
+    body = request.get_json(silent=True) or {}
+    raw = body.get("bib")
     try:
         bib = int(str(raw).strip())
     except (TypeError, ValueError):
         return jsonify(ok=False, reason="bad bib")
+    at = _event_dt(body.get("at"), age_ms=body.get("age")) if body.get("at") is not None else _now()
     conn = db.connect()
     # Community event: the participant signed up for a specific race, so it is on them.
     p = conn.execute("SELECT race_id FROM participants WHERE meet_id=? AND bib=?",
@@ -3441,20 +3499,22 @@ def camera_record(mid):
     if not r:
         conn.close()
         return jsonify(ok=False, bib=bib, reason=f"Bib {bib} has no race")
-    if not r["start_time"] or r["stop_time"]:
+    start, stop = _parse(r["start_time"]), _parse(r["stop_time"])
+    if (not start or (stop and (body.get("at") is None or clocktime.after_stop(at, stop)))
+            or clocktime.stale_before(at, start)):
         conn.close()
         return jsonify(ok=False, bib=bib, race=r["name"], reason=f"{r['name']} not running")
     if conn.execute("SELECT 1 FROM finishers WHERE race_id=? AND bib=?", (rid, bib)).fetchone():
         conn.close()
         return jsonify(ok=True, duplicate=True, bib=bib, race=r["name"])
-    elapsed = (_now() - _parse(r["start_time"])).total_seconds()
+    elapsed = max(0.0, (at - start).total_seconds())
     snap = _snap_for_bib(conn, m, bib)
     seq = (conn.execute("SELECT COALESCE(MAX(seq),0) FROM finishers WHERE race_id=?",
                         (rid,)).fetchone()[0]) + 1
     conn.execute(
         "INSERT INTO finishers (race_id, seq, finish_time, elapsed_seconds, bib, "
         "snap_name, snap_grade, snap_gender, snap_school, snap_age) VALUES (?,?,?,?,?,?,?,?,?,?)",
-        (rid, seq, _iso(_now()), elapsed, bib, *snap))
+        (rid, seq, _iso(at), elapsed, bib, *snap))
     conn.commit()
     conn.close()
     return jsonify(ok=True, bib=bib, race=r["name"], name=snap[0])

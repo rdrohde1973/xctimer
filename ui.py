@@ -574,6 +574,83 @@ def error_page(code, title, msg):
 # hears the pistol — so the STARTER's phone sets the shared clock at the true gun
 # instant and any FINISHER phone records against that same clock (share the race,
 # split the roles). Both host pages already define startRace() and a STARTED flag.
+# 1.131.0: starts, taps and stops are saved on the phone and re-sent until the server has
+# them, so a dead spot at the finish line or a slow server can't lose a runner. Each
+# item keeps the moment it happened (`at`, server-clock ms) and its own id (`cid`), and
+# every send adds `age`, how long the phone has held it (see clocktime.py). Sent oldest
+# first. An item is dropped once the server answers it: accepted, or refused for good
+# (400/404/409). It is kept and re-sent on no answer, a timeout, a 5xx, or an expired
+# sign-in. A pill near the bottom of the screen (clear of the clock) shows anything still waiting.
+SENDQ_JS = r"""
+var SENDQ=(function(){
+  var KEY='xctimer-sendq', MEM=[], busy=false, fails=0, hooks=[], msg='', msgT=null;
+  var KEEP=12*3600*1000;      // matches clocktime.HOLD_MAX
+  function rd(){ var v; try{ v=JSON.parse(localStorage.getItem(KEY)||'[]'); if(!Array.isArray(v)) v=[]; }catch(e){ v=MEM.slice(); }
+    return v.filter(function(x){ return x && x.url && Date.now()-x.t<KEEP; }); }
+  function wr(q){ MEM=q.slice(); try{ localStorage.setItem(KEY, JSON.stringify(q)); }catch(e){} }
+  function csrf(){ var m=document.cookie.match(/(?:^|;\s*)csrftoken=([^;]+)/); return m?decodeURIComponent(m[1]):''; }
+  function newId(){ return Date.now().toString(36)+'-'+Math.random().toString(36).slice(2,10); }
+  function pill(){
+    var el=document.getElementById('sendq');
+    if(!el){ el=document.createElement('div'); el.id='sendq';
+      el.style.cssText='position:fixed;bottom:calc(92px + env(safe-area-inset-bottom));left:50%;transform:translateX(-50%);z-index:9999;padding:.45rem .9rem;width:max-content;'
+        +'border-radius:999px;font:600 .85rem system-ui,sans-serif;box-shadow:0 2px 10px rgba(0,0,0,.25);display:none;max-width:92vw;text-align:center';
+      document.body.appendChild(el); }
+    return el;
+  }
+  function show(){
+    var n=rd().length, el=pill();
+    if(msg){ el.style.display=''; el.style.background='#b3261e'; el.style.color='#fff'; el.textContent=msg; return; }
+    if(!n){ el.style.display='none'; return; }
+    el.style.display=''; el.style.background=fails>2?'#b3261e':'#f2c94c'; el.style.color=fails>2?'#fff':'#1d1d1d';
+    var taps=rd().filter(function(x){ return /\/(tap|lane-finish)\b/.test(x.url); }).length;
+    var what=(taps===n)?(n===1?'1 tap':n+' taps'):(n===1?'1 action':n+' actions');
+    el.textContent=fails>2 ? ('⚠ No connection: '+what+' saved on this phone with the exact time. Keep this page open; it sends on its own.')
+                           : ('⏳ Sending '+what+'…');
+  }
+  function flash(t){ msg=t; show(); clearTimeout(msgT); msgT=setTimeout(function(){ msg=''; show(); },6000); }
+  async function sendOne(it){
+    var body=Object.assign({}, it.body, {cid:it.id, age:Math.max(0, Date.now()-it.t)});
+    var ac=(typeof AbortController!=='undefined')?new AbortController():null;
+    var tm=ac?setTimeout(function(){ ac.abort(); },20000):null;
+    try{
+      var r=await fetch(it.url,{method:'POST',credentials:'same-origin',
+        headers:{'Content-Type':'application/json','X-CSRF-Token':csrf()},body:JSON.stringify(body),signal:ac?ac.signal:undefined});
+      var j=null; try{ j=await r.json(); }catch(e){}
+      if(r.ok && j && typeof j==='object') return {done:true, ok:true, json:j};
+      if(!r.ok && [400,404,409,410,422].indexOf(r.status)>=0) return {done:true, ok:false, json:j||{}};
+      return {done:false};                       // 5xx, 401/403 or a sign-in page: try again
+    }catch(e){ return {done:false}; }
+    finally{ if(tm) clearTimeout(tm); }
+  }
+  async function flush(){
+    if(busy) return; busy=true;
+    try{
+      for(;;){
+        var q=rd(); if(!q.length){ fails=0; break; }
+        var it=q[0], res=await sendOne(it);
+        if(!res.done){ fails++; break; }
+        fails=0;
+        wr(rd().filter(function(x){ return x.id!==it.id; }));
+        if(!res.ok && res.json && res.json.error) flash('⚠ '+res.json.error);
+        hooks.forEach(function(h){ try{ h(it,res); }catch(e){} });
+      }
+    } finally { busy=false; show(); }
+    if(rd().length) setTimeout(flush, Math.min(1000*Math.max(1,fails), 5000));
+  }
+  function add(url, body){
+    var q=rd(); var it={id:newId(), url:url, body:body||{}, t:Date.now()};
+    q.push(it); wr(q); show(); flush(); return it.id;
+  }
+  window.addEventListener('online', flush);
+  document.addEventListener('visibilitychange', function(){ if(document.visibilityState==='visible') flush(); });
+  setInterval(function(){ if(rd().length) flush(); }, 4000);
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded', function(){ show(); flush(); });
+  else setTimeout(function(){ show(); flush(); }, 0);
+  return {add:add, flush:flush, pending:function(){ return rd(); }, on:function(h){ hooks.push(h); }};
+})();
+"""
+
 GUN_CONTROLS_HTML = (
     '<button id="gunbtn" type="button" onclick="armGun()" '
     'style="display:block;width:100%;max-width:440px;margin:.5rem auto 0;padding:.8rem;'

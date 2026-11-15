@@ -14,7 +14,7 @@ from flask import Blueprint, g, jsonify, redirect, request, abort
 
 from . import db
 from .meets import load_meet, can_record_meet
-from .ui import shell, HEAD_EXTRA, CSS, JS, BRAND_HTML, LOGO_APP_URL, GUN_CONTROLS_HTML, GUN_JS
+from .ui import shell, HEAD_EXTRA, CSS, JS, BRAND_HTML, LOGO_APP_URL, GUN_CONTROLS_HTML, GUN_JS, SENDQ_JS
 
 
 def _mode_label(mode):
@@ -300,12 +300,13 @@ function fmt(sec){{ if(sec==null)return''; sec=Math.max(0,sec);
 let ELIG=[];
 async function load(){{
   const t0=Date.now();
-  const s=await jget('/races/'+RID+'/state');
+  let s; try{{ s=await jget('/races/'+RID+'/state'); }}catch(e){{ held(); sync(); return; }}   // no connection: keep going
   const t1=Date.now(), rtt=t1-t0;
   if(rtt<BEST_RTT){{ BEST_RTT=rtt; OFFSET=Math.round(s.server_ms+rtt/2-t1); }}  // keep the lowest-latency sample
   START=s.start_ms; STOPMS=s.stop_ms;
   STOPPED=s.stopped; STARTED=s.started; MODE=s.capture_mode; FIN=s.finishers;
   LOCKED=!!s.locked;
+  held();
   sync(); render();
   if((MODE==='tapselect'||MODE==='tap') && STARTED) loadElig();
 }}
@@ -359,7 +360,7 @@ async function pick(bib){{
   // finisher when nothing is open, so the tap-then-pick step is not needed to record.
   if(!open.length){{
     if(!STARTED||STOPPED){{ buzz([60,60,60]); alert('Race is not running — start it first.'); return; }}
-    try{{ const j=await jpost('/races/'+RID+'/finish',{{bib:bib}}); if(!(j&&j.duplicate)) buzz(35); }}
+    try{{ const j=await jpost('/races/'+RID+'/finish',{{bib:bib,at:nowms()}}); if(!(j&&j.duplicate)) buzz(35); }}
     catch(e){{ buzz([60,60,60]); alert(e.message); }}
     await load(); return;
   }}
@@ -386,13 +387,23 @@ function render(){{
   }});
   list.innerHTML=h;
 }}
+// A start or stop still saved on this phone (no signal yet) counts here, so the clock runs
+// and the TAP button works while it sends (1.131.0).
+function held(){{
+  const q=SENDQ.pending();
+  const st=q.find(x=>x.url==='/races/'+RID+'/start'), sp=q.find(x=>x.url==='/races/'+RID+'/stop');
+  if(st && !STARTED){{ STARTED=true; STOPPED=false; START=st.body.at; STOPMS=null; }}
+  if(sp && STARTED && !STOPPED){{ STOPPED=true; STOPMS=sp.body.at; }}
+}}
 async function startRace(){{
   if(STARTED&&!STOPPED)return;   // already running (another phone/the gun started it) — don't re-post
   const body={{at:nowms()}};     // stamp the gun instant on THIS phone, immune to POST lag
-  if(STOPPED&&FIN.length){{ if(!confirm('Race ended with '+FIN.length+' finisher(s). Restarting CLEARS them. Continue?'))return; body.clear=true; }}
-  try{{ await jpost('/races/'+RID+'/start',body); }}catch(e){{ alert(e.message); }} load(); }}
+  if(STOPPED&&FIN.length){{ if(!confirm('Race ended with '+FIN.length+' finisher(s). Restarting CLEARS them. Continue?'))return; body.clear=true;
+    try{{ await jpost('/races/'+RID+'/start',body); }}catch(e){{ alert(e.message); }} load(); return; }}
+  SENDQ.add('/races/'+RID+'/start', body);   // saved on the phone, sent until the server has it
+  held(); sync(); render(); load(); }}
 async function stopRace(){{ if(!confirm('Stop the race clock?'))return;
-  await jpost('/races/'+RID+'/stop',{{}});
+  SENDQ.add('/races/'+RID+'/stop',{{at:nowms()}}); held(); sync(); render();
   // Offer the lock the moment the heat is done — RESET sits right next to STOP on a
   // phone, and one mis-tap used to wipe the whole race behind a single confirm.
   if(FIN.length && !LOCKED){{
@@ -409,10 +420,10 @@ async function resetRace(){{
   else if(!confirm('Reset clears the clock AND every finisher for this race. Continue?'))return;
   try{{ await jpost('/races/'+RID+'/reset',{{}}); }}catch(e){{ alert(e.message); }} load(); }}
 function buzz(ms){{ try{{ navigator.vibrate && navigator.vibrate(ms); }}catch(e){{}} }}
-async function tap(){{ buzz(35); const at=nowms(); try{{ await jpost('/races/'+RID+'/tap',{{at:at}}); }}catch(e){{}} load(); }}
+async function tap(){{ buzz(35); SENDQ.add('/races/'+RID+'/tap',{{at:nowms()}}); }}   // saved, then sent
 async function undo(){{ buzz([20,40,20]); try{{ await jpost('/races/'+RID+'/untap',{{}}); }}catch(e){{ alert(e.message); }} load(); }}
 async function rec(v){{ const el=document.getElementById('sbib'); v=(v||el.value).toString().trim(); if(!v)return;
-  try{{ const j=await jpost('/races/'+RID+'/finish',{{bib:v}}); el.value='';
+  try{{ const j=await jpost('/races/'+RID+'/finish',{{bib:v,at:nowms()}}); el.value='';
     if(!(j&&j.duplicate)) buzz(35); }}   // unregistered bibs record silently — no popup
   catch(e){{ buzz([60,60,60]); alert(e.message); }} load(); }}
 // Screen wake lock: a timing phone that sleeps mid-race silently loses finishers.
@@ -423,6 +434,8 @@ async function wlock(){{ try{{ WL=await navigator.wakeLock.request('screen'); }}
 document.addEventListener('visibilitychange',()=>{{ if(document.visibilityState==='visible'){{ wlock(); load(); }} }});
 window.addEventListener('pageshow', ()=>{{ load(); }});
 wlock();
+{SENDQ_JS}
+SENDQ.on(function(){{ load(); }});
 setInterval(tick,60);
 setInterval(load,3000);
 load();

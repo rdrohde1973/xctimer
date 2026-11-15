@@ -642,6 +642,16 @@ def migrate(conn):
         entry_id INTEGER,
         created_at TEXT DEFAULT (datetime('now')))""")
     conn.execute("CREATE INDEX IF NOT EXISTS idx_track_taps ON track_taps(meet_event_id, heat)")
+    # 1.131.0: phones re-send a saved tap until the server confirms it; the id the phone
+    # gave the tap makes a second copy of the same tap a no-op.
+    if "client_id" not in _column_names(conn, "finishers"):
+        conn.execute("ALTER TABLE finishers ADD COLUMN client_id TEXT")
+    if "client_id" not in _column_names(conn, "track_taps"):
+        conn.execute("ALTER TABLE track_taps ADD COLUMN client_id TEXT")
+    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_finishers_cid ON finishers(race_id, client_id) "
+                 "WHERE client_id IS NOT NULL")
+    conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_track_taps_cid ON track_taps(meet_event_id, heat, client_id) "
+                 "WHERE client_id IS NOT NULL")
 
     # Audit log (compliance Phase 3): who viewed / changed / exported / deleted records.
     # One row per auditable request (see audit.py). Retained ~13 months, pruned on the
