@@ -78,11 +78,13 @@ def _qr_image(text):
 # Athlete/timing instructions on the meet-day bib-list cover — sport-specific.
 # Cross country: one race, finish chute, scan in, then the sticker is collected at the
 # tent — unlike track, where it stays on all day across several events.
+# An instruction is plain text, or (bold lead-in, rest): the lead-in is the part an athlete
+# must not miss.
 _COVER_INSTRUCTIONS_XC = [
     "Place your sticker on the front of your jersey, centered on your chest.",
     "Need a blank sticker? Check in at the timing tent before your race begins.",
-    "If you lose your sticker during the race, remember your bib number so you can "
-    "give it to the timer at the finish.",
+    ("Remember your bib number.", "If you lose your sticker during the race, give your number "
+     "to the timer at the finish."),
     "When you cross the finish line, stay in a single-file line and walk to the timing "
     "tent in the exact order you finished.",
     "At the timing tent, peel off your sticker and hand it to a timer, then clear the "
@@ -91,9 +93,11 @@ _COVER_INSTRUCTIONS_XC = [
 # Track: multiple events across the day — keep the sticker on the whole time.
 _COVER_INSTRUCTIONS_TRACK = [
     "Place your sticker on the front of your jersey, centered on your chest.",
+    ("Keep your sticker on for the whole meet.", "It shows your number, your events, and your "
+     "heat and lane, and the officials read your number from it at every event."),
+    ("Remember your bib number.", "If you lose your sticker, tell the timer or the field event "
+     "official your number."),
     "Need a blank sticker? Check in at the timing tent before your first event.",
-    "Keep your sticker on all day. It shows your number, your events, and your heat and lane.",
-    "If you lose your sticker, remember your bib number so you can give it to the timer.",
 ]
 
 
@@ -151,13 +155,23 @@ def _draw_cover(c, pw, ph, meet_name, logo, qr_img, url, instructions):
     left = 0.95 * inch
     numw = 0.34 * inch
     maxw = pw - left - 0.95 * inch - numw
+    from reportlab.pdfbase.pdfmetrics import stringWidth
     for i, text in enumerate(instructions, 1):
         c.setFont("Helvetica-Bold", 13)
         c.drawString(left, y, f"{i}.")
-        c.setFont("Helvetica", 13)
-        for ln in _wrap(text, "Helvetica", 13, maxw):
-            c.drawString(left + numw, y, ln)
-            y -= 0.245 * inch
+        lead, rest = text if isinstance(text, tuple) else ("", text)
+        # Word by word, so a bold lead-in and the plain text after it wrap as one paragraph.
+        words = [(w, "Helvetica-Bold") for w in lead.split()] + [(w, "Helvetica") for w in rest.split()]
+        x = left + numw
+        for w, font in words:
+            ww = stringWidth(w, font, 13)
+            if x > left + numw and x + ww > left + numw + maxw:
+                x = left + numw
+                y -= 0.245 * inch
+            c.setFont(font, 13)
+            c.drawString(x, y, w)
+            x += ww + stringWidth(" ", font, 13)
+        y -= 0.245 * inch
         y -= 0.1 * inch
     y -= 0.2 * inch
     # Results + QR, centered
