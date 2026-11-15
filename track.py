@@ -237,9 +237,8 @@ def _hj_best(grid):
 
 
 def _bar_fails(mk):
-    """Failed attempts in one bar's marks: X is a miss, F a foul; both count against the three."""
-    mk = str(mk or "").upper()
-    return mk.count("X") + mk.count("F")
+    """Failed attempts in one bar's marks. The pit records every failed attempt as X."""
+    return str(mk or "").upper().count("X")
 
 
 def _bar_done(mk):
@@ -1345,7 +1344,7 @@ def seed_event(meid):
 # One form for both the laptop console (/meets/<id>/pit) and the phone's Pit tab. Long Jump,
 # Shot Put and the like take three attempts. High Jump and Pole Vault are run bar by bar: the
 # crew sets "Bar height now" from the meet's schedule, and each jumper who comes up gets three
-# boxes that take O (clear), X (miss) or F (foul). Typing a bib shows who it is, and warns when
+# boxes that take O (clear) or X (miss). Typing a bib shows who it is, and warns when
 # that athlete has no attempts left.
 _PIT_PANEL = r"""
 <div class="pitpanel" id="pitpanel">
@@ -1387,7 +1386,6 @@ _PIT_PANEL = r"""
     <div class="barkeys">
       <button type="button" class="k-o" onclick="pitPut('O')">O<small>cleared</small></button>
       <button type="button" class="k-x" onclick="pitPut('X')">X<small>miss</small></button>
-      <button type="button" class="k-x" onclick="pitPut('F')">F<small>foul</small></button>
       <button type="button" class="ghost" onclick="pitBack()" aria-label="Undo the last box">⌫<small>undo</small></button>
     </div>
     <p class="muted" id="barhint" style="margin:.4rem 0 0"></p>
@@ -1496,7 +1494,7 @@ function pitDraw(){
     pitEl('bb'+k).textContent=c;
     pitEl('bb'+k).className='barbox'+(c==='O'?' ok':(c?' miss':''))+((k===PIT_PM.length&&!pitDone())?' next':'');
   }
-  var h=pitHeight(), t='<b>O</b> = cleared · <b>X</b> = miss · <b>F</b> = foul. Tap a filled box to change it.';
+  var h=pitHeight(), t='<b>O</b> = cleared · <b>X</b> = miss. Tap a filled box to change it.';
   if(!h) t='Pick the bar height above first.';
   else if(PIT_PM[PIT_PM.length-1]==='O') t='Cleared '+esc(h)+'.';
   else if(PIT_PM.length>=3) t='Three misses: out at '+esc(h)+'.';
@@ -1514,7 +1512,7 @@ function pitMode(){
   PIT_TOUCHED=false;
   if(bar) pitBarFill(); else pitLookup();
 }
-// On a keyboard: O, X, F fill the boxes, Backspace undoes one, Enter records.
+// On a keyboard: O and X fill the boxes, Backspace undoes one, Enter records.
 document.addEventListener('keydown', function(e){
   if(e.metaKey||e.ctrlKey||e.altKey||!pitIsBar()||pitEl('barblock2').offsetParent===null) return;
   var t=e.target, tag=(t&&t.tagName)||'';
@@ -1522,7 +1520,7 @@ document.addEventListener('keydown', function(e){
   var inside=t===document.body||(t.closest&&t.closest('#pitpanel'));
   if(!inside) return;
   var k=(e.key||'').toLowerCase();
-  if(k==='o'||k==='x'||k==='f'){ e.preventDefault(); pitPut(k.toUpperCase()); }
+  if(k==='o'||k==='x'){ e.preventDefault(); pitPut(k.toUpperCase()); }
   else if(k==='backspace'){ e.preventDefault(); pitBack(); }
   else if(k==='enter'&&t.closest&&t.closest('.barboxes')){ e.preventDefault(); pitPost(); }
 });
@@ -1550,7 +1548,7 @@ function pitLookup(){
       if(bar){
         PIT_ONFILE=j.marks||'';
         if(!PIT_TOUCHED){
-          PIT_PM=PIT_ONFILE.split('').filter(function(c){ return 'OXF'.indexOf(c)>=0; }).slice(0,3); pitDraw();
+          PIT_PM=PIT_ONFILE.split('').filter(function(c){ return 'OX'.indexOf(c)>=0; }).slice(0,3); pitDraw();
         }
         if(j.grid&&j.grid.length){
           s+='<div class="muted">So far: '+j.grid.map(function(g){ return esc(g[0])+' <b>'+esc(g[1])+'</b>'; }).join(' · ')+'</div>';
@@ -1580,7 +1578,7 @@ async function pitPost(){
     var h=pitHeight();
     if(!h){ pitErr('Pick the bar height first.'); return; }
     if(!PIT_PM.length){
-      if(!PIT_ONFILE){ pitErr('Enter O, X or F for at least one attempt.'); return; }
+      if(!PIT_ONFILE){ pitErr('Enter O or X for at least one attempt.'); return; }
       if(!confirm('Remove the attempts recorded for bib '+bib+' at '+h+'?')) return;
     }
     body={event_id:ev,bib:bib,height:h,marks:PIT_PM,clear:!PIT_PM.length};
@@ -1644,7 +1642,7 @@ def pit_console(mid):
 <h2>🏖 Open pit</h2>
 <p class="sub">Record whoever steps up, by bib. The mark files into the athlete's own
 division automatically. <b>High Jump and Pole Vault:</b> set the bar height, then enter
-<b>O</b>, <b>X</b> or <b>F</b> for each attempt at it.
+<b>O</b> (cleared) or <b>X</b> (miss) for each attempt at it.
 <b>On a phone?</b> The 🏖 Pit tab in the Track Timer app is this same form.</p>
 <div class="card">{panel}</div>"""
     return shell(g.principal, body, active="meets")
@@ -1787,8 +1785,8 @@ def pit_post(mid):
     conn = db.connect()
     evrow = conn.execute("SELECT name FROM events WHERE id=?", (event_id,)).fetchone()
     bar_ev = bool(evrow) and evrow["name"] in db.VERTICAL_JUMPS
-    # High Jump / Pole Vault: one bar height and up to three marks at it (O clear, X miss,
-    # F foul). The app's older pit screen still sends `attempts` = [best height].
+    # High Jump / Pole Vault: one bar height and up to three marks at it (O clear, X miss).
+    # The app's older pit screen still sends `attempts` = [best height].
     bar_h, bar_marks, bar_clear = None, "", bool(d.get("clear"))
     if bar_ev and "height" in d:
         bar_h = _parse_ht(str(d.get("height") or ""))
@@ -1798,14 +1796,14 @@ def pit_post(mid):
         err = None
         if bar_h is None or bar_h <= 0:
             err = "Pick the bar height first"
-        elif any(c not in "OXF" for c in bar_marks):
-            err = "Use O for a clear, X for a miss or F for a foul"
+        elif any(c not in "OX" for c in bar_marks):
+            err = "Use O for a clear or X for a miss"
         elif len(bar_marks) > 3:
             err = "A jumper gets three attempts at one height"
         elif "O" in bar_marks[:-1]:
             err = "Nothing can follow an O: the bar was already cleared"
         elif not bar_marks and not bar_clear:
-            err = "Enter O, X or F for at least one attempt"
+            err = "Enter O or X for at least one attempt"
         if err:
             conn.close()
             return jsonify(error=err), 400

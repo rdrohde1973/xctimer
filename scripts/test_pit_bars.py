@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Open pit, bar by bar (1.132.0), and the bar height on the results page (1.133.0): High Jump and Pole Vault take a bar height and up to three
-O / X / F marks at it, and every pit screen warns when an athlete has no attempts left.
+O / X marks at it, and every pit screen warns when an athlete has no attempts left.
     python scripts/test_pit_bars.py
 Uses a temp DB (XCTIMER_DB); never touches real data. Exit 0 on success."""
 import json, os, sys, tempfile
@@ -81,13 +81,13 @@ def result(name, meid=None):
 for url in (f"/meets/{mid}/pit", f"/phone/meet/{mid}"):
     page = root.get(url).get_data(as_text=True)
     assert 'id="barsel"' in page and "Bar height now" in page and page.count('class="barbox"') == 3, url
-    assert "pitPut('O')" in page and "pitPut('X')" in page and "pitPut('F')" in page, url
+    assert "pitPut('O')" in page and "pitPut('X')" in page and "pitPut('F')" not in page, url
     assert "Best height cleared" not in page and "pitwarn" in page, url
     bars = json.loads(page.split("PIT_BARS=", 1)[1].split(", PIT_NOW=", 1)[0])
     hj = bars[str(ev["High Jump"])]
     assert hj[0] == "4-00" and hj[-1] == "6-04" and len(hj) == 15, hj       # the whole schedule, not one division's ten
     assert bars[str(ev["Pole Vault"])][:2] == ["6-00", "6-06"] and str(ev["Discus"]) not in bars
-print("PASS 1: laptop console and phone Pit tab both offer the bar schedule and three O/X/F boxes")
+print("PASS 1: laptop console and phone Pit tab both offer the bar schedule and three O/X boxes")
 
 # --- 2. marks at a height, added to as the jumper comes back
 r = post("Ann Jump", "High Jump", height="4-06", marks=["O"]); assert r.status_code == 200, r.data
@@ -95,13 +95,13 @@ r = post("Ann Jump", "High Jump", height="4-08", marks=["X"]); j = r.get_json()
 assert r.status_code == 200 and j["best"] == "4-06" and j["marks"] == "X" and j["out"] is None, j
 lk = look("Ann Jump", "High Jump", "4-08")
 assert lk["bar"] and lk["marks"] == "X" and lk["warning"] is None and lk["grid"] == [["4-06", "O"], ["4-08", "X"]], lk
-r = post("Ann Jump", "High Jump", height="4-08", marks=["X", "F", "O"]); j = r.get_json()
-assert j["best"] == "4-08" and j["marks"] == "XFO" and j["summary"] == "4-06 O · 4-08 XFO", j
+r = post("Ann Jump", "High Jump", height="4-08", marks=["X", "X", "O"]); j = r.get_json()
+assert j["best"] == "4-08" and j["marks"] == "XXO" and j["summary"] == "4-06 O · 4-08 XXO", j
 row = result("Ann Jump")
-assert row["mark_metric"] == 56.0 and json.loads(row["attempts_json"]) == {"4-06": "O", "4-08": "XFO"}, tuple(row)
+assert row["mark_metric"] == 56.0 and json.loads(row["attempts_json"]) == {"4-06": "O", "4-08": "XXO"}, tuple(row)
 r = post("Ann Jump", "High Jump", height="4-10", marks="XXX"); j = r.get_json()      # a string works too
 assert j["best"] == "4-08" and j["out"] == "4-10", j
-print("PASS 2: O, X and F are kept per height; the best is the highest bar cleared")
+print("PASS 2: O and X are kept per height; the best is the highest bar cleared")
 
 # --- 3. the warning when a jumper has no attempts left
 lk = look("Ann Jump", "High Jump", "4-10")
@@ -111,9 +111,9 @@ post("Bea Jump", "High Jump", height="4-08", marks=["O"])
 lk = look("Bea Jump", "High Jump", "4-08")
 assert lk["warning"] == "Completed all attempts at 4-08: cleared it (O).", lk
 assert look("Bea Jump", "High Jump", "4-10")["warning"] is None           # next bar: attempts to come
-post("Cy Jump", "High Jump", height="4-00", marks=["F", "F", "X"])
+post("Cy Jump", "High Jump", height="4-00", marks=["X", "X", "X"])
 lk = look("Cy Jump", "High Jump", "4-00")
-assert "out at 4-00 (FFX)" in lk["warning"] and "No height cleared" in lk["warning"], lk
+assert "out at 4-00 (XXX)" in lk["warning"] and "No height cleared" in lk["warning"], lk
 assert result("Cy Jump")["mark_metric"] is None and result("Cy Jump")["place"] is None
 assert look("Di Jump", "High Jump", "4-00")["warning"] is None
 print("PASS 3: a jumper who cleared the bar, or is out, shows a warning when the bib is typed")
@@ -122,8 +122,9 @@ print("PASS 3: a jumper who cleared the bar, or is out, shows a warning when the
 for body, want in (({"height": "4-06", "marks": ["O", "X"]}, "Nothing can follow"),
                    ({"height": "4-06", "marks": ["X", "X", "X", "O"]}, "three attempts"),
                    ({"height": "4-06", "marks": ["P"]}, "Use O"),
+                   ({"height": "4-06", "marks": ["X", "F"]}, "Use O"),
                    ({"height": "", "marks": ["O"]}, "Pick the bar height"),
-                   ({"height": "4-06", "marks": []}, "Enter O, X or F")):
+                   ({"height": "4-06", "marks": []}, "Enter O or X")):
     r = post("Di Jump", "High Jump", **body)
     assert r.status_code == 400 and want in r.get_json()["error"], (body, r.data)
 assert result("Di Jump") is None
@@ -137,7 +138,7 @@ assert r.status_code == 200 and j["height"] == "3-10" and j["best"] == "3-10", j
 after = json.loads(q("SELECT bar_heights FROM meet_events WHERE id=?", hjf)[0]["bar_heights"])
 assert after == ["3-10"] + before, after
 page = root.get(f"/meet-events/{hjf}").get_data(as_text=True)
-assert '"3-10": "XO"' in page and '"4-08": "XFO"' in page
+assert '"3-10": "XO"' in page and '"4-08": "XXO"' in page
 print("PASS 5: an off-schedule height is added to the division's bars and shows in the event grid")
 
 # --- 6. taking a height back off
@@ -227,8 +228,8 @@ assert "Bar now 4-06" in root.get("/r/tokbars/results-inner").get_data(as_text=T
 print("PASS 11: the results page shows the bar height now, follows a raise, and drops a stale one")
 
 # --- 12. helpers
-assert track._bar_done("XO") and track._bar_done("XFX") and not track._bar_done("XF") and not track._bar_done("")
-assert track._bar_out({"4-00": "XXX", "4-02": "FXF"}) == "4-02" and track._bar_out({"4-00": "XXO"}) is None
+assert track._bar_done("XO") and track._bar_done("XXX") and not track._bar_done("XX") and not track._bar_done("")
+assert track._bar_out({"4-00": "XXX", "4-02": "XXX"}) == "4-02" and track._bar_out({"4-00": "XXO"}) is None
 assert track._bar_key(["4-2", "4-04"], 50.0) == "4-2" and track._bar_key([], 50.0) == "4-02"
 print("PASS 12: helper rules")
 print("ALL PASS")

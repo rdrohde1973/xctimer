@@ -474,8 +474,8 @@ to check and correct before you post it.</li>
 </ul>
 <p><b>High jump and pole vault.</b> On the Pit tab, choose the event and set <b>Bar height now</b>
 from the meet's bar schedule. <b>Raise bar</b> moves to the next height, and <b>Other height</b> takes
-one that is not on the schedule. When a jumper comes up, type the bib and tap <b>O</b> for a clear,
-<b>X</b> for a miss or <b>F</b> for a foul in the three boxes, then <b>Record mark</b>. The height stays
+one that is not on the schedule. When a jumper comes up, type the bib and tap <b>O</b> for a clear
+or <b>X</b> for a miss in the three boxes, then <b>Record mark</b>. The height stays
 set for the next jumper, and when a jumper comes back for another try the earlier marks at that height
 are already in the boxes. XCTimer works out each jumper's best height.</p>
 <p>The results page shows <b>Bar height now</b> for each jumping event, so the crowd can follow along.

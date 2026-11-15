@@ -469,7 +469,7 @@ buttons (times stay put, runners move) and mark a runner DQ or DNF (removes thei
 placings, shows DQ/DNF on results; Restore undoes it). Field events use the Pit console: record
 each attempt by bib (e.g. "10 6" = 10ft 6in, "F" = foul). High Jump and Pole Vault: set "Bar height
 now" from the meet's bar schedule (Raise bar goes to the next one), then for each jumper who comes up
-enter O (clear), X (miss) or F (foul) in three boxes. Typing a bib warns when that athlete has used all
+enter O (clear) or X (miss) in three boxes. Typing a bib warns when that athlete has used all
 their attempts (three attempts in, a bar already cleared, or three misses at a height). The public
 results page shows "Bar height now" for High Jump and Pole Vault while the pit is using it.
 Timing uses each phone's own clock, so it's accurate even on a bad cell connection.

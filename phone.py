@@ -533,7 +533,7 @@ def _track_timer(conn, m):
   <h2>🏖 Open pit</h2>
   <p class="sub">Record whoever steps up, by bib. The mark files into that athlete's own
   division automatically. <b>High Jump and Pole Vault:</b> set the bar height, then tap
-  <b>O</b>, <b>X</b> or <b>F</b> for each attempt at it.</p>
+  <b>O</b> (cleared) or <b>X</b> (miss) for each attempt at it.</p>
   {pit_html}
 </div>
 
