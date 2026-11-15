@@ -467,7 +467,10 @@ tap console (tap each finisher, then assign names, STOP, UNDO). False start: Res
 clock and all lane times on every phone. After a lane race you can fix the finish order with ▲▼
 buttons (times stay put, runners move) and mark a runner DQ or DNF (removes their time from the
 placings, shows DQ/DNF on results; Restore undoes it). Field events use the Pit console: record
-each attempt by bib (e.g. "10 6" = 10ft 6in, "F" = foul); High Jump records the best height cleared.
+each attempt by bib (e.g. "10 6" = 10ft 6in, "F" = foul). High Jump and Pole Vault: set "Bar height
+now" from the meet's bar schedule (Raise bar goes to the next one), then for each jumper who comes up
+enter O (clear), X (miss) or F (foul) in three boxes. Typing a bib warns when that athlete has used all
+their attempts (three attempts in, a bar already cleared, or three misses at a height).
 Timing uses each phone's own clock, so it's accurate even on a bad cell connection.
 
 TRACK — SCAN-BACK: If you time on paper, photograph the printed heat sheet (or the High Jump grid)

@@ -6,8 +6,10 @@ placing + points-table scoring, team totals, heat-sheet PDFs, public results,
 and AI vision scan-back of a photographed heat sheet.
 
 Deferred refinements (noted, not blocking a runnable meet): athlete-centric bulk
-assignment UI, carry-over from last meet, combined distance races, open-pit HJ,
-full bar-by-bar HJ make/miss grid (we record best height cleared).
+assignment UI, carry-over from last meet, combined distance races.
+
+High Jump and Pole Vault are kept bar by bar ({bar: 'XXO'} in results.attempts_json), from
+the event page's make/miss grid or from the open pit (1.132.0: bar height + three O/X/F boxes).
 """
 import io
 import json
@@ -232,6 +234,85 @@ def _hj_best(grid):
             if v is not None and (best is None or v > best):
                 best = v
     return best
+
+
+def _bar_fails(mk):
+    """Failed attempts in one bar's marks: X is a miss, F a foul; both count against the three."""
+    mk = str(mk or "").upper()
+    return mk.count("X") + mk.count("F")
+
+
+def _bar_done(mk):
+    """True when a jumper has nothing left at this bar: cleared it, or failed three times."""
+    return "O" in str(mk or "").upper() or _bar_fails(mk) >= 3
+
+
+def _bar_grid(r):
+    """A result's bar-by-bar marks as {bar: 'XXO'}. A result that only holds a best height
+    (typed on the event page, scanned, or from the app's older pit screen) counts as that
+    height cleared, so nothing is lost when the pit adds a bar to it."""
+    grid = {}
+    if r is None:
+        return grid
+    try:
+        raw = json.loads(r["attempts_json"]) if r["attempts_json"] else None
+    except (ValueError, TypeError):
+        raw = None
+    if isinstance(raw, dict):
+        for bar, mk in raw.items():
+            if _parse_ht(bar) is not None and isinstance(mk, str) and mk.strip():
+                grid[bar] = mk.strip().upper()
+    best = r["mark_metric"]
+    if best is not None and (_hj_best(grid) or 0) < best - 0.01:
+        grid[_bar_key(grid, best)] = "O"
+    return grid
+
+
+def _bar_key(bars, inches):
+    """The label already used for this height among `bars` (so '4-2' and '4-02' stay one
+    column), else the standard ft-in label."""
+    for b in bars:
+        v = _parse_ht(b)
+        if v is not None and abs(v - inches) < 0.01:
+            return b
+    return _fmt_ht(inches)
+
+
+def _bar_out(grid):
+    """The bar a jumper went out at (three failed attempts and no clear), else None."""
+    out = [b for b, mk in grid.items() if "O" not in mk.upper() and _bar_fails(mk) >= 3]
+    return max(out, key=_parse_ht) if out else None
+
+
+def _bar_summary(grid):
+    """'4-00 O · 4-02 XO' for the pit's confirm line."""
+    return " · ".join(f"{b} {grid[b]}" for b in sorted(grid, key=_parse_ht))
+
+
+def pit_bar_lists(conn, m):
+    """{event_id: [bar heights, low to high]} for the meet's High Jump / Pole Vault: the
+    meet's bar schedule plus every height a division already uses. Feeds the open pit's
+    'Bar height now' selector."""
+    out = {}
+    q = ",".join("?" * len(db.VERTICAL_JUMPS))
+    for r in conn.execute(
+            f"SELECT me.event_id, me.bar_heights, e.name AS ename FROM meet_events me "
+            f"JOIN events e ON e.id=me.event_id WHERE me.meet_id=? AND e.name IN ({q})",
+            (m["id"],) + tuple(db.VERTICAL_JUMPS)).fetchall():
+        seen = out.get(r["event_id"])
+        if seen is None:
+            seen = out[r["event_id"]] = {}
+            for b in _hj_ladder(*_bar_schedule(m, r["ename"])):
+                seen.setdefault(round(_parse_ht(b), 2), b)
+        try:
+            own = json.loads(r["bar_heights"]) if r["bar_heights"] else []
+        except (ValueError, TypeError):
+            own = []
+        for b in own or []:
+            v = _parse_ht(b) if isinstance(b, str) else None
+            if v is not None:
+                seen.setdefault(round(v, 2), _fmt_ht(v))
+    return {ev: [d[k] for k in sorted(d)] for ev, d in out.items()}
 
 
 def _combine_meids(conn, me):
@@ -1235,6 +1316,272 @@ def seed_event(meid):
 
 
 # ------------------------------- open pit console -------------------------------
+# One form for both the laptop console (/meets/<id>/pit) and the phone's Pit tab. Long Jump,
+# Shot Put and the like take three attempts. High Jump and Pole Vault are run bar by bar: the
+# crew sets "Bar height now" from the meet's schedule, and each jumper who comes up gets three
+# boxes that take O (clear), X (miss) or F (foul). Typing a bib shows who it is, and warns when
+# that athlete has no attempts left.
+_PIT_PANEL = r"""
+<div class="pitpanel" id="pitpanel">
+  <label>Event</label>
+  <select id="pev" onchange="pitMode()">__OPTS__</select>
+  <div id="barblock" style="display:none">
+    <label>Bar height now</label>
+    <div class="barpick">
+      <select id="barsel" onchange="pitBarPick()"></select>
+      <button type="button" class="ghost" onclick="pitBarRaise()">▲ Raise bar</button>
+    </div>
+    <input id="barother" inputmode="text" autocomplete="off" placeholder="Type the height: 4 10 for 4&#39;10&quot;"
+      style="display:none;margin-top:.5rem" onchange="pitBarOther()"
+      onkeydown="if(event.key==='Enter'){event.preventDefault();pitBarOther();}">
+  </div>
+  <label>Enter bib #</label>
+  <input id="pbib" inputmode="numeric" autocomplete="off" placeholder="enter bib #"
+    oninput="PIT_TOUCHED=false;pitLookup()"
+    onkeydown="if(event.key==='Enter'){event.preventDefault();pitBibEnter();}"
+    style="font-size:1.3rem;padding:.7rem">
+  <div id="pbibinfo" style="min-height:1.3rem;margin-top:.3rem;font-size:1rem"></div>
+  <div id="attsblock">
+    <label>Attempts</label>
+    <div class="pitatts">
+      <input id="pa0" inputmode="text" oninput="PIT_TOUCHED=true">
+      <input id="pa1" inputmode="text" oninput="PIT_TOUCHED=true">
+      <input id="pa2" inputmode="text" oninput="PIT_TOUCHED=true" onkeydown="if(event.key==='Enter')pitPost()">
+    </div>
+    <p class="muted" style="margin:.4rem 0 0">Feet and inches with a space: <b>10 6</b> is 10&#39;6&quot;.
+    <b>F</b> = foul.</p>
+  </div>
+  <div id="barblock2" style="display:none">
+    <label>Attempts at <b id="barnow">—</b></label>
+    <div class="barboxes">
+      <button type="button" class="barbox" id="bb0" onclick="pitBox(0)" aria-label="Attempt 1"></button>
+      <button type="button" class="barbox" id="bb1" onclick="pitBox(1)" aria-label="Attempt 2"></button>
+      <button type="button" class="barbox" id="bb2" onclick="pitBox(2)" aria-label="Attempt 3"></button>
+    </div>
+    <div class="barkeys">
+      <button type="button" class="k-o" onclick="pitPut('O')">O<small>cleared</small></button>
+      <button type="button" class="k-x" onclick="pitPut('X')">X<small>miss</small></button>
+      <button type="button" class="k-x" onclick="pitPut('F')">F<small>foul</small></button>
+      <button type="button" class="ghost" onclick="pitBack()" aria-label="Undo the last box">⌫<small>undo</small></button>
+    </div>
+    <p class="muted" id="barhint" style="margin:.4rem 0 0"></p>
+  </div>
+  <button onclick="pitPost()" style="width:100%;margin-top:1rem;padding:1rem;font-size:1.15rem">✔ Record mark</button>
+  <div id="pmsg" style="margin-top:.6rem"></div>
+  <table id="plog" style="margin-top:.8rem"></table>
+</div>
+<style>
+.pitpanel{max-width:560px}
+.pitatts{display:flex;gap:.5rem}
+.pitatts input{text-align:center;font-size:1.2rem;padding:.6rem}
+.barpick{display:flex;gap:.5rem}
+.barpick select{flex:1;min-width:0;font-size:1.2rem;padding:.6rem}
+.barpick button{white-space:nowrap}
+.barboxes{display:flex;gap:.5rem}
+.barbox,.barbox:hover{flex:1;height:66px;font-size:2rem;font-weight:800;border-radius:12px;padding:0;
+  border:2px solid var(--line);background:var(--panel2);color:var(--fg)}
+.barbox.next{border-color:var(--acc);border-style:dashed}
+.barbox.ok{border-color:var(--ok);color:var(--ok)}
+.barbox.miss{border-color:var(--err);color:var(--err)}
+.barkeys{display:flex;gap:.5rem;margin-top:.5rem}
+.barkeys button{flex:1;padding:.6rem .2rem;font-size:1.35rem;font-weight:800;line-height:1.1}
+.barkeys small{display:block;font-size:.7rem;font-weight:600}
+.barkeys .k-o,.barkeys .k-o:hover{background:var(--ok)}
+.barkeys .k-x,.barkeys .k-x:hover{background:var(--err)}
+.pitwarn{margin-top:.4rem;padding:.55rem .7rem;border-radius:10px;font-weight:700;
+  background:rgba(240,178,75,.14);color:var(--warn);border:1px solid rgba(240,178,75,.45)}
+#plog td{padding:.4rem .3rem;border-top:1px solid var(--line);vertical-align:top}
+</style>
+<script>
+var PIT_MID=__MID__, PIT_BARS=__BARS__;
+var PIT_PM=[], PIT_ONFILE='', PIT_TOUCHED=false, PIT_LT=null;
+function pitEl(i){ return document.getElementById(i); }
+function pitIsBar(){ var o=pitEl('pev').selectedOptions[0]; return !!(o&&o.dataset.hj==='1'); }
+function pitErr(t){ pitEl('pmsg').innerHTML='<p class="msg err">'+esc(t)+'</p>'; }
+// Bar heights are feet-inches labels like 4-02, the same ones the event page's grid uses.
+function pitInches(b){
+  var m=/^(\d+)\s*[-' ]\s*(\d+(?:\.\d+)?)?\s*"?$/.exec(String(b||'').trim().replace(/[’′]/g,"'").replace(/[”″]/g,'"'));
+  if(!m) return null;
+  var f=+m[1], i=m[2]?+m[2]:0;
+  return i>=12 ? null : f*12+i;
+}
+function pitFmt(n){
+  var f=Math.floor(n/12), i=n-f*12;
+  if(Math.abs(i-Math.round(i))<0.01){ i=Math.round(i); return f+'-'+(i<10?'0':'')+i; }
+  return f+'-'+(i<10?'0':'')+i.toFixed(2);
+}
+function pitBarKey(){ return 'xct-pitbar-'+PIT_MID+'-'+pitEl('pev').value; }
+function pitHeight(){ var v=pitEl('barsel').value; return (v&&v!=='other')?v:''; }
+function pitBarFill(want){
+  var ev=pitEl('pev').value, list=(PIT_BARS[ev]||[]).slice();
+  if(want===undefined){ try{ want=localStorage.getItem(pitBarKey())||''; }catch(e){ want=''; } }
+  if(want && pitInches(want)!=null && list.indexOf(want)<0){
+    list.push(want); list.sort(function(a,b){ return pitInches(a)-pitInches(b); }); PIT_BARS[ev]=list;
+  }
+  pitEl('barsel').innerHTML='<option value="">Pick height…</option>'
+    +list.map(function(b){ return '<option value="'+esc(b)+'">'+esc(b)+'</option>'; }).join('')
+    +'<option value="other">Other height…</option>';
+  pitEl('barsel').value = list.indexOf(want)>=0 ? want : '';
+  pitEl('barother').style.display='none';
+  pitBarShow();
+}
+function pitBarShow(){
+  var h=pitHeight();
+  pitEl('barnow').textContent=h||'—';
+  if(h){ try{ localStorage.setItem(pitBarKey(),h); }catch(e){} }
+  PIT_PM=[]; PIT_TOUCHED=false; pitDraw(); pitLookup();
+}
+function pitBarPick(){
+  var other=pitEl('barsel').value==='other';
+  pitEl('barother').style.display=other?'':'none';
+  if(other){ pitEl('barother').value=''; pitEl('barother').focus(); }
+  pitBarShow();
+}
+function pitBarOther(){
+  var n=pitInches(pitEl('barother').value);
+  if(n==null||n<12||n>300){ pitErr('Type the bar height as feet and inches, like 4 10.'); return; }
+  pitEl('pmsg').innerHTML='';
+  var list=PIT_BARS[pitEl('pev').value]||[], lab=pitFmt(n);
+  list.forEach(function(b){ if(Math.abs(pitInches(b)-n)<0.01) lab=b; });
+  pitBarFill(lab);
+}
+function pitBarRaise(){
+  var list=PIT_BARS[pitEl('pev').value]||[], i=list.indexOf(pitHeight());
+  if(i+1>=list.length){ pitErr('That is the last height in the schedule. Choose "Other height…" to go higher.'); return; }
+  pitEl('pmsg').innerHTML='';
+  pitEl('barsel').value=list[i+1]; pitEl('barother').style.display='none'; pitBarShow();
+}
+function pitDone(){ return PIT_PM.length>=3 || PIT_PM[PIT_PM.length-1]==='O'; }
+function pitDraw(){
+  for(var k=0;k<3;k++){
+    var c=PIT_PM[k]||'';
+    pitEl('bb'+k).textContent=c;
+    pitEl('bb'+k).className='barbox'+(c==='O'?' ok':(c?' miss':''))+((k===PIT_PM.length&&!pitDone())?' next':'');
+  }
+  var h=pitHeight(), t='<b>O</b> = cleared · <b>X</b> = miss · <b>F</b> = foul. Tap a filled box to change it.';
+  if(!h) t='Pick the bar height above first.';
+  else if(PIT_PM[PIT_PM.length-1]==='O') t='Cleared '+esc(h)+'.';
+  else if(PIT_PM.length>=3) t='Three misses: out at '+esc(h)+'.';
+  pitEl('barhint').innerHTML=t;
+}
+function pitPut(c){ if(pitDone()) return; PIT_TOUCHED=true; PIT_PM.push(c); pitDraw(); }
+function pitBack(){ PIT_TOUCHED=true; PIT_PM.pop(); pitDraw(); }
+function pitBox(k){ if(k<PIT_PM.length){ PIT_TOUCHED=true; PIT_PM=PIT_PM.slice(0,k); pitDraw(); } }
+function pitBibEnter(){ pitEl(pitIsBar()?'bb0':'pa0').focus(); }
+function pitMode(){
+  var bar=pitIsBar();
+  pitEl('attsblock').style.display=bar?'none':'';
+  pitEl('barblock').style.display=bar?'':'none';
+  pitEl('barblock2').style.display=bar?'':'none';
+  PIT_TOUCHED=false;
+  if(bar) pitBarFill(); else pitLookup();
+}
+// On a keyboard: O, X, F fill the boxes, Backspace undoes one, Enter records.
+document.addEventListener('keydown', function(e){
+  if(e.metaKey||e.ctrlKey||e.altKey||!pitIsBar()||pitEl('barblock2').offsetParent===null) return;
+  var t=e.target, tag=(t&&t.tagName)||'';
+  if(tag==='INPUT'||tag==='SELECT'||tag==='TEXTAREA') return;
+  var inside=t===document.body||(t.closest&&t.closest('#pitpanel'));
+  if(!inside) return;
+  var k=(e.key||'').toLowerCase();
+  if(k==='o'||k==='x'||k==='f'){ e.preventDefault(); pitPut(k.toUpperCase()); }
+  else if(k==='backspace'){ e.preventDefault(); pitBack(); }
+  else if(k==='enter'&&t.closest&&t.closest('.barboxes')){ e.preventDefault(); pitPost(); }
+});
+function pitLookup(){
+  clearTimeout(PIT_LT);
+  var bib=pitEl('pbib').value.trim(), info=pitEl('pbibinfo');
+  PIT_ONFILE='';
+  if(!bib){ info.textContent=''; return; }
+  info.innerHTML='<span class="muted">…</span>';
+  PIT_LT=setTimeout(async function(){
+    try{
+      var ev=pitEl('pev').value, bar=pitIsBar(), h=bar?pitHeight():'';
+      var j=await jget('/meets/'+PIT_MID+'/pit/lookup?bib='+encodeURIComponent(bib)+'&event='+encodeURIComponent(ev)
+        +(h?'&height='+encodeURIComponent(h):''));
+      if(pitEl('pbib').value.trim()!==bib||pitEl('pev').value!==ev||(bar&&pitHeight()!==h)) return;   // stale
+      if(!j.found){
+        info.innerHTML='<span style="color:var(--warn)">no athlete with bib '+esc(bib)+' at this meet</span>';
+        if(!PIT_TOUCHED){ if(bar){ PIT_PM=[]; pitDraw(); } else { for(var k=0;k<3;k++) pitEl('pa'+k).value=''; } }
+        return;
+      }
+      var s='<b style="color:var(--ok)">✔ '+esc(j.name)+'</b>'
+        +'<span class="muted"> · '+esc(j.school)+' · '+esc(j.division)+'</span>';
+      // Marks already on file load into the boxes so they can be added to or corrected
+      // (recording replaces them). Not once the crew has started entering this athlete.
+      if(bar){
+        PIT_ONFILE=j.marks||'';
+        if(!PIT_TOUCHED){
+          PIT_PM=PIT_ONFILE.split('').filter(function(c){ return 'OXF'.indexOf(c)>=0; }).slice(0,3); pitDraw();
+        }
+        if(j.grid&&j.grid.length){
+          s+='<div class="muted">So far: '+j.grid.map(function(g){ return esc(g[0])+' <b>'+esc(g[1])+'</b>'; }).join(' · ')+'</div>';
+        }
+      } else {
+        var att=j.attempts||[];
+        if(!PIT_TOUCHED){ for(var k2=0;k2<3;k2++) pitEl('pa'+k2).value=att[k2]||''; }
+        if(att.some(function(x){ return x; })){
+          s+='<span class="muted"> · marks on file loaded below: edit and record to update</span>';
+        }
+      }
+      if(j.warning) s+='<div class="pitwarn">⚠ '+esc(j.name)+': '+esc(j.warning)+'</div>';
+      info.innerHTML=s;
+    }catch(e){ info.textContent=''; }
+  }, 250);
+}
+async function pitPost(){
+  var ev=pitEl('pev').value, bib=pitEl('pbib').value.trim(), bar=pitIsBar(), body, atts=[];
+  if(!ev){ pitErr('No field events at this meet.'); return; }
+  if(!bib){ pitErr('Enter a bib.'); return; }
+  if(bar){
+    var h=pitHeight();
+    if(!h){ pitErr('Pick the bar height first.'); return; }
+    if(!PIT_PM.length){
+      if(!PIT_ONFILE){ pitErr('Enter O, X or F for at least one attempt.'); return; }
+      if(!confirm('Remove the attempts recorded for bib '+bib+' at '+h+'?')) return;
+    }
+    body={event_id:ev,bib:bib,height:h,marks:PIT_PM,clear:!PIT_PM.length};
+  } else {
+    atts=[0,1,2].map(function(k){ return pitEl('pa'+k).value.trim(); });
+    if(!atts.some(function(a){ return a; })){ pitErr('Enter at least one attempt.'); return; }
+    body={event_id:ev,bib:bib,attempts:atts};
+  }
+  try{
+    var j=await jpost('/meets/'+PIT_MID+'/pit/post', body);
+    var what = bar ? (j.marks ? esc(j.height)+' <b>'+esc(j.marks)+'</b>' : esc(j.height)+' removed')
+                   : esc(atts.filter(function(a){ return a; }).join(', '));
+    var out = j.out ? ' · <b>out at '+esc(j.out)+'</b>' : '';
+    pitEl('pmsg').innerHTML='<p class="msg ok">✔ '+esc(j.name)+' · <b>'+esc(j.event)+'</b> · '+esc(j.division)
+      +' · '+what+' · best '+esc(j.best||'—')+out+'</p>';
+    pitEl('plog').insertAdjacentHTML('afterbegin',
+      '<tr><td><b>#'+esc(bib)+'</b></td><td>'+esc(j.name)+'<br><span class="muted">'+esc(j.event)+' · '+esc(j.division)+'</span></td>'
+      +'<td>'+what+out+'</td><td><b>'+esc(j.best||'')+'</b></td></tr>');
+    ['pbib','pa0','pa1','pa2'].forEach(function(k){ pitEl(k).value=''; });
+    PIT_PM=[]; PIT_ONFILE=''; PIT_TOUCHED=false; pitDraw();
+    pitEl('pbibinfo').textContent='';
+    pitEl('pbib').focus();
+  }catch(e){ pitErr(e.message); }
+}
+pitMode();
+</script>
+"""
+
+
+def pit_panel(conn, m):
+    """The open-pit entry form for this meet (HTML + its script)."""
+    evs = conn.execute(
+        "SELECT DISTINCT e.id, e.name FROM events e JOIN meet_events me ON me.event_id=e.id "
+        "WHERE me.meet_id=? AND e.kind='field' ORDER BY e.sort", (m["id"],)).fetchall()
+    opts = "".join(
+        f'<option value="{e["id"]}" data-hj="{1 if e["name"] in db.VERTICAL_JUMPS else 0}">'
+        f'{escape(e["name"])}</option>' for e in evs)
+    if not opts:
+        opts = '<option value="">— no field events at this meet —</option>'
+    bars = json.dumps(pit_bar_lists(conn, m)).replace("<", "\\u003c")
+    return (_PIT_PANEL.replace("__OPTS__", opts).replace("__MID__", str(int(m["id"])))
+            .replace("__BARS__", bars))
+
+
 @bp.get("/meets/<int:mid>/pit")
 @login_required
 def pit_console(mid):
@@ -1245,70 +1592,17 @@ def pit_console(mid):
     if not can_record_meet(m) or m["sport"] != "track":
         abort(403)
     conn = db.connect()
-    evs = conn.execute(
-        "SELECT DISTINCT e.id, e.name FROM events e JOIN meet_events me ON me.event_id=e.id "
-        "WHERE me.meet_id=? AND e.kind='field' ORDER BY e.sort",
-        (mid,)).fetchall()
+    panel = pit_panel(conn, m)
     conn.close()
-    opts = "".join(
-        f'<option value="{e["id"]}" data-hj="{1 if e["name"] in db.VERTICAL_JUMPS else 0}">'
-        f'{escape(e["name"])}</option>' for e in evs)
-    if not opts:
-        opts = '<option value="">— no field events at this meet —</option>'
     body = f"""
 <p class="muted"><a href="/meets">← Meets</a></p>
 <h1>{escape(m['name'])}</h1>{_track_tabs(mid, 'meetday')}
 <h2>🏖 Open pit</h2>
 <p class="sub">Record whoever steps up, by bib. The mark files into the athlete's own
-division automatically. Enter feet-inches — just type <b>10 6</b> for 10'6" (a dash or
-apostrophe works too); <b>F</b> = foul.
-<b>On a phone?</b> Use the 🏖 Pit tab in the Track Timer app for a touch-friendly version.</p>
-<div class="card">
-  <div class="row" style="flex-wrap:wrap;gap:.6rem">
-    <div style="max-width:200px"><label>Event</label><select id="pev" onchange="pitMode()">{opts}</select></div>
-    <div style="max-width:120px"><label>Bib</label>
-      <input id="pbib" inputmode="numeric" autocomplete="off"
-        onkeydown="if(event.key==='Enter')document.getElementById('pa0').focus()"></div>
-    <div id="d0" style="max-width:130px"><label id="l0">Att 1</label><input id="pa0"></div>
-    <div id="d1" style="max-width:110px"><label>Att 2</label><input id="pa1"></div>
-    <div id="d2" style="max-width:110px"><label>Att 3</label><input id="pa2"
-      onkeydown="if(event.key==='Enter')pitPost()"></div>
-    <div style="display:flex;align-items:flex-end"><button onclick="pitPost()">✔ Record</button></div>
-  </div>
-  <p id="hjnote" class="muted" style="margin:.4rem 0 0;display:none">High Jump and Pole Vault record the
-  <b>best height cleared</b> only — keep the bar-by-bar make/miss on your paper heat sheet.</p>
-  <div id="pmsg" style="margin-top:.5rem"></div>
-</div>
-<div class="card"><h2>Recorded this session</h2><table id="plog">
-  <tr><th>Bib</th><th>Athlete</th><th>Event</th><th>Division</th><th>Attempts</th><th>Best</th></tr></table></div>
-<script>
-function pitIsHJ(){{var o=document.getElementById('pev').selectedOptions[0];return !!(o&&o.dataset.hj==='1');}}
-function pitMode(){{var hj=pitIsHJ();
-  document.getElementById('d1').style.display=hj?'none':'';
-  document.getElementById('d2').style.display=hj?'none':'';
-  document.getElementById('l0').textContent=hj?'Best height':'Att 1';
-  document.getElementById('hjnote').style.display=hj?'':'none';}}
-async function pitPost(){{
-  const ev=document.getElementById('pev').value, bib=document.getElementById('pbib').value.trim();
-  const hj=pitIsHJ();
-  const atts = hj ? [document.getElementById('pa0').value.trim()]
-                  : [0,1,2].map(k=>document.getElementById('pa'+k).value.trim());
-  const box=document.getElementById('pmsg');
-  if(!ev){{box.innerHTML='<p class="msg err">No field events at this meet.</p>';return;}}
-  if(!bib){{box.innerHTML='<p class="msg err">Enter a bib.</p>';return;}}
-  if(!atts.some(a=>a)){{box.innerHTML='<p class="msg err">'+(hj?'Enter the best height cleared.':'Enter at least one attempt.')+'</p>';return;}}
-  try{{
-    const j=await jpost('/meets/{mid}/pit/post',{{event_id:ev,bib:bib,attempts:atts}});
-    box.innerHTML='<p class="msg ok">✔ '+esc(j.name)+' — <b>'+esc(j.event)+'</b> — '+esc(j.division)+' — best '+esc(j.best||'—')+'</p>';
-    const t=document.getElementById('plog');
-    t.insertAdjacentHTML('afterbegin','<tr><td>'+esc(bib)+'</td><td>'+esc(j.name)+'</td><td><b>'+esc(j.event)+'</b></td><td>'+esc(j.division)
-      +'</td><td>'+esc(atts.filter(a=>a).join(', '))+'</td><td><b>'+esc(j.best||'')+'</b></td></tr>');
-    ['pbib','pa0','pa1','pa2'].forEach(k=>document.getElementById(k).value='');
-    document.getElementById('pbib').focus();
-  }}catch(e){{ box.innerHTML='<p class="msg err">'+esc(e.message)+'</p>'; }}
-}}
-pitMode();
-</script>"""
+division automatically. <b>High Jump and Pole Vault:</b> set the bar height, then enter
+<b>O</b>, <b>X</b> or <b>F</b> for each attempt at it.
+<b>On a phone?</b> The 🏖 Pit tab in the Track Timer app is this same form.</p>
+<div class="card">{panel}</div>"""
     return shell(g.principal, body, active="meets")
 
 
@@ -1352,9 +1646,14 @@ def pit_lookup(mid):
     division = gword + (f" {a['grade']}th" if a["grade"] else "")
     # Already-recorded attempts for THIS event (so the pit doesn't double-enter).
     attempts, best = None, None
+    extra = {}
+    warning = None
     ev = request.args.get("event")
     if ev and str(ev).isdigit():
+        evrow = conn.execute("SELECT name FROM events WHERE id=?", (int(ev),)).fetchone()
+        bar_ev = bool(evrow) and evrow["name"] in db.VERTICAL_JUMPS
         me = _athlete_division(conn, mid, int(ev), a)
+        r = None
         if me:
             if not me["grade"]:                 # ungraded event (Varsity style): no grade in the label
                 division = {"M": "Boys", "F": "Girls"}.get(me["gender"], "Open")
@@ -1363,18 +1662,40 @@ def pit_lookup(mid):
                 "JOIN entries en ON en.id=r.entry_id WHERE en.meet_event_id=? AND en.runner_id=?",
                 (me["id"], a["id"])).fetchone()
             if r:
-                if r["attempts_json"]:
-                    try:
-                        attempts = list(json.loads(r["attempts_json"]))
-                    except Exception:  # noqa: BLE001
-                        attempts = None
                 if r["mark_metric"] is not None:
                     best = _fmt_ht(r["mark_metric"])
                 elif r["mark_seconds"] is not None:
                     best = fmt_time(r["mark_seconds"])
+        if bar_ev:
+            # High Jump / Pole Vault: marks bar by bar. `attempts` stays a one-item list (the
+            # best height) for the app's older pit screen.
+            grid = _bar_grid(r)
+            attempts = [best] if best else None
+            h = _parse_ht(request.args.get("height") or "")
+            bar = _bar_key(grid, h) if h is not None else None
+            here = grid.get(bar, "") if bar else ""
+            out_at = _bar_out(grid)
+            extra = dict(bar=True, height=bar, marks=here, out=out_at,
+                         grid=[[b, grid[b]] for b in sorted(grid, key=_parse_ht)])
+            if out_at:
+                warning = (f"Completed all attempts: out at {out_at} ({grid[out_at]}). "
+                           + (f"Best {best}." if best else "No height cleared."))
+            elif bar and "O" in here:
+                warning = f"Completed all attempts at {bar}: cleared it ({here})."
+        elif r is not None:
+            try:
+                raw = json.loads(r["attempts_json"]) if r["attempts_json"] else None
+            except (ValueError, TypeError):
+                raw = None
+            if isinstance(raw, list):
+                attempts = [("" if x is None else (_fmt_ht(x) if isinstance(x, (int, float)) else str(x)))
+                            for x in raw][:3]
+                if len(attempts) == 3 and all(x.strip() for x in attempts):
+                    warning = ("Completed all 3 attempts. "
+                               + (f"Best {best}." if best else "No legal mark."))
     conn.close()
     return jsonify(found=True, name=a["name"], school=a["sname"], division=division,
-                   attempts=attempts, best=best)
+                   attempts=attempts, best=best, warning=warning, **extra)
 
 
 @bp.post("/meets/<int:mid>/pit/post")
@@ -1391,9 +1712,39 @@ def pit_post(mid):
     atts = [str(a or "").strip() for a in (d.get("attempts") or [])][:3]
     atts += [""] * (3 - len(atts))
     legal = [v for v in (_parse_ht(a) for a in atts) if v is not None]
-    if not any(atts):
-        return jsonify(error="Enter at least one attempt"), 400
     conn = db.connect()
+    evrow = conn.execute("SELECT name FROM events WHERE id=?", (event_id,)).fetchone()
+    bar_ev = bool(evrow) and evrow["name"] in db.VERTICAL_JUMPS
+    # High Jump / Pole Vault: one bar height and up to three marks at it (O clear, X miss,
+    # F foul). The app's older pit screen still sends `attempts` = [best height].
+    bar_h, bar_marks, bar_clear = None, "", bool(d.get("clear"))
+    if bar_ev and "height" in d:
+        bar_h = _parse_ht(str(d.get("height") or ""))
+        raw = d.get("marks")
+        raw = list(raw) if isinstance(raw, str) else (raw if isinstance(raw, list) else [])
+        bar_marks = "".join(str(x or "").strip().upper() for x in raw)
+        err = None
+        if bar_h is None or bar_h <= 0:
+            err = "Pick the bar height first"
+        elif any(c not in "OXF" for c in bar_marks):
+            err = "Use O for a clear, X for a miss or F for a foul"
+        elif len(bar_marks) > 3:
+            err = "A jumper gets three attempts at one height"
+        elif "O" in bar_marks[:-1]:
+            err = "Nothing can follow an O: the bar was already cleared"
+        elif not bar_marks and not bar_clear:
+            err = "Enter O, X or F for at least one attempt"
+        if err:
+            conn.close()
+            return jsonify(error=err), 400
+    elif bar_ev:
+        bar_h, bar_marks = (max(legal) if legal else None), "O"
+        if bar_h is None:
+            conn.close()
+            return jsonify(error="Enter the best height cleared"), 400
+    elif not any(atts):
+        conn.close()
+        return jsonify(error="Enter at least one attempt"), 400
     a = conn.execute(
         "SELECT a.*, s.name AS sname FROM meet_bibs mb JOIN athletes a ON a.id=mb.athlete_id "
         "JOIN schools s ON s.id=a.school_id WHERE mb.meet_id=? AND mb.bib=? AND a.active=1",
@@ -1419,26 +1770,50 @@ def pit_post(mid):
     eid = en["id"] if en else conn.execute(
         "INSERT INTO entries (meet_event_id, runner_id, school_id) VALUES (?,?,?)",
         (meid, a["id"], a["school_id"])).lastrowid
-    best = max(legal) if legal else None
-    conn.execute("DELETE FROM results WHERE entry_id=?", (eid,))
-    conn.execute("INSERT INTO results (entry_id, mark_metric, attempts_json, dq, snap_name, "
-                 "snap_bib, snap_school) VALUES (?,?,?,0,?,?,?)",
-                 (eid, best, json.dumps(atts), a["name"], bib, a["sname"]))
+    extra = {}
+    if bar_ev:
+        old = conn.execute("SELECT * FROM results WHERE entry_id=?", (eid,)).fetchone()
+        grid = _bar_grid(old)
+        div = conn.execute("SELECT me.bar_heights, me.gender, e.name AS ename FROM meet_events me "
+                           "JOIN events e ON e.id=me.event_id WHERE me.id=?", (meid,)).fetchone()
+        bars = _hj_bars_for(div, m)
+        bar = _bar_key(list(grid) + bars, bar_h)
+        if "height" not in d:
+            # Older screen: "best height cleared" is the whole answer, so a clear recorded
+            # above it was a mistake and goes; misses above it stay.
+            for b in [b for b in grid if _parse_ht(b) > bar_h + 0.01 and "O" in grid[b]]:
+                del grid[b]
+            bar_marks = grid[bar] if "O" in grid.get(bar, "") else "O"
+        if bar_marks:
+            grid[bar] = bar_marks
+        else:
+            grid.pop(bar, None)
+        # The height joins the division's bar list so the event page's grid shows the column.
+        if not div["bar_heights"] or bar not in bars:
+            if bar not in bars:
+                bars = sorted(bars + [bar], key=_parse_ht)
+            conn.execute("UPDATE meet_events SET bar_heights=? WHERE id=?", (json.dumps(bars), meid))
+        best = _hj_best(grid)
+        conn.execute("DELETE FROM results WHERE entry_id=?", (eid,))
+        if grid:
+            conn.execute("INSERT INTO results (entry_id, mark_metric, attempts_json, dq, snap_name, "
+                         "snap_bib, snap_school) VALUES (?,?,?,?,?,?,?)",
+                         (eid, best, json.dumps(grid), (old["dq"] if old else 0) or 0,
+                          a["name"], bib, a["sname"]))
+        extra = dict(height=bar, marks=bar_marks, out=_bar_out(grid), summary=_bar_summary(grid))
+    else:
+        best = max(legal) if legal else None
+        conn.execute("DELETE FROM results WHERE entry_id=?", (eid,))
+        conn.execute("INSERT INTO results (entry_id, mark_metric, attempts_json, dq, snap_name, "
+                     "snap_bib, snap_school) VALUES (?,?,?,0,?,?,?)",
+                     (eid, best, json.dumps(atts), a["name"], bib, a["sname"]))
     _recompute_places(conn, load_meet_event(meid))
     conn.commit()
     conn.close()
     gword = {"M": "Boys", "F": "Girls"}.get(a["gender"], "Open")
     division = f"{gword}" + (f" {a['grade']}th" if a["grade"] and not ungraded else "")
-    evname = ""
-    try:
-        c2 = db.connect()
-        er = c2.execute("SELECT name FROM events WHERE id=?", (event_id,)).fetchone()
-        c2.close()
-        evname = er["name"] if er else ""
-    except Exception:  # noqa: BLE001
-        evname = ""
-    return jsonify(ok=True, name=a["name"], division=division, event=evname,
-                   best=_fmt_ht(best) if best is not None else None)
+    return jsonify(ok=True, name=a["name"], division=division, event=evrow["name"] if evrow else "",
+                   best=_fmt_ht(best) if best is not None else None, **extra)
 
 
 @bp.get("/meets/<int:mid>/meet-day")

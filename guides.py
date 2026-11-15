@@ -472,11 +472,19 @@ photograph it with the code in the corner in view. XCTimer reads the handwriting
 to check and correct before you post it.</li>
 <li><b>Typed in on a laptop</b> on the event's page.</li>
 </ul>
-<p><b>High jump and pole vault.</b> The Pit tab records the best height cleared. For bar-by-bar
-records, the event's page has a make/miss grid: the bar heights come from your meet setup (girls get
-the lowest ten bars, boys the top ten), and you enter O for a clear, X for a miss, P for a pass and
-XXX for out. XCTimer works out each jumper's best height. Jumpers who clear the same best height share
-the place and split the points; XCTimer does not use misses to break the tie.</p>
+<p><b>High jump and pole vault.</b> On the Pit tab, choose the event and set <b>Bar height now</b>
+from the meet's bar schedule. <b>Raise bar</b> moves to the next height, and <b>Other height</b> takes
+one that is not on the schedule. When a jumper comes up, type the bib and tap <b>O</b> for a clear,
+<b>X</b> for a miss or <b>F</b> for a foul in the three boxes, then <b>Record mark</b>. The height stays
+set for the next jumper, and when a jumper comes back for another try the earlier marks at that height
+are already in the boxes. XCTimer works out each jumper's best height.</p>
+<p>The same marks show on the event's page in a make/miss grid, where you can also type them in (O, X,
+P for a pass, XXX for out). The bar heights come from your meet setup: girls get the lowest ten bars,
+boys the top ten. Jumpers who clear the same best height share the place and split the points; XCTimer
+does not use misses to break the tie.</p>
+<p><b>No attempts left.</b> When you type the bib of an athlete who has used every attempt, the Pit tab
+shows a warning before you record anything. That means all three attempts in a throw or a horizontal
+jump, a bar already cleared, or three misses at a height.</p>
 
 <h2>Results and team scores</h2>
 <p>Each event ranks itself as marks come in, and disqualified athletes are left out. Places earn

@@ -488,16 +488,9 @@ def _track_timer(conn, m):
                   "<select onchange=\"if(this.value)location.href='/phone/meet/'+this.value\">"
                   f'{"".join(meet_opts)}</select>')
 
-    # Open-pit field events. Long Jump / Shot Put take three attempts; High Jump takes only
-    # the best height cleared here (bar-by-bar make/miss stays on the paper heat sheet).
-    field_evs = conn.execute(
-        "SELECT DISTINCT e.id, e.name FROM events e JOIN meet_events me ON me.event_id=e.id "
-        "WHERE me.meet_id=? AND e.kind='field' ORDER BY e.sort",
-        (m["id"],)).fetchall()
-    field_opts = ("".join(
-        f'<option value="{e["id"]}" data-hj="{1 if e["name"] in db.VERTICAL_JUMPS else 0}">'
-        f'{escape(e["name"])}</option>' for e in field_evs)
-        or '<option value="">— no field events at this meet —</option>')
+    # Open-pit field events: the same form as the laptop console (track.pit_panel).
+    from .track import pit_panel
+    pit_html = pit_panel(conn, m)
 
     return f"""
 <h1>🏅 Track Timer</h1>
@@ -538,43 +531,15 @@ def _track_timer(conn, m):
 
 <div class="card" id="tab-pit" style="display:none">
   <h2>🏖 Open pit</h2>
-  <p class="sub">Record whoever steps up, by bib — the mark files into that athlete's own
-  division automatically. Enter feet-inches — just type <b>10 6</b> for 10&#39;6&quot; (a dash or
-  apostrophe works too). <b>F</b> = foul.</p>
-  <label>Event</label>
-  <select id="pev" onchange="pitMode()">{field_opts}</select>
-  <label>Enter bib #</label>
-  <input id="pbib" inputmode="numeric" autocomplete="off" placeholder="enter bib #"
-    oninput="pitLookup()"
-    onkeydown="if(event.key==='Enter')document.getElementById(pitIsHJ()?'pahj':'pa0').focus()"
-    style="font-size:1.3rem;padding:.7rem">
-  <div id="pbibinfo" style="min-height:1.3rem;margin-top:.3rem;font-size:1rem"></div>
-  <div id="attsblock">
-    <label>Attempts</label>
-    <div class="pitatts">
-      <input id="pa0" inputmode="text">
-      <input id="pa1" inputmode="text">
-      <input id="pa2" inputmode="text" onkeydown="if(event.key==='Enter')pitPost()">
-    </div>
-  </div>
-  <div id="hjblock" style="display:none">
-    <label>Best height cleared</label>
-    <input id="pahj" inputmode="text" placeholder="e.g. 4 10 for 4&#39;10&quot;"
-      onkeydown="if(event.key==='Enter')pitPost()" style="font-size:1.3rem;padding:.7rem">
-    <p class="muted" style="margin:.4rem 0 0">High Jump and Pole Vault record the <b>best height cleared</b> only.
-    Keep the bar-by-bar make/miss on your paper heat sheet.</p>
-  </div>
-  <button onclick="pitPost()" style="width:100%;margin-top:1rem;padding:1rem;font-size:1.15rem">✔ Record mark</button>
-  <div id="pmsg" style="margin-top:.6rem"></div>
-  <table id="plog" style="margin-top:.8rem"></table>
+  <p class="sub">Record whoever steps up, by bib. The mark files into that athlete's own
+  division automatically. <b>High Jump and Pole Vault:</b> set the bar height, then tap
+  <b>O</b>, <b>X</b> or <b>F</b> for each attempt at it.</p>
+  {pit_html}
 </div>
 
 <style>
 .seg{{display:flex;gap:.4rem;margin:.4rem 0 1rem}}
 .seg button{{flex:1;padding:.85rem .3rem;font-size:1rem}}
-.pitatts{{display:flex;gap:.5rem}}
-.pitatts input{{text-align:center;font-size:1.2rem;padding:.6rem}}
-#plog td{{padding:.4rem .3rem;border-top:1px solid var(--line)}}
 </style>
 <script>
 const EV={json.dumps(evdata)};
@@ -585,62 +550,6 @@ function segTab(t){{
     document.getElementById('tab-'+k).style.display = (k===t)?'':'none';
     document.getElementById('seg-'+k).className = (k===t)?'':'ghost';
   }});
-}}
-function pitIsHJ(){{var o=document.getElementById('pev').selectedOptions[0];return !!(o&&o.dataset.hj==='1');}}
-function pitMode(){{var hj=pitIsHJ();
-  document.getElementById('attsblock').style.display=hj?'none':'';
-  document.getElementById('hjblock').style.display=hj?'':'none';
-  pitLookup();}}
-let _pitLT=null;
-function pitLookup(){{
-  clearTimeout(_pitLT);
-  const bib=document.getElementById('pbib').value.trim();
-  const info=document.getElementById('pbibinfo');
-  if(!bib){{ info.textContent=''; return; }}
-  info.innerHTML='<span class="muted">…</span>';
-  _pitLT=setTimeout(async function(){{
-    try{{
-      const ev=document.getElementById('pev').value;
-      const j=await jget('/meets/{m['id']}/pit/lookup?bib='+encodeURIComponent(bib)+'&event='+encodeURIComponent(ev));
-      if(document.getElementById('pbib').value.trim()!==bib) return;   // stale
-      if(!j.found){{
-        info.innerHTML='<span style="color:var(--warn)">no athlete with bib '+esc(bib)+' at this meet</span>';
-        return;
-      }}
-      let s='<b style="color:var(--ok)">✔ '+esc(j.name)+'</b>'
-        +'<span class="muted"> · '+esc(j.school)+' · '+esc(j.division)+'</span>';
-      // Load any already-recorded attempts straight into the boxes so they can be
-      // reviewed/edited (re-recording replaces them). Blank boxes = nothing on file.
-      const att=j.attempts||[];
-      if(pitIsHJ()){{ document.getElementById('pahj').value = att[0] || ''; }}
-      else {{ for(let k=0;k<3;k++){{ document.getElementById('pa'+k).value = att[k] || ''; }} }}
-      if(att.some(function(x){{return x;}})){{
-        s+='<span class="muted"> · marks on file loaded below — edit &amp; record to update</span>';
-      }}
-      info.innerHTML=s;
-    }}catch(e){{ info.textContent=''; }}
-  }}, 250);
-}}
-async function pitPost(){{
-  const ev=document.getElementById('pev').value, bib=document.getElementById('pbib').value.trim();
-  const hj=pitIsHJ();
-  const atts = hj ? [document.getElementById('pahj').value.trim()]
-                  : [0,1,2].map(function(k){{return document.getElementById('pa'+k).value.trim();}});
-  const box=document.getElementById('pmsg');
-  if(!ev){{box.innerHTML='<p class="msg err">No field events at this meet.</p>';return;}}
-  if(!bib){{box.innerHTML='<p class="msg err">Enter a bib.</p>';return;}}
-  if(!atts.some(function(a){{return a;}})){{box.innerHTML='<p class="msg err">'+(hj?'Enter the best height cleared.':'Enter at least one attempt.')+'</p>';return;}}
-  try{{
-    const j=await jpost('/meets/{m['id']}/pit/post',{{event_id:ev,bib:bib,attempts:atts}});
-    box.innerHTML='<p class="msg ok">✔ '+esc(j.name)+' · <b>'+esc(j.event)+'</b> · '+esc(j.division)+' · best '+esc(j.best||'—')+'</p>';
-    document.getElementById('plog').insertAdjacentHTML('afterbegin',
-      '<tr><td><b>#'+esc(bib)+'</b></td><td>'+esc(j.name)+'</td>'
-      +'<td class="muted">'+esc(j.event)+'</td>'
-      +'<td><b>'+esc(j.best||'')+'</b></td></tr>');
-    ['pbib','pa0','pa1','pa2','pahj'].forEach(function(k){{document.getElementById(k).value='';}});
-    document.getElementById('pbibinfo').textContent='';
-    document.getElementById('pbib').focus();
-  }}catch(e){{ box.innerHTML='<p class="msg err">'+esc(e.message)+'</p>'; }}
 }}
 function fillHeats(){{
   const ev=document.getElementById('tev').value, ht=document.getElementById('tht');
@@ -724,7 +633,6 @@ async function postScan(n){{
     alert(msg);location.reload();}}
   catch(e){{alert(e.message);}}
 }}
-pitMode();
 </script>"""
 
 
@@ -776,7 +684,10 @@ def phone_api_track(mid):
                   for e in _picker_events(conn, mid, TAP_EVENTS)]
     lane_events = [{"meid": e["meid"], "label": e["label"], "heats": e["heats"]}
                    for e in _picker_events(conn, mid, LANE_EVENTS)]
-    field_events = [{"id": e["id"], "name": e["name"], "hj": e["name"] in db.VERTICAL_JUMPS}
+    from .track import pit_bar_lists
+    bars = pit_bar_lists(conn, m)                      # bar schedule per High Jump / Pole Vault
+    field_events = [{"id": e["id"], "name": e["name"], "hj": e["name"] in db.VERTICAL_JUMPS,
+                     "bars": bars.get(e["id"], [])}
                     for e in conn.execute(
                         "SELECT DISTINCT e.id, e.name FROM events e JOIN meet_events me ON me.event_id=e.id "
                         "WHERE me.meet_id=? AND e.kind='field' ORDER BY e.sort", (mid,)).fetchall()]
