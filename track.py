@@ -3737,13 +3737,18 @@ def results_inner(mid, name_mode=None):
     # The bar the pit is jumping at right now (set on the open pit; gone 90 min after it was
     # last touched). It leads the page, above the search box, so it shows before any jumper has a mark.
     if data.get("bar_now"):
+        # Sized so High Jump and Pole Vault share one line on a phone: the label takes its own
+        # line there (the chips wrap as a group), and everything sits on one line on a wide screen.
         chips = "".join(
-            f'<span style="display:inline-flex;align-items:baseline;gap:.5rem;border:1px solid var(--line);'
-            f'border-radius:10px;padding:.35rem .8rem;background:var(--panel2)">{escape(en)}'
-            f'<b style="font-size:1.5rem;font-variant-numeric:tabular-nums;color:var(--acc)">{escape(h)}</b></span>'
+            f'<span style="display:inline-flex;align-items:baseline;gap:.35rem;border:1px solid var(--line);'
+            f'border-radius:9px;padding:.22rem .5rem;background:var(--panel2);font-size:.85rem;white-space:nowrap">'
+            f'{escape(en)}<b style="font-size:1.1rem;font-variant-numeric:tabular-nums;color:var(--acc)">'
+            f'{escape(h)}</b></span>'
             for en, h in data["bar_now"].items())
-        html.append('<div class="card" id="barnowcard" style="display:flex;gap:.7rem;align-items:center;flex-wrap:wrap">'
-                    f'<b>Bar height now</b>{chips}</div>')
+        html.append('<div class="card" id="barnowcard" style="display:flex;gap:.4rem .7rem;align-items:center;'
+                    'flex-wrap:wrap;padding-top:.7rem;padding-bottom:.7rem">'
+                    '<b style="font-size:.9rem">Bar height now</b>'
+                    f'<span style="display:flex;gap:.4rem;flex-wrap:wrap">{chips}</span></div>')
     html.append('<div class="card">'
             '<input id="rsearch" placeholder="Search athlete / school / event…" oninput="rfilter()" '
             'style="max-width:320px"> '
