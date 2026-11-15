@@ -167,6 +167,8 @@ number, then scan or type it.</li>
 <p>Results build themselves as names go on the times. The Results tab has a live public page with a QR
 code for the stands, and an Excel export. Team scores update on that page while runners are still
 coming in.</p>
+<p>While races are still to come, the public page carries a notice that results are not final yet and
+are subject to change. It comes down when the last race is stopped.</p>
 <p>How XCTimer scores each heat:</p>
 <ul>
 <li>A school needs five finishers for a team score. A school with fewer keeps its individual places
@@ -491,6 +493,8 @@ shows a warning before you record anything. That means all three attempts in a t
 jump, a bar already cleared, or three misses at a height.</p>
 
 <h2>Results and team scores</h2>
+<p>On the day of the meet, and for 90 minutes after the last clock or pit entry, the public results
+page carries a notice that results are not final yet and are subject to change.</p>
 <p>Each event ranks itself as marks come in, and disqualified athletes are left out. Places earn
 points from the table you chose on the Setup tab, and relays use the same table:</p>
 <div class="tw"><table>

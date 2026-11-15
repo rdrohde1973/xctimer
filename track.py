@@ -25,7 +25,7 @@ from .auth import login_required
 from .tenancy import (active_district_id, all_districts, district_grades, custom_grades,
                       grades_span, is_hs_district)
 from .ui import shell, GUN_CONTROLS_HTML, GUN_JS, STICKER_TIP, SENDQ_JS
-from .meets import load_meet, can_view_meet, can_setup_meet, can_record_meet
+from .meets import load_meet, can_view_meet, can_setup_meet, can_record_meet, meet_is_today
 
 bp = Blueprint("track", __name__)
 
@@ -3602,6 +3602,37 @@ STALE_LIVE = 3600.0    # a "running" clock older than this was never stopped -> 
 #                        drop it from the live board (no real heat runs an hour)
 
 
+def meet_not_final(mid):
+    """True while a track meet's results can still move: it is the meet's day, or a clock, a
+    tapped finisher or the pit's bar was used in the last 90 minutes (which also covers a meet
+    run on a different day than its date says)."""
+    conn = db.connect()
+    try:
+        m = conn.execute("SELECT * FROM meets WHERE id=?", (mid,)).fetchone()
+        if not m:
+            return False
+        if meet_is_today(m):
+            return True
+        row = conn.execute(
+            "SELECT MAX(tc.start_time) AS a, MAX(tc.stop_time) AS b FROM track_clocks tc "
+            "JOIN meet_events me ON me.id=tc.meet_event_id WHERE me.meet_id=?", (mid,)).fetchone()
+        tap = conn.execute(
+            "SELECT MAX(t.created_at) AS a FROM track_taps t JOIN meet_events me ON me.id=t.meet_event_id "
+            "WHERE me.meet_id=?", (mid,)).fetchone()
+        bar = conn.execute("SELECT MAX(updated_at) AS a FROM pit_bars WHERE meet_id=?", (mid,)).fetchone()
+    finally:
+        conn.close()
+    now = _t_now()
+    for stamp in (row["a"], row["b"], tap["a"], bar["a"]):
+        try:
+            dt = _t_parse(stamp)
+        except (ValueError, TypeError):
+            dt = None
+        if dt and -60 <= (now - dt).total_seconds() <= BAR_NOW_HOLD:
+            return True
+    return False
+
+
 def public_live(mid, name_mode=None):
     """Public 'live now' feed. server_ms is always fresh (spectator clocks stay
     accurate), but the heats snapshot is micro-cached ~1s so a crowd of spectators
@@ -3610,12 +3641,13 @@ def public_live(mid, name_mode=None):
     nowm = time.monotonic()
     hit = _LIVE_CACHE.get(key)
     if hit and hit[0] > nowm:
-        heats, tl = hit[1], hit[2]
+        heats, tl, nf = hit[1], hit[2], hit[3]
     else:
         heats = _live_heats(mid, name_mode)
         tl = _timeline(mid)
-        _LIVE_CACHE[key] = (nowm + _LIVE_TTL, heats, tl)
-    return {"server_ms": _t_ms(_t_now()), "heats": heats, "timeline": tl}
+        nf = meet_not_final(mid)
+        _LIVE_CACHE[key] = (nowm + _LIVE_TTL, heats, tl, nf)
+    return {"server_ms": _t_ms(_t_now()), "heats": heats, "timeline": tl, "not_final": nf}
 
 
 def _timeline(mid):

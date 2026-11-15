@@ -581,6 +581,18 @@ def error_page(code, title, msg):
 # first. An item is dropped once the server answers it: accepted, or refused for good
 # (400/404/409). It is kept and re-sent on no answer, a timeout, a 5xx, or an expired
 # sign-in. A pill near the bottom of the screen (clear of the clock) shows anything still waiting.
+def not_final_banner(dark=False, shown=True):
+    """Notice at the top of a public results page while a meet is still being run (1.134.0).
+    `dark` picks text that reads on the dark track page; the XC page is light."""
+    color = "#f0b24b" if dark else "#7a4b00"
+    return ('<div id="notfinal" role="status" style="display:%s;gap:.55rem;align-items:center;margin:0 0 1rem;'
+            'padding:.6rem .85rem;border-radius:10px;font-size:.95rem;line-height:1.35;font-weight:600;'
+            'background:rgba(240,178,75,.16);border:1px solid rgba(240,178,75,.6);color:%s">'
+            '<span aria-hidden="true">⏳</span>'
+            '<span>Results are not final yet and are subject to change.</span></div>'
+            % ("flex" if shown else "none", color))
+
+
 SENDQ_JS = r"""
 var SENDQ=(function(){
   var KEY='xctimer-sendq', MEM=[], busy=false, fails=0, hooks=[], msg='', msgT=null;

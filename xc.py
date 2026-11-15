@@ -18,8 +18,8 @@ from flask import Blueprint, request, redirect, g, abort, jsonify, Response
 from . import db, demo, clocktime
 from .auth import login_required
 from .tenancy import active_district_id, all_districts
-from .ui import shell, BRAND_HTML, POWERED_BY_HTML, CSS, HEAD_EXTRA, STICKER_TIP
-from .meets import (load_meet, can_view_meet, can_setup_meet, can_record_meet)
+from .ui import shell, BRAND_HTML, POWERED_BY_HTML, CSS, HEAD_EXTRA, STICKER_TIP, not_final_banner
+from .meets import (load_meet, can_view_meet, can_setup_meet, can_record_meet, meet_is_today)
 
 bp = Blueprint("xc", __name__)
 
@@ -2362,6 +2362,9 @@ def _live_races(mid):
     return heats
 
 
+NOT_FINAL_HOLD = 3 * 3600.0     # s after the last start/stop that an unfinished XC meet still counts as going
+
+
 def _public_xc(m, mode):
     mid = m["id"]
     results = build_results(mid)
@@ -2378,6 +2381,21 @@ def _public_xc(m, mode):
         status = "Live"
     else:
         status = ""
+    # While races are still to come, the results can move: say so. Only on the meet's day or
+    # within three hours of the last start or stop, so a meet left with a race never run
+    # doesn't carry the notice forever.
+    not_final = False
+    if status == "Live":
+        not_final = meet_is_today(m)
+        for r in races:
+            for stamp in (r["start_time"], r["stop_time"]):
+                try:
+                    dt = _parse(stamp)
+                except (ValueError, TypeError):
+                    dt = None
+                if dt and -60 <= (_now() - dt).total_seconds() <= NOT_FINAL_HOLD:
+                    not_final = True
+    notice = not_final_banner() if not_final else ""
 
     overall = "".join(
         _pub_table(f"{lbl} Overall", results[key]["individuals"], mode, True, maxname, maxschool)
@@ -2451,6 +2469,7 @@ def _public_xc(m, mode):
   {_course_button(m)}
 </div>
 <main>
+  {notice}
   <div id="livebox"></div>
   <div class="tabs">
     <button class="tab on" id="t-overall" onclick="tab('overall')">📋 Overall</button>
@@ -2754,6 +2773,7 @@ def public_results(token):
     if m["sport"] == "track":
         from . import track  # lazy import avoids a circular import at module load
         inner = track.results_inner(m["id"], name_mode=mode)
+        notice = not_final_banner(dark=True, shown=track.meet_not_final(m["id"]))
         return f"""<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width, initial-scale=1">
 <title>{escape(m['name'])} — Results · XCTimer</title><style>{CSS}
@@ -2788,6 +2808,7 @@ main{{max-width:960px;margin:0 auto;padding:1.4rem 1rem 4rem}}
 <div class="pubhdr">{_host_logo_tag(m)}</div>
 <main><h1>{escape(m['name'])}</h1>
 <p class="sub">🎽 Track · {escape(m['date'] or '')}{' · 🕐 Time trial' if ('time_trial' in m.keys() and m['time_trial']) else ''}</p>
+{notice}
 <div id="livebox"></div>
 <div id="timeline" class="tlwrap" style="display:none"></div>
 <div id="resultsbox">{inner}</div></main>
@@ -2805,6 +2826,8 @@ async function pollLive(){{
   try{{
     const r=await fetch('/r/'+TOKEN+'/live'); const d=await r.json();
     LOFFSET=d.server_ms-Date.now();
+    const _nf=document.getElementById('notfinal');      // "not final yet" notice follows the meet
+    if(_nf) _nf.style.display=d.not_final?'flex':'none';
     const _h=d.heats||[];
     window.__LIVE_ACTIVE=!!_h.length;
     // Only rebuild the board when something actually changed — otherwise the clock element gets

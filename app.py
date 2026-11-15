@@ -32,7 +32,7 @@ from .billing import bp as billing_bp
 from .signup import bp as signup_bp
 from .guides import bp as guides_bp, PATHS as GUIDE_PATHS
 
-APP_VERSION = "1.133.3-bar-height-one-line"
+APP_VERSION = "1.134.0-results-not-final-notice"
 
 LANDING = """<!doctype html><html lang=en><head><meta charset=utf-8>
 <meta name=viewport content="width=device-width, initial-scale=1">

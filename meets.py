@@ -10,6 +10,7 @@ import io
 import json
 import secrets
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 
 from markupsafe import escape
 from flask import Blueprint, request, redirect, g, abort, Response
@@ -530,6 +531,17 @@ def aruco_only():
     is not enforcement. Flip this to a condition if QR bibs ever come back.
     """
     return True
+
+
+_MEET_TZ = ZoneInfo("America/Denver")      # meet dates are kept in Mountain time, like the rest of the app
+
+
+def meet_is_today(m, now=None):
+    """True on the meet's own date. Used for the public 'results are not final' notice."""
+    d = (m["date"] or "").strip() if "date" in m.keys() else ""
+    if not d:
+        return False
+    return d[:10] == (now or datetime.now(timezone.utc)).astimezone(_MEET_TZ).strftime("%Y-%m-%d")
 
 
 def bibs_locked(m):
