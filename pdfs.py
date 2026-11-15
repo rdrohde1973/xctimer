@@ -92,8 +92,7 @@ _COVER_INSTRUCTIONS_XC = [
 _COVER_INSTRUCTIONS_TRACK = [
     "Place your sticker on the front of your jersey, centered on your chest.",
     "Need a blank sticker? Check in at the timing tent before your first event.",
-    "Keep your sticker on all day — you compete in multiple events and will be scanned "
-    "at each one.",
+    "Keep your sticker on all day. It shows your number, your events, and your heat and lane.",
     "If you lose your sticker, remember your bib number so you can give it to the timer.",
 ]
 
@@ -488,7 +487,19 @@ def _draw_label_xc(c, x, y_top, lw, lh, a, school_name, qr_prefix, logo, results
                 pass
         qr_sz = min(lh - 2 * pad, 0.30 * lw)
         qr_x = x + lw - pad - qr_sz
-        if is_aruco:
+        if code == "none":
+            # Track: no bib code. Just the small live-results QR, bottom-right.
+            qr_x = x + lw - pad + 0.05 * inch
+            if results_url and lh >= 1.4 * inch:
+                rq = min(0.30 * lh, 0.55 * inch)
+                qr_x = x + lw - pad - rq
+                c.drawImage(_qr_image(results_url), qr_x, bottom + 0.13 * lh,
+                            rq, rq, preserveAspectRatio=True, mask="auto")
+                c.setFont("Helvetica", min(lh * 0.06, 5.5))
+                c.setFillGray(0.5)
+                c.drawCentredString(qr_x + rq / 2, bottom + 0.04 * lh, "LIVE RESULTS")
+                c.setFillGray(0)
+        elif is_aruco:
             draw_aruco(c, qr_x, bottom + (lh - qr_sz) / 2, qr_sz, a["bib"])
         else:
             qr_text = f"{qr_prefix}{a['bib']}" if qr_prefix else str(a["bib"])
@@ -502,7 +513,7 @@ def _draw_label_xc(c, x, y_top, lw, lh, a, school_name, qr_prefix, logo, results
     mw = max(0.4 * inch, content_r - content_l)
 
     bib = str(a["bib"])
-    bibsz = _fit_font(c, bib, "Helvetica-Bold", min(lh * 0.46, 44), mw)
+    bibsz = _fit_font(c, bib, "Helvetica-Bold", min(lh * 0.46, 60 if code == "none" else 44), mw)
     c.setFont("Helvetica-Bold", bibsz)
     c.setFillColorRGB(*NAVY)
     c.drawCentredString(cx, bottom + lh * 0.50, bib)
@@ -551,7 +562,10 @@ def _draw_label(c, t, slot, ph, a, school_name, qr_prefix, logo=None, results_ur
     qr_sz = min(lh * 0.5, 0.72 * inch)
     qr_x = x + lw - qr_sz - pad
     code = a.get("code") if isinstance(a, dict) else None
-    if code == "aruco" and isinstance(a["bib"], int) and a["bib"] <= 1023:
+    nocode = code == "none"          # Track: nothing reads a bib code, so none is printed
+    if nocode:
+        qr_x = x + lw - pad + 0.07 * inch          # the header runs to the sticker's edge
+    elif code == "aruco" and isinstance(a["bib"], int) and a["bib"] <= 1023:
         draw_aruco(c, qr_x, top - qr_sz, qr_sz, a["bib"])
     else:
         qr_text = f"{qr_prefix}{a['bib']}" if qr_prefix else str(a["bib"])
@@ -565,10 +579,11 @@ def _draw_label(c, t, slot, ph, a, school_name, qr_prefix, logo=None, results_ur
     content_r = qr_x - 0.07 * inch
     content_w = max(0.6 * inch, content_r - content_l)
 
-    # Header row: big navy bib top-left, name + school stacked to its right.
+    # Header row: big navy bib top-left, name + school stacked to its right. With no code to
+    # make room for, the number, the name and the event lines are all set larger.
     bib = str(a["bib"])
-    bibsz = min(lh * 0.48, 36)
-    while bibsz > 14 and c.stringWidth(bib, "Helvetica-Bold", bibsz) > content_w * 0.42:
+    bibsz = min(lh * 0.48, 60 if nocode else 36)
+    while bibsz > 14 and c.stringWidth(bib, "Helvetica-Bold", bibsz) > content_w * (0.5 if nocode else 0.42):
         bibsz -= 1
     bib_base = top - bibsz * 0.82
     c.setFont("Helvetica-Bold", bibsz)
@@ -578,7 +593,7 @@ def _draw_label(c, t, slot, ph, a, school_name, qr_prefix, logo=None, results_ur
 
     name_x = content_l + bibw + 0.1 * inch
     name_w = max(0.5 * inch, content_r - name_x)
-    ntext, nsz = _fit_text(c, a["name"] or "", "Helvetica-Bold", min(lh * 0.2, 14), name_w)
+    ntext, nsz = _fit_text(c, a["name"] or "", "Helvetica-Bold", min(lh * 0.2, 17 if nocode else 14), name_w)
     c.setFont("Helvetica-Bold", nsz)
     c.setFillColorRGB(*NAVY)
     c.drawString(name_x, top - nsz, ntext)
@@ -595,7 +610,10 @@ def _draw_label(c, t, slot, ph, a, school_name, qr_prefix, logo=None, results_ur
     events = (events or [])[:4]
     if events:
         avail = (bib_base - 0.07 * inch) - bottom
-        esz = min(lh * 0.14, 9.5)
+        esz = min(lh * 0.14, 11.5 if nocode else 9.5)
+        # The live-results QR sits bottom-right: a line that reaches down beside it stops short of it.
+        rq_keep = (min(0.30 * lh, 0.55 * inch) + 0.07 * inch) if (nocode and results_url and lh >= 1.4 * inch) else 0
+        rq_top = bottom + 0.02 * inch + rq_keep
         line_gap = 0.035 * inch
         need = len(events) * esz + (len(events) - 1) * line_gap
         if need > avail and avail > 0:
@@ -604,7 +622,8 @@ def _draw_label(c, t, slot, ph, a, school_name, qr_prefix, logo=None, results_ur
             line_gap *= sf
         cursor = bib_base - 0.07 * inch
         for ev in events:
-            etext, e_ = _fit_text(c, ev, "Helvetica-Bold", esz, content_w)
+            line_w = content_w - rq_keep if (rq_keep and cursor - esz < rq_top) else content_w
+            etext, e_ = _fit_text(c, ev, "Helvetica-Bold", esz, line_w)
             cursor -= e_
             if cursor < bottom:
                 break
@@ -612,8 +631,8 @@ def _draw_label(c, t, slot, ph, a, school_name, qr_prefix, logo=None, results_ur
             c.setFillGray(0)
             c.drawString(content_l, cursor, etext)
             cursor -= line_gap
-    # ArUco stickers: small live-results QR bottom-right, beneath the tag.
-    if code == "aruco" and results_url and lh >= 1.4 * inch:
+    # Small live-results QR bottom-right: beneath the tag on ArUco stickers, on its own on Track.
+    if code in ("aruco", "none") and results_url and lh >= 1.4 * inch:
         rq = min(0.30 * lh, 0.55 * inch)
         rq_x = x + lw - pad - rq
         c.drawImage(_qr_image(results_url), rq_x, bottom + 0.02 * inch,

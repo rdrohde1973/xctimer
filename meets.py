@@ -519,6 +519,14 @@ def delete_meet(mid):
     return redirect(f"/events?org={org}" if org is not None else "/meets")
 
 
+def sticker_code(m):
+    """Which bib code a meet's stickers carry. Track prints none: nothing in Track reads one
+    (lanes are assigned, distance finishers are picked or typed, the pit types the bib), so the
+    space goes to a bigger number, the name and the event lines. Everything else prints ArUco,
+    the only code the finish-line camera reads (see aruco_only)."""
+    return "none" if m["sport"] == "track" else "aruco"
+
+
 def aruco_only():
     """True when only ArUco sticker sheets may be printed — which is now always.
 
@@ -1297,8 +1305,8 @@ def meet_stickers(mid):
         abort(403)
     template = "5163"             # the only sticker sheet we print now
     # A coach prints ArUco whatever the URL says — the link is gone from their view,
-    # but the route is the thing that actually enforces it.
-    code = "aruco" if (request.args.get("code") == "aruco" or aruco_only()) else None
+    # but the route is the thing that actually enforces it. Track prints no code at all.
+    code = sticker_code(m)
     groups = _sticker_groups(mid, with_events=(m["sport"] == "track"),
                              fill_to=pdfs.per_page(template), code=code,
                              extra_blanks=pdfs.per_page(template))   # + one logo-less blank sheet
@@ -1346,7 +1354,7 @@ def school_meet_stickers(mid, sid):
     if not can_view_meet(m):
         abort(403)
     template = "5163"             # the only sticker sheet we print now
-    code = "aruco" if (request.args.get("code") == "aruco" or aruco_only()) else None
+    code = sticker_code(m)
     groups = _sticker_groups(mid, with_events=(m["sport"] == "track"),
                              fill_to=pdfs.per_page(template), only_sid=sid, code=code)
     base = os.environ.get("XC_PUBLIC_URL", request.host_url.rstrip("/"))

@@ -200,4 +200,30 @@ assert _re.fullmatch(r"1500m · Heat 1 Pos \d", dist), dist
 assert not any("Sec " in x for v in lines.values() for x in v), lines
 assert "Discus" in cal and "Discus ·" not in " ".join(cal)                # field events carry no heat
 print("PASS 10: stickers say Heat and Lane for laned events")
+
+# --- 11. Track stickers print no bib code (nothing in Track reads one); XC still prints ArUco
+from xctimerpkg import pdfs as pdfsmod                                  # noqa: E402
+assert meetsmod.sticker_code({"sport": "track"}) == "none"
+assert meetsmod.sticker_code({"sport": "xc"}) == "aruco" and meetsmod.sticker_code({"sport": "road"}) == "aruco"
+drawn = []
+real_aruco = pdfsmod.draw_aruco
+pdfsmod.draw_aruco = lambda *a, **k: (drawn.append(a[-1]), real_aruco(*a, **k))[1]
+try:
+    for url in (f"/meets/{mid}/stickers.pdf", f"/meets/{mid}/stickers.pdf?code=aruco",
+                f"/meets/{mid}/school/{sid}/stickers.pdf?code=aruco"):
+        r = root.get(url)
+        assert r.status_code == 200 and r.data[:4] == b"%PDF", url
+    assert drawn == [], f"a Track sticker drew a bib code: {drawn[:5]}"
+    c = db.connect()
+    xcm = c.execute("INSERT INTO meets (district_id, sport, name, public_token) VALUES (?,?,?,?)",
+                    (hsd, "xc", "XC stickers", "tokxc")).lastrowid
+    c.execute("INSERT INTO meet_schools (meet_id, school_id) VALUES (?,?)", (xcm, sid))
+    assign_meet_bibs(c, xcm); c.commit(); c.close()
+    r = root.get(f"/meets/{xcm}/stickers.pdf")
+    assert r.status_code == 200 and r.data[:4] == b"%PDF" and len(drawn) >= 4, len(drawn)
+finally:
+    pdfsmod.draw_aruco = real_aruco
+grp = meetsmod._sticker_groups(mid, True, fill_to=10, code=meetsmod.sticker_code({"sport": "track"}))
+assert all(a.get("code") == "none" for _s, _l, arr in grp for a in arr), "blank spares carry the same rule"
+print("PASS 11: Track stickers carry no bib code, spares included; XC stickers still do")
 print("ALL PASS")

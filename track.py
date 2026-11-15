@@ -1096,8 +1096,7 @@ def assign_page(mid):
                   '</div>')
     relay_block = ""
 
-    _tqr = ""                       # ArUco only, same rule as the xc packet
-    _tlbl = "Stickers"
+    _tlbl = "Stickers"              # Track stickers carry no bib code (meets.sticker_code)
 
     body = f"""
 <p class="muted"><a href="/meets">← Meets</a></p>
@@ -1106,8 +1105,7 @@ def assign_page(mid):
   <b style="margin-right:.2rem">School:</b> {picker}</div>
 <div class="card" style="display:flex;flex-wrap:wrap;gap:.45rem;align-items:center">
   <b style="margin-right:.2rem">🖨 {escape(school['name'])} packet:</b>
-  {_tqr}
-  <a class="btn ghost" href="/meets/{mid}/school/{sid}/stickers.pdf?code=aruco">{_tlbl}</a>
+  <a class="btn ghost" href="/meets/{mid}/school/{sid}/stickers.pdf">{_tlbl}</a>
   <a class="btn ghost" href="/meets/{mid}/school/{sid}/biblist.pdf">Bib list + events</a>
   <span class="muted" style="font-size:.85rem;flex-basis:100%">{STICKER_TIP}</span></div>
 <div class="card">
