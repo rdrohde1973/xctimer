@@ -473,6 +473,10 @@ enter O (clear) or X (miss) in three boxes. Typing a bib warns when that athlete
 their attempts (three attempts in, a bar already cleared, or three misses at a height). The public
 results page shows "Bar height now" for High Jump and Pole Vault while the pit is using it.
 Timing uses each phone's own clock, so it's accurate even on a bad cell connection.
+INTERNET: XCTimer runs over the internet, so every timing phone needs a data connection at the venue
+(cellular data, or Wi-Fi if there is any). If the signal drops, each phone keeps its starts, taps and
+stops saved with the exact time and sends them when the signal is back; keep the timer page open.
+Scanning bibs, the Pit and Scan tabs, race-day sign-ups and the results page need a working connection.
 
 TRACK — SCAN-BACK: If you time on paper, photograph the printed heat sheet (or the High Jump grid)
 in the Scan tab and the AI reads the handwritten marks back onto the right runners.

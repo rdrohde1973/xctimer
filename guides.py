@@ -89,13 +89,21 @@ satellite map. Parents get a fly-over of the course from the results page.</li>
 <li>A <b>finish chute</b>: two lines of cones or flagging, a few yards wide at the line and narrowing
 to single file, long enough to hold a pack.</li>
 <li>A <b>poster board and a marker</b> for each race.</li>
-<li><b>Two or three phones</b>, charged: see How many phones below.</li>
+<li><b>Two or three phones</b>, charged and with cellular data: see Phones on race day below.</li>
 </ul>
 
 <h2>Phones on race day</h2>
 <p>The Race day tab shows a <b>Phone Timer App</b> QR code. Every helper scans it and lands in the
 timer with no login and no app to install. They pick the heat they are working, and every phone on
 that heat shows the same clock and the same finish list.</p>
+
+<h3>Internet connection</h3>
+<p>XCTimer runs over the internet, so every timing phone needs a data connection at the course: cellular
+data, or Wi-Fi if the venue has it. Before meet day, stand at the start and at the finish line and check
+that a phone can load a web page there.</p>
+<p>A weak spot will not cost you a time. Each phone records the exact moment of every start, tap and
+stop itself, keeps it saved, and sends it as soon as the signal is back. Keep the timer open until the
+notice at the bottom of the screen clears. Scanning bibs and showing results do need a working connection.</p>
 
 <h3>How many phones</h3>
 <ul>
@@ -292,6 +300,14 @@ with a <b>poster board and a marker</b> for each race at the end of it.</p>
 timer with no login and no app to install. They pick the race they are working, and every phone on
 that race shows the same clock and the same finish list.</p>
 
+<h3>Internet connection</h3>
+<p>XCTimer runs over the internet, so every timing phone needs a data connection at the course: cellular
+data, or Wi-Fi if the venue has it. Before race day, stand at the start and at the finish line and check
+that a phone can load a web page there.</p>
+<p>A weak spot will not cost you a time. Each phone records the exact moment of every start, tap and
+stop itself, keeps it saved, and sends it as soon as the signal is back. Keep the timer open until the
+notice at the bottom of the screen clears. Scanning bibs, race-day sign-ups and showing results do need a working connection.</p>
+
 <h3>How many phones</h3>
 <ul>
 <li><b>Three phones</b> when the start is out of sight of the finish: one for the starter, one for the
@@ -431,6 +447,14 @@ top right corner so a phone photo of it is matched to the right event.</li>
 Track Timer with no login and no app to install. It has three tabs: <b>Time</b> for races,
 <b>Scan</b> for photographed sheets, and <b>Pit</b> for field events. A coach who is already signed
 in keeps their own login.</p>
+
+<h3>Internet connection</h3>
+<p>XCTimer runs over the internet, so every timing phone needs a data connection at the track: cellular
+data, or Wi-Fi if the venue has it. Before meet day, stand at the start and at the finish line and check
+that a phone can load a web page there.</p>
+<p>A weak spot will not cost you a time. Each phone records the exact moment of every start, tap and
+stop itself, keeps it saved, and sends it as soon as the signal is back. Keep the timer open until the
+notice at the bottom of the screen clears. The Pit and Scan tabs and the results page do need a working connection.</p>
 
 <h2>Sprints, hurdles and short relays</h2>
 <p>100m, 200m, 400m, hurdles, 4×100m and 4×200m are timed lane by lane.</p>
