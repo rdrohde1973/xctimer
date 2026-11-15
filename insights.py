@@ -463,7 +463,8 @@ separate coach sign-in app link. Pick the event — combined divisions (same eve
 Gun start: arm "listen for the gun" on the starter's phone; the clap/gun starts a shared clock on
 every phone at once (a second Start tap won't reset it). Lane timing: each helper picks a lane and
 taps as their runner crosses; when every lane is tapped the race auto-stops. Distance races use a
-tap console (tap each finisher, then assign names, STOP, UNDO). False start: Reset race clears the
+tap console (Start, TAP finisher for each runner, Stop, then pick who each time belongs to; the ✕ on a
+finish removes an extra tap; there is no Undo button on the track timer). False start: Reset race clears the
 clock and all lane times on every phone. After a lane race you can fix the finish order with ▲▼
 buttons (times stay put, runners move) and mark a runner DQ or DNF (removes their time from the
 placings, shows DQ/DNF on results; Restore undoes it). Field events use the Pit console: record

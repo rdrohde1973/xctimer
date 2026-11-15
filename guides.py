@@ -481,7 +481,8 @@ use listen for the gun.</li>
 <li>One helper taps <b>TAP finisher</b> once for every runner who crosses, in order, without stopping
 to read names. A second phone can open the same heat as a backup; both share the clock and the list.</li>
 <li>After the race, go down the list and choose who each time belongs to, or type a bib for anyone
-not in the list. For a relay, choose the team.</li>
+not in the list. For a relay, choose the team. Tapped once too many? The <b>✕</b> beside that finish
+removes it.</li>
 <li>Keep the printed heat sheet at the line and write bib numbers in the order runners finish. That
 is your record if a place is questioned.</li>
 </ol>
