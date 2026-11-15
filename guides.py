@@ -478,6 +478,10 @@ one that is not on the schedule. When a jumper comes up, type the bib and tap <b
 <b>X</b> for a miss or <b>F</b> for a foul in the three boxes, then <b>Record mark</b>. The height stays
 set for the next jumper, and when a jumper comes back for another try the earlier marks at that height
 are already in the boxes. XCTimer works out each jumper's best height.</p>
+<p>The results page shows <b>Bar height now</b> for each jumping event, so the crowd can follow along.
+It updates when the pit sets or raises the bar, and comes down 90 minutes after the pit last used it.
+If a second phone at the same pit is still on an older height, it shows a warning with a button to
+switch to the current one.</p>
 <p>The same marks show on the event's page in a make/miss grid, where you can also type them in (O, X,
 P for a pass, XXX for out). The bar heights come from your meet setup: girls get the lowest ten bars,
 boys the top ten. Jumpers who clear the same best height share the place and split the points; XCTimer

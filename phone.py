@@ -684,10 +684,11 @@ def phone_api_track(mid):
                   for e in _picker_events(conn, mid, TAP_EVENTS)]
     lane_events = [{"meid": e["meid"], "label": e["label"], "heats": e["heats"]}
                    for e in _picker_events(conn, mid, LANE_EVENTS)]
-    from .track import pit_bar_lists
+    from .track import pit_bar_lists, pit_bars_now
     bars = pit_bar_lists(conn, m)                      # bar schedule per High Jump / Pole Vault
+    bars_now = pit_bars_now(conn, mid)                 # the height each pit is at right now
     field_events = [{"id": e["id"], "name": e["name"], "hj": e["name"] in db.VERTICAL_JUMPS,
-                     "bars": bars.get(e["id"], [])}
+                     "bars": bars.get(e["id"], []), "bar_now": bars_now.get(e["id"])}
                     for e in conn.execute(
                         "SELECT DISTINCT e.id, e.name FROM events e JOIN meet_events me ON me.event_id=e.id "
                         "WHERE me.meet_id=? AND e.kind='field' ORDER BY e.sort", (mid,)).fetchall()]

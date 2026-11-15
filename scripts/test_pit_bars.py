@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Open pit, bar by bar (1.132.0): High Jump and Pole Vault take a bar height and up to three
+"""Open pit, bar by bar (1.132.0), and the bar height on the results page (1.133.0): High Jump and Pole Vault take a bar height and up to three
 O / X / F marks at it, and every pit screen warns when an athlete has no attempts left.
     python scripts/test_pit_bars.py
 Uses a temp DB (XCTIMER_DB); never touches real data. Exit 0 on success."""
@@ -83,7 +83,7 @@ for url in (f"/meets/{mid}/pit", f"/phone/meet/{mid}"):
     assert 'id="barsel"' in page and "Bar height now" in page and page.count('class="barbox"') == 3, url
     assert "pitPut('O')" in page and "pitPut('X')" in page and "pitPut('F')" in page, url
     assert "Best height cleared" not in page and "pitwarn" in page, url
-    bars = json.loads(page.split("PIT_BARS=", 1)[1].split(";\n", 1)[0])
+    bars = json.loads(page.split("PIT_BARS=", 1)[1].split(", PIT_NOW=", 1)[0])
     hj = bars[str(ev["High Jump"])]
     assert hj[0] == "4-00" and hj[-1] == "6-04" and len(hj) == 15, hj       # the whole schedule, not one division's ten
     assert bars[str(ev["Pole Vault"])][:2] == ["6-00", "6-06"] and str(ev["Discus"]) not in bars
@@ -192,9 +192,43 @@ assert look("Flo Throw", "High Jump", "4-00")["warning"] is None           # a d
 assert json.loads(result("Ed Throw", disc_m)["attempts_json"]) == ["98-04", "F", "104-11"]
 print("PASS 10: Discus warns after the third attempt, and not before")
 
-# --- 11. helpers
+# --- 11. the bar height the pit is at shows on the results page
+inner = root.get("/r/tokbars/results-inner").get_data(as_text=True)
+assert "Bar height now" in inner and "Bar now 4-08" in inner and "Pole Vault<b" not in inner, "bar now missing"
+assert look("Ann Jump", "High Jump", "4-08")["bar_now"] == "4-08"
+r = root.post(f"/meets/{mid}/pit/bar", json={"event_id": ev["Pole Vault"], "height": "9 6"}, headers=H)
+assert r.status_code == 200 and r.get_json()["height"] == "9-06", r.data
+r = root.post(f"/meets/{mid}/pit/bar", json={"event_id": ev["High Jump"], "height": "4-10"}, headers=H)   # raised
+inner = root.get("/r/tokbars/results-inner").get_data(as_text=True)
+card = inner.split('id="barnowcard"', 1)[1].split("</div>", 1)[0]
+assert "High Jump<b" in card and ">4-10</b>" in card and "Pole Vault<b" in card and ">9-06</b>" in card, card
+assert "Bar now 4-10" in inner and "Bar now 4-08" not in inner
+assert "Bar height now" in root.get("/r/tokbars").get_data(as_text=True)
+page = root.get(f"/meets/{mid}/pit").get_data(as_text=True)
+now = json.loads(page.split("PIT_NOW=", 1)[1].split(";\n", 1)[0])
+assert now == {str(ev["High Jump"]): "4-10", str(ev["Pole Vault"]): "9-06"}, now
+api = {f["name"]: f for f in root.get(f"/phone/api/meets/{mid}/track").get_json()["field_events"]}
+assert api["High Jump"]["bar_now"] == "4-10" and api["Discus"]["bar_now"] is None and api["Pole Vault"]["bars"][0] == "6-00"
+for body in ({"event_id": ev["Discus"], "height": "4-10"}, {"event_id": ev["High Jump"], "height": "tall"},
+             {"event_id": ev["High Jump"], "height": "40-00"}, {"height": "4-10"}):
+    assert root.post(f"/meets/{mid}/pit/bar", json=body, headers=H).status_code == 400, body
+anon = application.test_client()
+assert anon.post(f"/meets/{mid}/pit/bar", json={"event_id": ev["High Jump"], "height": "5-00"},
+                 headers=H).status_code in (302, 401, 403)
+# a bar nobody has touched for 90 minutes is no longer "now"
+c = db.connect()
+c.execute("UPDATE pit_bars SET updated_at=? WHERE meet_id=? AND event_id=?",
+          ("2020-01-01T00:00:00+00:00", mid, ev["High Jump"]))
+c.commit(); c.close()
+inner = root.get("/r/tokbars/results-inner").get_data(as_text=True)
+assert "Bar now" not in inner and "High Jump<b" not in inner and ">9-06</b>" in inner
+post("Di Jump", "High Jump", height="4-06", marks=["O"])                    # a mark at a height makes it current again
+assert "Bar now 4-06" in root.get("/r/tokbars/results-inner").get_data(as_text=True)
+print("PASS 11: the results page shows the bar height now, follows a raise, and drops a stale one")
+
+# --- 12. helpers
 assert track._bar_done("XO") and track._bar_done("XFX") and not track._bar_done("XF") and not track._bar_done("")
 assert track._bar_out({"4-00": "XXX", "4-02": "FXF"}) == "4-02" and track._bar_out({"4-00": "XXO"}) is None
 assert track._bar_key(["4-2", "4-04"], 50.0) == "4-2" and track._bar_key([], 50.0) == "4-02"
-print("PASS 11: helper rules")
+print("PASS 12: helper rules")
 print("ALL PASS")

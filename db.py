@@ -652,6 +652,14 @@ def migrate(conn):
                  "WHERE client_id IS NOT NULL")
     conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_track_taps_cid ON track_taps(meet_event_id, heat, client_id) "
                  "WHERE client_id IS NOT NULL")
+    # 1.133.0: the bar height the open pit is jumping at right now, per High Jump / Pole
+    # Vault at a meet. Shown on the results page and shared between pit phones.
+    conn.execute("""CREATE TABLE IF NOT EXISTS pit_bars (
+        meet_id INTEGER NOT NULL,
+        event_id INTEGER NOT NULL,
+        height TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (meet_id, event_id))""")
 
     # Audit log (compliance Phase 3): who viewed / changed / exported / deleted records.
     # One row per auditable request (see audit.py). Retained ~13 months, pruned on the

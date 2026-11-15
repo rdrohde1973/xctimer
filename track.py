@@ -289,6 +289,32 @@ def _bar_summary(grid):
     return " · ".join(f"{b} {grid[b]}" for b in sorted(grid, key=_parse_ht))
 
 
+BAR_NOW_HOLD = 90 * 60.0     # s a "bar height now" stays up after the pit last touched it
+
+
+def _set_bar_now(conn, mid, event_id, label):
+    """Remember the height the pit is jumping at (set, raised, or a mark recorded at it)."""
+    conn.execute("INSERT INTO pit_bars (meet_id, event_id, height, updated_at) VALUES (?,?,?,?) "
+                 "ON CONFLICT(meet_id, event_id) DO UPDATE SET height=excluded.height, "
+                 "updated_at=excluded.updated_at",
+                 (mid, event_id, label, datetime.now(timezone.utc).isoformat()))
+
+
+def pit_bars_now(conn, mid):
+    """{event_id: height} for the bar events being jumped right now. A height nobody has
+    touched for BAR_NOW_HOLD is dropped, so yesterday's bar never shows as current."""
+    out = {}
+    now = datetime.now(timezone.utc)
+    for r in conn.execute("SELECT event_id, height, updated_at FROM pit_bars WHERE meet_id=?", (mid,)).fetchall():
+        try:
+            age = (now - datetime.fromisoformat(r["updated_at"])).total_seconds()
+        except (ValueError, TypeError):
+            continue
+        if -60 <= age <= BAR_NOW_HOLD:
+            out[r["event_id"]] = r["height"]
+    return out
+
+
 def pit_bar_lists(conn, m):
     """{event_id: [bar heights, low to high]} for the meet's High Jump / Pole Vault: the
     meet's bar schedule plus every height a division already uses. Feeds the open pit's
@@ -1393,7 +1419,7 @@ _PIT_PANEL = r"""
 #plog td{padding:.4rem .3rem;border-top:1px solid var(--line);vertical-align:top}
 </style>
 <script>
-var PIT_MID=__MID__, PIT_BARS=__BARS__;
+var PIT_MID=__MID__, PIT_BARS=__BARS__, PIT_NOW=__NOW__;
 var PIT_PM=[], PIT_ONFILE='', PIT_TOUCHED=false, PIT_LT=null;
 function pitEl(i){ return document.getElementById(i); }
 function pitIsBar(){ var o=pitEl('pev').selectedOptions[0]; return !!(o&&o.dataset.hj==='1'); }
@@ -1414,7 +1440,12 @@ function pitBarKey(){ return 'xct-pitbar-'+PIT_MID+'-'+pitEl('pev').value; }
 function pitHeight(){ var v=pitEl('barsel').value; return (v&&v!=='other')?v:''; }
 function pitBarFill(want){
   var ev=pitEl('pev').value, list=(PIT_BARS[ev]||[]).slice();
-  if(want===undefined){ try{ want=localStorage.getItem(pitBarKey())||''; }catch(e){ want=''; } }
+  // The height the pit is at, as the server has it (so two phones agree), else this phone's last.
+  if(want===undefined){
+    want=PIT_NOW[ev]||'';
+    if(!want){ try{ want=localStorage.getItem(pitBarKey())||''; }catch(e){ want=''; } }
+  }
+  list.forEach(function(b){ if(want && Math.abs(pitInches(b)-pitInches(want))<0.01) want=b; });
   if(want && pitInches(want)!=null && list.indexOf(want)<0){
     list.push(want); list.sort(function(a,b){ return pitInches(a)-pitInches(b); }); PIT_BARS[ev]=list;
   }
@@ -1431,11 +1462,18 @@ function pitBarShow(){
   if(h){ try{ localStorage.setItem(pitBarKey(),h); }catch(e){} }
   PIT_PM=[]; PIT_TOUCHED=false; pitDraw(); pitLookup();
 }
+// Tell the server the bar moved: the results page shows it and other pit phones pick it up.
+function pitBarTell(){
+  var h=pitHeight(), ev=pitEl('pev').value;
+  if(!h) return;
+  PIT_NOW[ev]=h;
+  jpost('/meets/'+PIT_MID+'/pit/bar',{event_id:ev,height:h}).catch(function(){});
+}
 function pitBarPick(){
   var other=pitEl('barsel').value==='other';
   pitEl('barother').style.display=other?'':'none';
   if(other){ pitEl('barother').value=''; pitEl('barother').focus(); }
-  pitBarShow();
+  pitBarShow(); pitBarTell();
 }
 function pitBarOther(){
   var n=pitInches(pitEl('barother').value);
@@ -1443,13 +1481,13 @@ function pitBarOther(){
   pitEl('pmsg').innerHTML='';
   var list=PIT_BARS[pitEl('pev').value]||[], lab=pitFmt(n);
   list.forEach(function(b){ if(Math.abs(pitInches(b)-n)<0.01) lab=b; });
-  pitBarFill(lab);
+  pitBarFill(lab); pitBarTell();
 }
 function pitBarRaise(){
   var list=PIT_BARS[pitEl('pev').value]||[], i=list.indexOf(pitHeight());
   if(i+1>=list.length){ pitErr('That is the last height in the schedule. Choose "Other height…" to go higher.'); return; }
   pitEl('pmsg').innerHTML='';
-  pitEl('barsel').value=list[i+1]; pitEl('barother').style.display='none'; pitBarShow();
+  pitEl('barsel').value=list[i+1]; pitEl('barother').style.display='none'; pitBarShow(); pitBarTell();
 }
 function pitDone(){ return PIT_PM.length>=3 || PIT_PM[PIT_PM.length-1]==='O'; }
 function pitDraw(){
@@ -1525,6 +1563,11 @@ function pitLookup(){
         }
       }
       if(j.warning) s+='<div class="pitwarn">⚠ '+esc(j.name)+': '+esc(j.warning)+'</div>';
+      if(bar&&j.bar_now){
+        PIT_NOW[ev]=j.bar_now;
+        if(h&&Math.abs(pitInches(j.bar_now)-pitInches(h))>0.01) s+='<div class="pitwarn">⚠ Another pit phone has the bar at '+esc(j.bar_now)
+          +'. This one is set to '+esc(h)+'. <a href="#" onclick="pitBarFill(\''+esc(j.bar_now)+'\');return false">Use '+esc(j.bar_now)+'</a></div>';
+      }
       info.innerHTML=s;
     }catch(e){ info.textContent=''; }
   }, 250);
@@ -1578,8 +1621,9 @@ def pit_panel(conn, m):
     if not opts:
         opts = '<option value="">— no field events at this meet —</option>'
     bars = json.dumps(pit_bar_lists(conn, m)).replace("<", "\\u003c")
+    now = json.dumps({str(k): v for k, v in pit_bars_now(conn, m["id"]).items()}).replace("<", "\\u003c")
     return (_PIT_PANEL.replace("__OPTS__", opts).replace("__MID__", str(int(m["id"])))
-            .replace("__BARS__", bars))
+            .replace("__BARS__", bars).replace("__NOW__", now))
 
 
 @bp.get("/meets/<int:mid>/pit")
@@ -1676,6 +1720,7 @@ def pit_lookup(mid):
             here = grid.get(bar, "") if bar else ""
             out_at = _bar_out(grid)
             extra = dict(bar=True, height=bar, marks=here, out=out_at,
+                         bar_now=pit_bars_now(conn, mid).get(int(ev)),
                          grid=[[b, grid[b]] for b in sorted(grid, key=_parse_ht)])
             if out_at:
                 warning = (f"Completed all attempts: out at {out_at} ({grid[out_at]}). "
@@ -1696,6 +1741,33 @@ def pit_lookup(mid):
     conn.close()
     return jsonify(found=True, name=a["name"], school=a["sname"], division=division,
                    attempts=attempts, best=best, warning=warning, **extra)
+
+
+@bp.post("/meets/<int:mid>/pit/bar")
+@login_required
+def pit_bar(mid):
+    """The pit set or raised the bar for High Jump / Pole Vault."""
+    m = load_meet(mid)
+    if not can_record_meet(m) or m["sport"] != "track":
+        abort(403)
+    d = request.get_json(silent=True) or {}
+    try:
+        event_id = int(d.get("event_id"))
+    except (TypeError, ValueError):
+        return jsonify(error="Pick an event"), 400
+    h = _parse_ht(str(d.get("height") or ""))
+    conn = db.connect()
+    evrow = conn.execute(
+        "SELECT e.name FROM events e JOIN meet_events me ON me.event_id=e.id "
+        "WHERE e.id=? AND me.meet_id=? LIMIT 1", (event_id, mid)).fetchone()
+    if not evrow or evrow["name"] not in db.VERTICAL_JUMPS or h is None or not 12 <= h <= 300:
+        conn.close()
+        return jsonify(error="Pick the bar height"), 400
+    label = _fmt_ht(h)
+    _set_bar_now(conn, mid, event_id, label)
+    conn.commit()
+    conn.close()
+    return jsonify(ok=True, height=label)
 
 
 @bp.post("/meets/<int:mid>/pit/post")
@@ -1800,6 +1872,8 @@ def pit_post(mid):
                          "snap_bib, snap_school) VALUES (?,?,?,?,?,?,?)",
                          (eid, best, json.dumps(grid), (old["dq"] if old else 0) or 0,
                           a["name"], bib, a["sname"]))
+        if "height" in d:
+            _set_bar_now(conn, mid, event_id, _fmt_ht(bar_h))
         extra = dict(height=bar, marks=bar_marks, out=_bar_out(grid), summary=_bar_summary(grid))
     else:
         best = max(legal) if legal else None
@@ -3439,6 +3513,11 @@ def build_results(mid):
         "ORDER BY e.sort, me.gender", (mid,)).fetchall()
     events_out = []
     team_pts = {}  # (school, gender) -> points
+    bars_now = pit_bars_now(conn, mid)            # {event_id: height} the pit is jumping at now
+    bar_now = {}                                  # event name -> height, in event order
+    for me in meet_events:
+        if me["event_id"] in bars_now:
+            bar_now.setdefault(me["ename"], bars_now[me["event_id"]])
     for me in meet_events:
         table = rel_vals if me["kind"] == "relay" else vals
         rows = conn.execute(
@@ -3487,7 +3566,8 @@ def build_results(mid):
                           "name": r["snap_name"], "bib": r["snap_bib"],
                           "school": r["snap_school"], "points": 0})
         events_out.append({"name": f'{me["ename"]} — {_div_grade(me["gender"], me["grade"])}',
-                           "items": items, "gkey": me["gender"] or "U"})
+                           "items": items, "gkey": me["gender"] or "U",
+                           "bar_now": bars_now.get(me["event_id"])})
     conn.close()
     # Team totals broken down by gender × grade, plus a combined whole-meet total
     # (what gets announced at a dual: one school ranking across every division).
@@ -3496,7 +3576,7 @@ def build_results(mid):
         d = totals.setdefault((gender, grade), {})
         d[school] = d.get(school, 0) + pts
         overall[school] = overall.get(school, 0) + pts
-    return {"events": events_out, "totals": totals, "overall": overall}
+    return {"events": events_out, "totals": totals, "overall": overall, "bar_now": bar_now}
 
 
 def _div_grade(gender, grade):
@@ -3661,6 +3741,16 @@ def results_inner(mid, name_mode=None):
             '<select id="rgender" onchange="rfilter()" style="max-width:120px;margin-left:.4rem">'
             '<option value="">All</option><option value="M">Boys</option>'
             '<option value="F">Girls</option></select></div>']
+    # The bar the pit is jumping at right now (set on the open pit; gone 90 min after it was
+    # last touched). It leads the page so it shows before any jumper has a mark.
+    if data.get("bar_now"):
+        chips = "".join(
+            f'<span style="display:inline-flex;align-items:baseline;gap:.5rem;border:1px solid var(--line);'
+            f'border-radius:10px;padding:.35rem .8rem;background:var(--panel2)">{escape(en)}'
+            f'<b style="font-size:1.5rem;font-variant-numeric:tabular-nums;color:var(--acc)">{escape(h)}</b></span>'
+            for en, h in data["bar_now"].items())
+        html.append('<div class="card" id="barnowcard" style="display:flex;gap:.7rem;align-items:center;flex-wrap:wrap">'
+                    f'<b>Bar height now</b>{chips}</div>')
     # Combined whole-meet team score first (announced at duals) when >1 division scored.
     if data.get("overall") and len(data["totals"]) > 1:
         ranked = sorted(data["overall"].items(), key=lambda x: -x[1])
@@ -3706,8 +3796,12 @@ def results_inner(mid, name_mode=None):
               '<col style="width:%dch"><col style="width:6.8rem">%s'
               '<col style="width:3.4rem"></colgroup>'
               % (maxname, maxschool, '<col>' if any_att else ''))
+        bar_chip = (f' <span class="barnowchip" style="font-size:.8rem;font-weight:700;white-space:nowrap;'
+                    f'border:1px solid var(--acc);color:var(--acc);border-radius:999px;padding:.1rem .6rem;'
+                    f'margin-left:.3rem;vertical-align:middle">Bar now {escape(ev["bar_now"])}</span>'
+                    if ev.get("bar_now") else "")
         html.append(f'<div class="card rcard" data-gender="{ev["gkey"]}" '
-                    f'data-title="{escape(ev["name"].lower())}"><h2>{escape(ev["name"])}</h2>'
+                    f'data-title="{escape(ev["name"].lower())}"><h2>{escape(ev["name"])}{bar_chip}</h2>'
                     f'<table style="table-layout:fixed;width:100%">{cg}'
                     f'<tr><th>Pl</th><th>Competitor</th><th>School</th>'
                     f'<th>Best</th>{att_th}<th>Pts</th></tr>{trs}</table></div>')
