@@ -1237,15 +1237,18 @@ def _sticker_groups(mid, with_events, fill_to=0, only_sid=None, code=None, extra
                 d["code"] = code
             if with_events:
                 evs = conn.execute(
-                    "SELECT e.name AS ename, en.heat, en.lane FROM entries en "
+                    "SELECT e.name AS ename, e.laned, me.combine_id, en.heat, en.lane FROM entries en "
                     "JOIN meet_events me ON me.id=en.meet_event_id JOIN events e ON e.id=me.event_id "
                     "WHERE me.meet_id=? AND en.runner_id=? ORDER BY e.sort", (mid, a["id"])).fetchall()
                 ev_list = []
                 for ev in evs:
+                    # Sprints, hurdles and short relays run in lanes: "Heat 1 Lane 6". A distance
+                    # race starts on a waterfall, where the number is the place on the line.
+                    spot = "Lane" if (ev["laned"] and not ev["combine_id"]) else "Pos"
                     if ev["heat"] and ev["lane"]:
-                        detail = f" · Sec {ev['heat']} Pos {ev['lane']}"
+                        detail = f" · Heat {ev['heat']} {spot} {ev['lane']}"
                     elif ev["heat"]:
-                        detail = f" · Sec {ev['heat']}"
+                        detail = f" · Heat {ev['heat']}"
                     else:
                         detail = ""
                     ev_list.append(ev["ename"] + detail)

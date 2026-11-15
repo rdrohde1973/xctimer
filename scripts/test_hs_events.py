@@ -181,4 +181,23 @@ assert track._is_hj({"ename": "Pole Vault"}) and track._is_hj({"ename": "High Ju
 assert track._bar_schedule({"district_id": jh, "settings_json": None}, "High Jump") == ("3-06", "5-06", 2)
 assert track._bar_schedule({"district_id": hsd, "settings_json": None}, "High Jump") == ("4-00", "6-04", 2)
 print("PASS 9: junior-high bar defaults unchanged")
+
+# --- 10. stickers: laned events read "Heat 1 Lane 4"; a distance race keeps its place on the line
+from xctimerpkg import meets as meetsmod                                # noqa: E402
+for evname in ("110m Hurdles", "1500m"):
+    meid = me[(evname, "M")]["id"]
+    for nm in ("Cal Throw", "Dee Throw"):
+        r = root.post(f"/meet-events/{meid}/entries", data={"bib": str(bib[aths[nm]])}, headers=H)
+        assert r.status_code == 302 and "err=" not in r.headers["Location"], r.headers["Location"]
+    assert root.post(f"/meet-events/{meid}/seed", data={"mode": "seeded"}, headers=H).status_code == 302
+lines = {a["name"]: a["events"] for _s, _l, arr in meetsmod._sticker_groups(mid, True) for a in arr if a.get("events")}
+cal = lines["Cal Throw"]
+hurd = [x for x in cal if x.startswith("110m Hurdles")][0]
+dist = [x for x in cal if x.startswith("1500m")][0]
+import re as _re                                                        # noqa: E402
+assert _re.fullmatch(r"110m Hurdles · Heat 1 Lane \d", hurd), hurd
+assert _re.fullmatch(r"1500m · Heat 1 Pos \d", dist), dist
+assert not any("Sec " in x for v in lines.values() for x in v), lines
+assert "Discus" in cal and "Discus ·" not in " ".join(cal)                # field events carry no heat
+print("PASS 10: stickers say Heat and Lane for laned events")
 print("ALL PASS")
