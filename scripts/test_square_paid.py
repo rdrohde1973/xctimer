@@ -161,4 +161,39 @@ assert hook("w2", "wp2").status_code == 200 and live(m3)[0] is False, "an order 
 bad = web.post("/square/webhook", data=b"{}", headers={"X-Square-Hmacsha256-Signature": "nope"})
 assert bad.status_code == 401
 print("PASS 5: a discounted payment needs its promo code, uses the code once, and pays only its own meet")
+
+# --- 6. the promo-code form stores exactly the percent typed, or refuses
+from xctimerpkg import auth                                           # noqa: E402
+c = db.connect()
+uid = c.execute("INSERT INTO users (email, name, role) VALUES ('sa@example.test','SA','super_admin')").lastrowid
+c.commit(); c.close()
+sa = application.test_client()
+sa.set_cookie(auth.SESSION_COOKIE, auth.create_session(uid))
+sa.set_cookie("csrftoken", "x")
+
+
+def add(code, percent, **kw):
+    data = {"code": code, **kw}
+    if percent is not None:
+        data["percent"] = percent
+    return sa.post("/host-codes", data=data, headers={"X-CSRF-Token": "x"}).status_code
+
+
+def pct(code):
+    c = db.connect()
+    r = c.execute("SELECT percent_off, max_uses FROM promo_codes WHERE code=?", (code,)).fetchone()
+    c.close()
+    return tuple(r) if r else None
+
+
+assert add("xc90", "90", max_uses="1") == 302 and pct("XC90") == (90, 1)
+assert add("FREEBIE", "100") == 302 and pct("FREEBIE") == (100, None)
+for bad in ("", None, "abc", "0", "101", "9.5", "-5"):
+    assert add("BAD", bad) == 400, bad
+assert pct("BAD") is None, "a bad percent never becomes a free (100%) code"
+form = sa.get("/organizers").get_data(as_text=True)
+assert 'name="percent" inputmode="numeric"' in form and 'name="max_uses" inputmode="numeric"' in form
+assert 'type="number"' not in form[form.index('action="/host-codes"'):form.index("+ Add code")], \
+    "no number spinners: scrolling over one changes its value"
+print("PASS 6: a promo code is saved with the percent typed; a bad percent is refused, not made free")
 print("ALL PASS")

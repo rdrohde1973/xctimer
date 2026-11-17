@@ -306,8 +306,12 @@ def list_organizers():
           '<div><label>New code</label><input name="code" placeholder="e.g. FRIEND" required></div>'
           '<div><label>Label</label><input name="label" placeholder="who / why"></div>'
           '<div style="max-width:90px"><label>% off</label>'
-          '<input name="percent" type="number" min="1" max="100" value="100"></div>'
-          '<div style="max-width:100px"><label>Max uses</label><input name="max_uses" type="number" min="1" placeholder="∞"></div>'
+          # Plain text boxes, not number spinners: a number box changes its value when the page
+          # is scrolled with the pointer over it, the likely way a "90" was saved as 76 (2026-11-17).
+          '<input name="percent" inputmode="numeric" pattern="[0-9]{1,3}" maxlength="3" value="100" '
+          'title="A whole number from 1 to 100" autocomplete="off" required></div>'
+          '<div style="max-width:100px"><label>Max uses</label><input name="max_uses" inputmode="numeric" pattern="[0-9]*" maxlength="6" '
+          'placeholder="∞" autocomplete="off"></div>'
           '<div style="display:flex;align-items:flex-end"><label style="font-weight:normal">'
           '<input type="checkbox" name="first_event_only" value="1" style="width:auto"> First event only</label></div>'
           '<div style="display:flex;align-items:flex-end"><button type="submit">+ Add code</button></div>'
@@ -336,7 +340,9 @@ def add_promo_code():
     mu = (request.form.get("max_uses") or "").strip()
     max_uses = int(mu) if mu.isdigit() and int(mu) > 0 else None
     pu = (request.form.get("percent") or "").strip()
-    percent = min(100, max(1, int(pu))) if pu.isdigit() else 100
+    if not (pu.isdigit() and 1 <= int(pu) <= 100):       # never guess a discount: 100 would be free
+        abort(400, "% off must be a whole number from 1 to 100.")
+    percent = int(pu)
     first_only = 1 if request.form.get("first_event_only") else 0
     if code:
         conn = db.connect()
