@@ -299,11 +299,12 @@ def pay_return(mid):
     _meet_for_setup(mid)
     from . import square
     order_id = request.args.get("orderId") or ""
-    if order_pays_meet(square.completed_order(order_id), mid):
+    if order_id and square.until_paid(lambda: order_pays_meet(square.completed_order(order_id), mid)):
         mark_paid(mid, order_id, by=g.principal.email)
         return redirect(f"/meets/{mid}?msg=Payment+received.+This+meet+is+live.")
-    return redirect(f"/meets/{mid}?err=Payment+didn%27t+complete.+Nothing+was+charged+"
-                    f"unless+Square+emailed+a+receipt.+Please+try+again.")
+    return redirect(f"/meets/{mid}?err=We+couldn%27t+confirm+a+payment+yet.+If+Square+emailed+you+a+receipt,"
+                    f"+you+were+charged+and+this+meet+will+go+live+within+a+minute:+reload+this+page."
+                    f"+No+receipt+means+nothing+was+charged,+so+please+try+again.")
 
 
 @bp.post("/meets/<int:mid>/meet-fee/redeem")

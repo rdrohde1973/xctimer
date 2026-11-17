@@ -21,6 +21,7 @@ H = {"X-CSRF-Token": "x"}
 # ---- fake Square ------------------------------------------------------------
 LINKS, ORDERS = [], {}
 square.is_configured = lambda: True
+square.RETURN_WAIT = 0
 def _link(name, amount_cents, redirect_url, note):
     LINKS.append(dict(name=name, amount=amount_cents, redirect=redirect_url, note=note))
     return "https://square.link/u/fake"

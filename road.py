@@ -1555,7 +1555,7 @@ def host_square_return(mid):
         abort(403)
     from . import square
     oid = request.args.get("orderId") or ""
-    if square.order_ok(oid, expect_note_substr=f"xctimer_meet={mid}"):
+    if oid and square.until_paid(lambda: square.order_ok(oid, expect_note_substr=f"xctimer_meet={mid}")):
         _mark_host_paid(mid, oid)
         return redirect(f"/meets/{mid}?paid=1")
     return redirect(f"/meets/{mid}?payerr=1")
@@ -1805,8 +1805,9 @@ def host_banner(m):
     from . import square
     msg = ""
     if request.args.get("payerr"):
-        msg = ('<p style="color:var(--err);font-weight:600;margin:.2rem 0">⚠ Payment didn\'t complete — '
-               'try again.</p>')
+        msg = ('<p style="color:var(--err);font-weight:600;margin:.2rem 0">⚠ We couldn\'t confirm a payment yet. '
+               'If Square emailed you a receipt, you were charged and this event will go live within a '
+               'minute: reload this page. No receipt means nothing was charged, so please try again.</p>')
     # Verified card payment via Square (auto-publishes on a completed order).
     pend = _pending_promo(mid)
     if pend:                                   # a half-price code is applied: show what they will pay
